@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>I&I Session Overview - Cabinet PM</title>
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        /* Modal styles to ensure visibility */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        
+        .modal.show {
+            display: flex !important;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .modal-body {
+            padding: 24px;
+        }
+        
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            padding: 20px 24px;
+            border-top: 1px solid #e5e7eb;
+            background-color: #f9fafb;
+        }
+        
+        .close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #6b7280;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .close:hover {
+            color: #374151;
+        }
+        
+        .session-header-section {
+            margin-bottom: 2rem;
+        }
+        
+        .section-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 24px;
+            border-left: 4px solid #10b981;
+        }
+        
+        .section-header h2 {
+            margin: 0 0 4px 0;
+        }
+        
+        .section-header p {
+            margin: 0;
+        }
+        
+        /* Modern Reorganized UI */
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        
+        .header-info h1.page-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #1f2937;
+            margin: 0 0 4px 0;
+        }
+        
+        .page-subtitle {
+            color: #6b7280;
+            margin: 0;
+            font-size: 0.875rem;
+        }
+        
+        .btn-add {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.875rem;
+        }
+        
+        .btn-add:hover {
+            background: #059669;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+        
+        .btn-export-all {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.875rem;
+            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+        }
+        
+        .btn-export-all:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+        
+        .technician-section {
+            background: #f8fafc;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+        }
+        
+        .form-field-inline {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .field-label {
+            font-weight: 600;
+            color: #374151;
+            font-size: 0.875rem;
+            min-width: 120px;
+        }
+        
+        .field-input-inline {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 0.875rem;
+        }
+        
+        .field-input-inline:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+        }
+        
+        .btn-save-small {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
+        }
+        
+        .btn-save-small:hover {
+            background: #5a67d8;
+        }
+        
+        .documents-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+    </style>
+    <style>
+        .document-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 16px;
+            padding: 20px;
+            border-left: 4px solid #8b5cf6;
+        }
+        
+        .document-card:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            transform: translateY(-1px);
+            transition: all 0.2s ease;
+        }
+        
+        .document-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .document-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1f2937;
+            margin: 0;
+        }
+        
+        .document-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 0.875rem;
+            color: #6b7280;
+            margin-bottom: 16px;
+        }
+        
+        .document-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        
+        .status-active {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        .status-completed {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6b7280;
+        }
+        
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 16px;
+        }
+        
+        .create-document-card {
+            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+            color: white;
+            border: 2px dashed rgba(255,255,255,0.3);
+            cursor: pointer !important;
+            transition: all 0.3s ease;
+            position: relative;
+            z-index: 10;
+            pointer-events: auto !important;
+        }
+        
+        .create-document-card:hover {
+            background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+            border-color: rgba(255,255,255,0.5);
+        }
+        
+        .create-document-content {
+            text-align: center;
+            padding: 40px 20px;
+        }
+        
+        .create-document-icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            opacity: 0.8;
+        }
+        
+        .create-document-text {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .create-document-desc {
+            font-size: 0.875rem;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <button id="back-to-customer" class="btn btn-secondary" style="display: none;">
+                    ← Back to Customer Profile
+                </button>
+            </div>
+            <div class="header-right">
+                <button id="logout-btn" class="btn btn-secondary">Logout</button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Page Header -->
+            <div class="page-header">
+                <div class="header-info">
+                    <h1 class="page-title">📋 Installation & Integration Session</h1>
+                    <p class="page-subtitle" id="session-details">Loading session details...</p>
+                </div>
+                <div class="header-actions">
+                    <button id="add-document-btn" class="btn-add">
+                        ➕ Add Document
+                    </button>
+                </div>
+            </div>
+
+            <!-- Session Info -->
+            <div class="technician-section">
+                <div class="form-field-inline">
+                    <label class="field-label">🏢 Customer Name:</label>
+                    <input type="text" id="session-customer-name" class="field-input-inline" placeholder="Customer name for documentation">
+                </div>
+                <div class="form-field-inline" style="margin-top: 12px;">
+                    <label class="field-label">👤 Performed By:</label>
+                    <input type="text" id="session-performed-by" class="field-input-inline" placeholder="Technician name">
+                </div>
+                <div style="margin-top: 12px; text-align: right;">
+                    <button id="save-session-info-btn" class="btn-save-small">Save Info</button>
+                </div>
+            </div>
+
+            <!-- Export Actions -->
+            <div class="export-actions" style="margin-bottom: 24px; text-align: center;">
+                <button id="export-all-pdfs-btn" class="btn-export-all" style="display: none;">
+                    📄 Export All Documents as PDF
+                </button>
+            </div>
+
+            <!-- Documents Grid -->
+            <div class="documents-grid" id="documents-container">
+
+            <!-- Create New Document Card -->
+            <div class="document-card create-document-card" id="create-document-card" onclick="handleCreateDocumentClick(event)">
+                <div class="create-document-content">
+                    <div class="create-document-icon">📋</div>
+                    <div class="create-document-text">Create New I&I Document</div>
+                    <div class="create-document-desc">Start a new Installation & Integration procedure</div>
+                </div>
+            </div>
+
+            <!-- Documents List -->
+            <div id="documents-container">
+                <!-- Documents will be loaded here -->
+            </div>
+
+            <!-- Empty State -->
+            <div id="empty-state" class="empty-state hidden">
+                <div class="empty-state-icon">📄</div>
+                <h3 class="text-lg font-semibold text-gray-900 mb-2">No I&I Documents Yet</h3>
+                <p class="text-gray-600 mb-4">Create your first Installation & Integration document to get started.</p>
+            </div>
+
+            <!-- Complete Session Section -->
+            <div class="card mt-8">
+                <div class="card-header">
+                    <h3 class="text-lg font-semibold text-gray-900">Complete I&I Session</h3>
+                </div>
+                <div class="card-body">
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-4">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                </svg>
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium text-yellow-800">Review Before Completion</h3>
+                                <div class="mt-2 text-sm text-yellow-700">
+                                    <p>Please ensure all I&I documents are completed before marking this session as complete.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex gap-4">
+                        <button id="export-all-btn" class="btn btn-secondary">📄 Export All PDFs</button>
+                        <button id="complete-session-btn" class="btn btn-primary">✅ Complete I&I Session</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Create Document Modal -->
+    <div id="create-document-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create New I&I Document</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="create-document-form">
+                    <div class="form-group">
+                        <label for="document-name" class="form-label">Document Name *</label>
+                        <input type="text" id="document-name" class="form-input" required
+                               placeholder="e.g., Cabinet A, Controller 1, Main Panel, etc.">
+                        <small class="text-gray-500">Enter a descriptive name for this I&I document</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="document-deltav-id" class="form-label">DeltaV System ID</label>
+                        <input type="text" id="document-deltav-id" class="form-input" placeholder="Enter DeltaV System ID">
+                    </div>
+                    <div class="form-group">
+                        <label for="document-location" class="form-label">Location</label>
+                        <input type="text" id="document-location" class="form-input" placeholder="Enter specific location">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('create-document-modal')">Cancel</button>
+                <button type="submit" form="create-document-form" class="btn btn-primary">Create Document</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="message" class="message"></div>
+
+    <script>
+        let currentSessionId = null;
+        let sessionData = null;
+        let documents = [];
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DEBUG: DOMContentLoaded fired');
+            console.log('DEBUG: Current URL:', window.location.href);
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            currentSessionId = urlParams.get('id');
+            console.log('DEBUG: Session ID from URL:', currentSessionId);
+            
+            if (!currentSessionId) {
+                console.error('DEBUG: No session ID provided');
+                showMessage('No session ID provided', 'error');
+                setTimeout(() => window.location.href = '/dashboard.html', 2000);
+                return;
+            }
+
+            console.log('DEBUG: About to setup event listeners...');
+            setupEventListeners();
+            
+            console.log('DEBUG: About to load session...');
+            loadSession();
+            
+            console.log('DEBUG: About to load documents...');
+            loadDocuments();
+        });
+
+        function setupEventListeners() {
+            console.log('DEBUG: Setting up event listeners...');
+            
+            // Navigation
+            document.getElementById('logout-btn').addEventListener('click', logout);
+            
+            // Add document button (both header and card)
+            document.getElementById('add-document-btn').addEventListener('click', openCreateDocumentModal);
+            
+            // Session info save button
+            document.getElementById('save-session-info-btn').addEventListener('click', saveSessionInfo);
+            
+            // Export all PDFs button
+            document.getElementById('export-all-pdfs-btn').addEventListener('click', exportAllPDFs);
+            
+            // Create document card
+            const createDocCard = document.getElementById('create-document-card');
+            if (createDocCard) {
+                console.log('DEBUG: Found create-document-card element, adding click listener');
+                createDocCard.addEventListener('click', function(e) {
+                    console.log('DEBUG: Create document card clicked!', e);
+                    openCreateDocumentModal();
+                });
+                
+                // Also add cursor pointer style to make it clear it's clickable
+                createDocCard.style.cursor = 'pointer';
+                console.log('DEBUG: Added cursor pointer to create document card');
+            } else {
+                console.error('DEBUG: create-document-card element not found!');
+            }
+            
+            // Form submission
+            const createForm = document.getElementById('create-document-form');
+            if (createForm) {
+                createForm.addEventListener('submit', createDocument);
+                console.log('DEBUG: Added form submit listener');
+            } else {
+                console.error('DEBUG: create-document-form not found!');
+            }
+            
+            // Complete session
+            const completeBtn = document.getElementById('complete-session-btn');
+            if (completeBtn) {
+                completeBtn.addEventListener('click', completeSession);
+                console.log('DEBUG: Added complete session listener');
+            }
+            
+            const exportBtn = document.getElementById('export-all-btn');
+            if (exportBtn) {
+                exportBtn.addEventListener('click', exportAllPDFs);
+                console.log('DEBUG: Added export all listener');
+            }
+            
+            // Modal close buttons
+            document.querySelectorAll('.close').forEach(closeBtn => {
+                closeBtn.addEventListener('click', function() {
+                    const modal = this.closest('.modal');
+                    closeModal(modal.id);
+                });
+            });
+            
+            console.log('DEBUG: Event listeners setup complete');
+        }
+
+        async function loadSession() {
+            try {
+                const response = await fetch(`/api/sessions/${currentSessionId}`);
+                if (!response.ok) throw new Error('Session not found');
+                
+                sessionData = await response.json();
+                
+                // Update page info
+                document.getElementById('session-details').textContent = 
+                    `Customer: ${sessionData.customer_name} | Location: ${sessionData.location || 'Not specified'} | System ID: ${sessionData.customer_name}`;
+                
+                // Setup customer navigation
+                if (sessionData.customer_id && sessionData.customer_name) {
+                    setupCustomerNavigation(sessionData.customer_id, sessionData.customer_name);
+                }
+                
+                // Populate session info fields
+                if (sessionData.ii_performed_by) {
+                    document.getElementById('session-performed-by').value = sessionData.ii_performed_by;
+                }
+                if (sessionData.ii_customer_name) {
+                    document.getElementById('session-customer-name').value = sessionData.ii_customer_name;
+                }
+                
+            } catch (error) {
+                console.error('Error loading session:', error);
+                showMessage('Error loading session: ' + error.message, 'error');
+                setTimeout(() => window.location.href = '/dashboard.html', 2000);
+            }
+        }
+
+        function setupCustomerNavigation(customerId, customerName) {
+            const customerProfileLink = document.getElementById('nav-customer-profile');
+            if (customerProfileLink) {
+                customerProfileLink.style.display = 'inline-block';
+                customerProfileLink.textContent = `${customerName} Profile`;
+                customerProfileLink.href = `/customer-detail.html?customer=${customerId}`;
+            }
+            
+            const backToCustomerBtn = document.getElementById('back-to-customer');
+            if (backToCustomerBtn) {
+                backToCustomerBtn.style.display = 'inline-block';
+                backToCustomerBtn.onclick = () => {
+                    window.location.href = `/customer-detail.html?customer=${customerId}`;
+                };
+            }
+        }
+
+        async function loadDocuments() {
+            try {
+                const response = await fetch(`/api/sessions/${currentSessionId}/ii-documents`);
+                documents = await response.json();
+                renderDocuments();
+            } catch (error) {
+                console.error('Error loading documents:', error);
+                showMessage('Error loading I&I documents', 'error');
+            }
+        }
+
+        function renderDocuments() {
+            const container = document.getElementById('documents-container');
+            const emptyState = document.getElementById('empty-state');
+            const exportAllBtn = document.getElementById('export-all-pdfs-btn');
+            
+            if (documents.length === 0) {
+                container.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                exportAllBtn.style.display = 'none';
+                return;
+            }
+            
+            emptyState.classList.add('hidden');
+            exportAllBtn.style.display = 'inline-block';
+            
+            container.innerHTML = documents.map(doc => `
+                <div class="document-card">
+                    <div class="document-header">
+                        <h3 class="document-title">${doc.document_name}</h3>
+                        <span class="status-badge status-${doc.status}">${doc.status.toUpperCase()}</span>
+                    </div>
+                    <div class="document-meta">
+                        <span>📍 ${doc.location || 'No location specified'}</span>
+                        <span>🆔 ${doc.deltav_system_id || 'No System ID'}</span>
+                        <span>📅 Created ${new Date(doc.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <div class="document-actions">
+                        <button class="btn btn-primary btn-sm" onclick="editDocument('${doc.id}')">
+                            📝 Edit Document
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="exportDocument('${doc.id}')">
+                            📄 Export PDF
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteDocument('${doc.id}', '${doc.document_name}')">
+                            🗑️ Delete
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Inline click handler as fallback
+        function handleCreateDocumentClick(event) {
+            console.log('DEBUG: handleCreateDocumentClick called via onclick', event);
+            event.preventDefault();
+            event.stopPropagation();
+            openCreateDocumentModal();
+        }
+
+        function openCreateDocumentModal() {
+            console.log('DEBUG: openCreateDocumentModal called');
+            
+            const form = document.getElementById('create-document-form');
+            if (form) {
+                form.reset();
+                console.log('DEBUG: Form reset successfully');
+            } else {
+                console.error('DEBUG: create-document-form not found in openCreateDocumentModal!');
+            }
+            
+            console.log('DEBUG: Opening create-document-modal');
+            openModal('create-document-modal');
+        }
+
+        async function createDocument(e) {
+            e.preventDefault();
+            
+            try {
+                const data = {
+                    document_name: document.getElementById('document-name').value,
+                    deltav_system_id: document.getElementById('document-deltav-id').value,
+                    location: document.getElementById('document-location').value
+                };
+                
+                const response = await fetch(`/api/sessions/${currentSessionId}/ii-documents`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                if (response.ok) {
+                    const newDocument = await response.json();
+                    closeModal('create-document-modal');
+                    showMessage('I&I document created successfully', 'success');
+                    await loadDocuments();
+                } else {
+                    throw new Error('Failed to create document');
+                }
+            } catch (error) {
+                console.error('Error creating document:', error);
+                showMessage('Error creating I&I document', 'error');
+            }
+        }
+
+        function editDocument(documentId) {
+            window.location.href = `/ii-document.html?id=${documentId}`;
+        }
+
+        async function exportDocument(documentId) {
+            try {
+                const response = await fetch(`/api/ii-documents/${documentId}/export-pdf`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = `II-Document-${documentId}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    showMessage('PDF exported successfully', 'success');
+                } else {
+                    throw new Error('Failed to export PDF');
+                }
+            } catch (error) {
+                console.error('Error exporting PDF:', error);
+                showMessage('Error exporting PDF', 'error');
+            }
+        }
+
+        async function deleteDocument(documentId, documentName) {
+            if (!confirm(`Are you sure you want to delete "${documentName}"? This action cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/ii-documents/${documentId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    showMessage('Document deleted successfully', 'success');
+                    await loadDocuments();
+                } else {
+                    throw new Error('Failed to delete document');
+                }
+            } catch (error) {
+                console.error('Error deleting document:', error);
+                showMessage('Error deleting document', 'error');
+            }
+        }
+
+        async function exportAllPDFs() {
+            if (documents.length === 0) {
+                showMessage('No documents to export', 'warning');
+                return;
+            }
+            
+            try {
+                showMessage('Exporting all PDFs...', 'info');
+                
+                for (const doc of documents) {
+                    await exportDocument(doc.id);
+                    // Small delay between exports
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                
+                showMessage('All PDFs exported successfully', 'success');
+            } catch (error) {
+                console.error('Error exporting all PDFs:', error);
+                showMessage('Error exporting PDFs', 'error');
+            }
+        }
+
+        async function completeSession() {
+            if (!confirm('Are you sure you want to complete this I&I session? This action cannot be undone.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/sessions/${currentSessionId}/complete`, {
+                    method: 'PUT'
+                });
+                
+                if (response.ok) {
+                    showMessage('I&I session completed successfully!', 'success');
+                    setTimeout(() => {
+                        window.location.href = `/customer-detail.html?customer=${sessionData.customer_id}`;
+                    }, 2000);
+                } else {
+                    throw new Error('Failed to complete session');
+                }
+            } catch (error) {
+                console.error('Error completing session:', error);
+                showMessage('Error completing session', 'error');
+            }
+        }
+
+        async function exportAllPDFs() {
+            try {
+                showMessage('Generating combined PDF report...', 'info');
+                
+                const response = await fetch(`/api/sessions/${currentSessionId}/export-all-ii-pdfs`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `ECI_II_Report_${sessionData.session_name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    showMessage('Combined I&I PDF report exported successfully!', 'success');
+                } else {
+                    throw new Error('Failed to export combined PDF');
+                }
+            } catch (error) {
+                console.error('Error exporting combined PDF:', error);
+                showMessage('Error exporting combined PDF report', 'error');
+            }
+        }
+
+        // Utility functions
+        function showMessage(message, type = 'info') {
+            const messageEl = document.getElementById('message');
+            messageEl.textContent = message;
+            messageEl.className = `message ${type} show`;
+            setTimeout(() => {
+                messageEl.classList.remove('show');
+            }, 3000);
+        }
+
+        function openModal(modalId) {
+            console.log('DEBUG: openModal called with id:', modalId);
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.classList.add('show');
+                console.log('DEBUG: Modal opened successfully:', modalId);
+                console.log('DEBUG: Modal display style:', window.getComputedStyle(modal).display);
+                console.log('DEBUG: Modal visibility:', window.getComputedStyle(modal).visibility);
+                console.log('DEBUG: Modal z-index:', window.getComputedStyle(modal).zIndex);
+            } else {
+                console.error('DEBUG: Modal not found:', modalId);
+            }
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('show');
+        }
+
+        async function saveSessionInfo() {
+            try {
+                const data = {
+                    ii_performed_by: document.getElementById('session-performed-by').value,
+                    ii_customer_name: document.getElementById('session-customer-name').value
+                };
+                
+                const response = await fetch(`/api/sessions/${currentSessionId}/ii-header`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                if (response.ok) {
+                    showMessage('Session information saved successfully', 'success');
+                } else {
+                    throw new Error('Failed to save session information');
+                }
+            } catch (error) {
+                console.error('Error saving session info:', error);
+                showMessage('Error saving session information: ' + error.message, 'error');
+            }
+        }
+
+        function logout() {
+            if (confirm('Are you sure you want to logout?')) {
+                window.location.href = '/login.html';
+            }
+        }
+    </script>
+</body>
+</html>

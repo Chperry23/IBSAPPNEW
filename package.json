@@ -1,0 +1,51 @@
+{
+  "name": "cabinet-pm-tablet",
+  "version": "2.0.0",
+  "description": "Cabinet PM Tablet Application - Preventive Maintenance & Inspection Management System",
+  "main": "server-tablet.js",
+  "bin": "server-tablet.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Chperry23/IBSAPPNEW.git"
+  },
+  "author": "ECI Industrial Solutions",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "node server-tablet.js",
+    "dev": "node server-tablet.js",
+    "build": "pkg server-tablet.js --targets node16-win-x64 --output cabinet-pm-tablet.exe",
+    "build-win": "pkg server-tablet.js --targets node16-win-x64 --output cabinet-pm-tablet.exe",
+    "build-linux": "pkg server-tablet.js --targets node16-linux-x64 --output cabinet-pm-tablet-linux",
+    "build-mac": "pkg server-tablet.js --targets node16-macos-x64 --output cabinet-pm-tablet-mac"
+  },
+  "dependencies": {
+    "archiver": "^6.0.1",
+    "bcryptjs": "^2.4.3",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "mongodb": "^6.18.0",
+    "puppeteer": "^21.5.2",
+    "sqlite3": "^5.1.6",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "pkg": {
+    "assets": [
+      "public/**/*",
+      "assets/**/*",
+      "cabinet_pm_tablet.db",
+      "node_modules/sqlite3/lib/binding/napi-v6-win32-x64/node_sqlite3.node",
+      "mongo-cloud-sync.js",
+      "mongo-sync-endpoints.js",
+      "MONGO-SYNC-SETUP-GUIDE.md"
+    ],
+    "targets": [
+      "node16-win-x64"
+    ],
+    "outputPath": "dist"
+  }
+}

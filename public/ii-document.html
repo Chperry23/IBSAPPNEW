@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>I&I Document - Cabinet PM</title>
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .ii-section {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        
+        .ii-section-header {
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
+        
+        .ii-section-header:hover {
+            background: #f1f5f9;
+        }
+        
+        .ii-section-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: #1f2937;
+            margin: 0;
+        }
+        
+        .ii-section-content {
+            padding: 20px;
+            display: none;
+        }
+        
+        .ii-section.expanded .ii-section-content {
+            display: block;
+        }
+        
+        .ii-section-toggle {
+            transition: transform 0.2s;
+        }
+        
+        .ii-section.expanded .ii-section-toggle {
+            transform: rotate(90deg);
+        }
+        
+        .checklist-item {
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            padding: 16px;
+            background: #fafafa;
+        }
+        
+        .checklist-item-header {
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 8px;
+        }
+        
+        .checklist-controls {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .answer-buttons {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .answer-btn {
+            padding: 6px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+        
+        .answer-btn.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+        
+        .answer-btn.yes.active {
+            background: #10b981;
+            border-color: #10b981;
+        }
+        
+        .answer-btn.no.active {
+            background: #ef4444;
+            border-color: #ef4444;
+        }
+        
+        .answer-btn.na.active {
+            background: #6b7280;
+            border-color: #6b7280;
+        }
+        
+        .measurement-fields {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8fafc;
+            border-radius: 4px;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .measurement-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .measurement-row label {
+            font-weight: 500;
+            color: #374151;
+            min-width: 60px;
+        }
+        
+        .measurement-input {
+            width: 80px;
+            padding: 4px 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 0.875rem;
+        }
+        
+        .btn-back {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.875rem;
+        }
+        
+        .btn-back:hover {
+            background: #5a67d8;
+            transform: translateY(-1px);
+        }
+        
+        .header-divider {
+            width: 1px;
+            height: 40px;
+            background: #e5e7eb;
+            margin: 0 16px;
+        }
+        
+        .header-left {
+            display: flex;
+            align-items: center;
+        }
+        
+        .equipment-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+        
+        .equipment-table th,
+        .equipment-table td {
+            border: 1px solid #e2e8f0;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        
+        .equipment-table th {
+            background: #f8fafc;
+            font-weight: 600;
+        }
+        
+        .progress-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            min-width: 200px;
+            z-index: 1000;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #10b981;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <button id="back-to-session" class="btn-back">
+                    ← Back to Session
+                </button>
+                <div class="header-divider"></div>
+                <div>
+                    <h1 id="document-title">I&I Document</h1>
+                    <p id="session-info" class="text-sm text-gray-600"></p>
+                </div>
+            </div>
+            <div class="header-right">
+                <button id="logout-btn" class="btn btn-secondary">Logout</button>
+            </div>
+        </header>
+
+        <!-- Progress Indicator -->
+        <div class="progress-indicator">
+            <div class="text-sm font-semibold text-gray-700">I&I Progress</div>
+            <div class="text-xs text-gray-500 mt-1"><span id="progress-text">0 of 0 items completed</span></div>
+            <div class="progress-bar">
+                <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="main-content">
+
+            <!-- Equipment Necessary Section -->
+            <div class="ii-section">
+                <div class="ii-section-header">
+                    <h2 class="ii-section-title">🔧 Equipment Necessary</h2>
+                    <span class="ii-section-toggle">▶</span>
+                </div>
+                <div class="ii-section-content">
+                    <p class="text-sm text-gray-600 mb-4">The following equipment is needed to perform the checks in this I&I:</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <label class="flex items-center gap-3">
+                            <input type="checkbox" id="clamp-on-rms-ammeter" class="form-checkbox">
+                            <span>Clamp-on RMS ammeter (for AC and DC current measurements)</span>
+                        </label>
+                        <label class="flex items-center gap-3">
+                            <input type="checkbox" id="digit-dvm" class="form-checkbox">
+                            <span>4-1/2 digit DVM with accuracy of ± 0.05%, or better</span>
+                        </label>
+                        <label class="flex items-center gap-3">
+                            <input type="checkbox" id="fluke-1630-earth-ground" class="form-checkbox">
+                            <span>Fluke 1630 Earth Ground Clamp Meter</span>
+                        </label>
+                        <label class="flex items-center gap-3">
+                            <input type="checkbox" id="fluke-mt8200-micromapper" class="form-checkbox">
+                            <span>Fluke MT-8200-49A Micromapper</span>
+                        </label>
+                    </div>
+                    <div class="form-group mt-4">
+                        <label for="equipment-notes" class="form-label">Notes</label>
+                        <textarea id="equipment-notes" class="form-input" rows="3" placeholder="Additional equipment notes..."></textarea>
+                    </div>
+                    <div class="mt-4">
+                        <button id="save-equipment-btn" class="btn btn-primary">Save Equipment Checklist</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Good Engineering Practices Section -->
+            <div class="ii-section">
+                <div class="ii-section-header">
+                    <h2 class="ii-section-title">⚡ Good Engineering Practices for General Systems</h2>
+                    <span class="ii-section-toggle">▶</span>
+                </div>
+                <div class="ii-section-content" id="engineering-practices-content">
+                    <!-- Checklist items will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Power and Grounding Connections Section -->
+            <div class="ii-section">
+                <div class="ii-section-header">
+                    <h2 class="ii-section-title">🔌 Power and Grounding Connections</h2>
+                    <span class="ii-section-toggle">▶</span>
+                </div>
+                <div class="ii-section-content" id="power-grounding-content">
+                    <!-- Checklist items will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Enclosures Section -->
+            <div class="ii-section">
+                <div class="ii-section-header">
+                    <h2 class="ii-section-title">📦 Enclosures</h2>
+                    <span class="ii-section-toggle">▶</span>
+                </div>
+                <div class="ii-section-content" id="enclosures-content">
+                    <!-- Checklist items will be loaded here -->
+                </div>
+            </div>
+
+            <!-- AC Power System Section -->
+            <div class="ii-section">
+                <div class="ii-section-header">
+                    <h2 class="ii-section-title">⚡ AC Power System and Distribution</h2>
+                    <span class="ii-section-toggle">▶</span>
+                </div>
+                <div class="ii-section-content" id="ac-power-content">
+                    <!-- Checklist items will be loaded here -->
+                </div>
+            </div>
+
+            <!-- DC Power System Section -->
+            <div class="ii-section">
+                <div class="ii-section-header">
+                    <h2 class="ii-section-title">🔋 DC Power System and Distribution</h2>
+                    <span class="ii-section-toggle">▶</span>
+                </div>
+                <div class="ii-section-content" id="dc-power-content">
+                    <!-- Checklist items will be loaded here -->
+                </div>
+            </div>
+
+            <!-- DeltaV Controllers Section -->
+            <div class="ii-section">
+                <div class="ii-section-header">
+                    <h2 class="ii-section-title">🎛️ DeltaV Controllers</h2>
+                    <span class="ii-section-toggle">▶</span>
+                </div>
+                <div class="ii-section-content" id="deltav-controllers-content">
+                    <!-- Checklist items will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Equipment Used Section -->
+            <div class="ii-section">
+                <div class="ii-section-header">
+                    <h2 class="ii-section-title">📝 List of Equipment Used</h2>
+                    <span class="ii-section-toggle">▶</span>
+                </div>
+                <div class="ii-section-content">
+                    <div class="mb-4">
+                        <button id="add-equipment-btn" class="btn btn-secondary">+ Add Equipment</button>
+                    </div>
+                    <table class="equipment-table">
+                        <thead>
+                            <tr>
+                                <th>Manufacturer</th>
+                                <th>Type</th>
+                                <th>Serial Number</th>
+                                <th>Re-calibration Date</th>
+                                <th>Used in Section</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="equipment-used-table">
+                            <!-- Equipment rows will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Complete Document Section -->
+            <div class="ii-section">
+                <div class="ii-section-header">
+                    <h2 class="ii-section-title">✅ Complete This Document</h2>
+                    <span class="ii-section-toggle">▶</span>
+                </div>
+                <div class="ii-section-content">
+                    <div class="bg-blue-50 border border-blue-200 rounded-md p-4 mb-4">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                                </svg>
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium text-blue-800">Document Completion</h3>
+                                <div class="mt-2 text-sm text-blue-700">
+                                    <p>Complete this I&I document when all checklist items have been finished. You'll return to the session overview to work on other documents or export PDFs.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex gap-3">
+                        <button id="complete-document-btn" class="btn btn-primary btn-lg">Complete This Document</button>
+                        <button id="export-pdf-btn" class="btn btn-outline btn-lg">Export PDF</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Add Equipment Modal -->
+    <div id="add-equipment-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Equipment Used</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="add-equipment-form">
+                    <div class="form-group">
+                        <label for="equipment-manufacturer" class="form-label">Manufacturer *</label>
+                        <input type="text" id="equipment-manufacturer" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="equipment-type" class="form-label">Type *</label>
+                        <input type="text" id="equipment-type" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="equipment-serial" class="form-label">Serial Number</label>
+                        <input type="text" id="equipment-serial" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label for="equipment-recal-date" class="form-label">Re-calibration Date</label>
+                        <input type="date" id="equipment-recal-date" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label for="equipment-section" class="form-label">Used in Section</label>
+                        <select id="equipment-section" class="form-input">
+                            <option value="">Select section...</option>
+                            <option value="Good Engineering Practices">Good Engineering Practices</option>
+                            <option value="Power and Grounding">Power and Grounding</option>
+                            <option value="Enclosures">Enclosures</option>
+                            <option value="AC Power System">AC Power System</option>
+                            <option value="DC Power System">DC Power System</option>
+                            <option value="DeltaV Controllers">DeltaV Controllers</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('add-equipment-modal')">Cancel</button>
+                <button type="submit" form="add-equipment-form" class="btn btn-primary">Add Equipment</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="message" class="message"></div>
+
+    <script>
+        let currentDocumentId = null;
+        let documentData = null;
+        let sessionData = null;
+        let checklistData = {};
+        let equipmentUsed = [];
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            currentDocumentId = urlParams.get('id');
+            
+            if (!currentDocumentId) {
+                showMessage('No document ID provided', 'error');
+                setTimeout(() => window.location.href = '/dashboard.html', 2000);
+                return;
+            }
+
+            setupEventListeners();
+            loadDocument();
+            loadChecklistItems();
+        });
+
+        function setupEventListeners() {
+            // Navigation
+            document.getElementById('logout-btn').addEventListener('click', logout);
+            document.getElementById('back-to-session').addEventListener('click', goBackToSession);
+            
+            // Section toggles
+            document.querySelectorAll('.ii-section-header').forEach(header => {
+                header.addEventListener('click', toggleSection);
+            });
+            
+            // Save buttons
+            document.getElementById('save-equipment-btn').addEventListener('click', saveEquipmentChecklist);
+            document.getElementById('complete-document-btn').addEventListener('click', completeDocument);
+            document.getElementById('export-pdf-btn').addEventListener('click', exportDocumentPDF);
+            
+            // Equipment management
+            document.getElementById('add-equipment-btn').addEventListener('click', () => openModal('add-equipment-modal'));
+            document.getElementById('add-equipment-form').addEventListener('submit', addEquipment);
+            
+            // Modal close buttons
+            document.querySelectorAll('.close').forEach(closeBtn => {
+                closeBtn.addEventListener('click', function() {
+                    const modal = this.closest('.modal');
+                    closeModal(modal.id);
+                });
+            });
+        }
+
+        function toggleSection(e) {
+            const section = e.currentTarget.closest('.ii-section');
+            section.classList.toggle('expanded');
+        }
+
+        async function loadDocument() {
+            try {
+                // Load document details
+                const docResponse = await fetch(`/api/ii-documents/${currentDocumentId}`);
+                if (!docResponse.ok) throw new Error('Document not found');
+                documentData = await docResponse.json();
+                
+                // Load session details
+                const sessionResponse = await fetch(`/api/sessions/${documentData.session_id}`);
+                if (!sessionResponse.ok) throw new Error('Session not found');
+                sessionData = await sessionResponse.json();
+                
+                // Update page title and info
+                document.getElementById('document-title').textContent = `I&I Document: ${documentData.document_name}`;
+                document.getElementById('session-info').innerHTML = 
+                    `Customer: ${sessionData.customer_name} | Session: ${sessionData.session_name}`;
+                
+                // Setup customer navigation
+                if (sessionData.customer_id && sessionData.customer_name) {
+                    setupCustomerNavigation(sessionData.customer_id, sessionData.customer_name);
+                }
+                
+                
+                // Load document-specific data
+                await loadEquipmentChecklist();
+                await loadEquipmentUsed();
+                
+            } catch (error) {
+                console.error('Error loading document:', error);
+                showMessage('Error loading document: ' + error.message, 'error');
+                setTimeout(() => window.location.href = '/dashboard.html', 2000);
+            }
+        }
+
+        function setupCustomerNavigation(customerId, customerName) {
+            const customerProfileLink = document.getElementById('nav-customer-profile');
+            if (customerProfileLink) {
+                customerProfileLink.style.display = 'inline-block';
+                customerProfileLink.textContent = `${customerName} Profile`;
+                customerProfileLink.href = `/customer-detail.html?customer=${customerId}`;
+            }
+            
+            const backToCustomerBtn = document.getElementById('back-to-customer');
+            if (backToCustomerBtn) {
+                backToCustomerBtn.style.display = 'inline-block';
+                backToCustomerBtn.onclick = () => {
+                    window.location.href = `/customer-detail.html?customer=${customerId}`;
+                };
+            }
+        }
+
+
+
+        async function loadEquipmentChecklist() {
+            try {
+                const response = await fetch(`/api/ii-documents/${currentDocumentId}/ii-equipment`);
+                const data = await response.json();
+                
+                if (data.clamp_on_rms_ammeter) document.getElementById('clamp-on-rms-ammeter').checked = true;
+                if (data.digit_dvm) document.getElementById('digit-dvm').checked = true;
+                if (data.fluke_1630_earth_ground) document.getElementById('fluke-1630-earth-ground').checked = true;
+                if (data.fluke_mt8200_micromapper) document.getElementById('fluke-mt8200-micromapper').checked = true;
+                if (data.notes) document.getElementById('equipment-notes').value = data.notes;
+            } catch (error) {
+                console.error('Error loading equipment checklist:', error);
+            }
+        }
+
+        async function saveEquipmentChecklist() {
+            try {
+                const data = {
+                    clamp_on_rms_ammeter: document.getElementById('clamp-on-rms-ammeter').checked,
+                    digit_dvm: document.getElementById('digit-dvm').checked,
+                    fluke_1630_earth_ground: document.getElementById('fluke-1630-earth-ground').checked,
+                    fluke_mt8200_micromapper: document.getElementById('fluke-mt8200-micromapper').checked,
+                    notes: document.getElementById('equipment-notes').value
+                };
+                
+                const response = await fetch(`/api/ii-documents/${currentDocumentId}/ii-equipment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                if (response.ok) {
+                    showMessage('Equipment checklist saved successfully', 'success');
+                } else {
+                    throw new Error('Failed to save equipment checklist');
+                }
+            } catch (error) {
+                console.error('Error saving equipment checklist:', error);
+                showMessage('Error saving equipment checklist', 'error');
+            }
+        }
+
+        async function loadChecklistItems() {
+            // Define checklist sections based on I&I document
+            const sections = [
+                {
+                    name: 'Good Engineering Practices',
+                    containerId: 'engineering-practices-content',
+                    items: [
+                        'Ensure all power supplied to the enclosures is de-energized (the circuit breaker(s) open)',
+                        'In the DeltaV enclosures, open all circuit breakers and fuse holders and check for no power',
+                        'Are there any environmental concerns about the installation? (Water leaks, Moisture, Dust, Dirt, Temperature, etc.?)'
+                    ]
+                },
+                {
+                    name: 'Power and Grounding Connections',
+                    containerId: 'power-grounding-content',
+                    items: [
+                        'Are the connections performed per design, properly terminated, and labeled. Is the wire of proper size for distance?',
+                        'Check the impedance and current flow for the enclosure grounding system (AC/CG Chassis Ground). A High Integrity Ground should measure 1 ohm or less to ground. 5Ω Max',
+                        'Is the Dedicated Instrumentation Ground (DIG) or Local DCG connected to the lowest available dedicated connection to true earth?',
+                        'Is the DIG connection to the true earth dedicated and not shared with any other ground?',
+                        'Is the DIG ground cable insulated? Is it physically separated from high voltage or variable speed drive cables?',
+                        'Are isolated receptacles used to power the Servers and PCs?'
+                    ]
+                },
+                {
+                    name: 'Enclosures',
+                    containerId: 'enclosures-content',
+                    items: [
+                        'Is the enclosure free of any signs of environmental, shipping, or installation damage? Visually look over the DeltaV cabinet for loose wires, carrier separation, loose modules, and any damage that may have occurred during shipment and installation and correct any discrepancies found before proceeding',
+                        'Are all cable entries in and out of the cabinets and enclosures sealed, if required?',
+                        'Back planes plugged in tightly • All power supplies controllers, I/O modules screwed in securely (Do not over torque) • Input power wiring termination tight and labeled • Network cables locked in place',
+                        'Are all enclosures properly positioned and mounted with groups of enclosures properly bolted together?',
+                        'Are all Power and Ground connections solid and tightened? Is there good conduction in all connections (that is, no corrosion or hanging wire strands)?',
+                        'Do the enclosure AC ground bus bar, the Instrument (DC) ground bus bar, and, if applicable, the Intrinsic Safety Ground have separately wired connections to the DIG using insulated wire of the proper size? Are all connections tight.',
+                        'Calculate the DeltaV carrier power implementation. Verify that it does not exceed the recommendations.',
+                        'Are network cables routed and installed according to the guidelines. Are the network cable shields terminated properly? Are the proper connector (shielded or unshielded) used and does the network installation follow the design? (Shielded connectors at network switch end only for PC\'s, and at both ends for DeltaV Controllers/CIOC\'s?)',
+                        'Are colored boots used to distinguish primary and secondary DeltaV LAN cables?',
+                        'Are all communication cables properly labeled at both ends?'
+                    ]
+                },
+                {
+                    name: 'AC Power System',
+                    containerId: 'ac-power-content',
+                    items: [
+                        'Verify that all AC powered devices in the enclosure are switched off or disconnected',
+                        'With AC power system disconnected, measure impedance of system from all line and neutral connections to ground (Impedance must be high)',
+                        'If the impedance is in conformance, have a person approved by the customer switch on the AC power system. Record the person\'s name.',
+                        'Check that primary AC voltage is within specifications (85 to 264 VAC / 47 to 63 Hz measured between line and neutral)',
+                        'Check that primary AC ground to neutral voltage is within specification (0.00 V +/-1.00 VAC)',
+                        'Check that secondary AC voltage is within specifications (85 to 264 VAC / 47 to 63 Hz Measured between Line and Neutral)',
+                        'Check that secondary AC ground to neutral voltage is within specification (0.00 V +/-1.00 VAC)',
+                        'If conforming, it is appropriate to switch ON or reconnect all AC powered devices. One at a time switch on each of the cabinet sub-breakers or fuse holders and check the equipment that they feed power up correctly.',
+                        'Verify that all AC powered fans, cooling devices, lights, and so on are running and operational.',
+                        'Verify if LED\'s of all AC powered devices indicate normal'
+                    ]
+                },
+                {
+                    name: 'DC Power System',
+                    containerId: 'dc-power-content',
+                    items: [
+                        'Verify that all AC-powered devices in the enclosure are switched off or disconnected',
+                        'With the DC power system disconnected, measure impedance of system from all line and neutral connections to ground (Impedance MUST be High)',
+                        'Apply DC voltage to the distribution system',
+                        'Check that primary 24 VDC is within specifications. (21.6 VDC to 26.4 VDC)',
+                        'Check that secondary 24 VDC is within specifications. (21.6 VDC to 26.4 VDC)',
+                        'Check that primary 12 VDC is within specifications. (11.4 VDC to 12.6 VDC)',
+                        'Check that secondary 12 VDC is within specifications. (11.4 VDC to 12.6 VDC)',
+                        'Verify that all DC powered fans, cooling devices, lights, and so on are running and operational.',
+                        'Verify that LEDs of all DC powered devices indicate normal',
+                        'Check at the destination end of each of the system power supply feeds i.e. the connectors on the System Power supplies, carrier F.B. Connectors , etc. for the proper voltage levels. Note: When Isolation Diode blocks are used there may be fuses used between the diodes and the end user of the power feeds. Example: the Field Bus Power connectors on the carriers; each carrier may have its own protection fuse. Note: The DC voltage levels will vary from one carrier F.B.P. connector to another due to wire length. Find the connectors with highest and lowest readings and ensure the lowest is at least +24.0 VDC. Adjust the bulk supply as required.'
+                    ]
+                },
+                {
+                    name: 'DeltaV Controllers',
+                    containerId: 'deltav-controllers-content',
+                    items: [
+                        'System power supply LEDs normal (Power-ON, Error-OFF)',
+                        'Active controller\'s LEDs normal (Power - ON, Error - OFF if downloaded / Flash if un-configured, Active - ON, Standby - OFF, CN1 - Flash if communicating on the primary control network, CN2 - Flash if communicating on the secondary control network)',
+                        'Standby controller\'s LEDs normal (Power - ON, Error - OFF if downloaded / Flash if un-configured, Active - OFF, Standby - ON, CN1 - Flash if communicating on the primary control network, CN2 - Flash if communicating on the secondary control network)',
+                        'Controller accessible through standard diagnostics (accessible, primary & secondary communication without increasing errors)',
+                        'All I/O cards accessible through standard diagnostics (accessible, no mismatches, no missing cards)',
+                        'Are network cables routed and installed according to the guidelines in the document Site Preparation and Design for DeltaV Digital Automation Systems?(Test CAT5 with micromapper)',
+                        'Are servers, stations, routers, and so on, cleaned up (software) and reinstalled according to station specific installation?',
+                        'Using Diagnostics, are both Primary and Secondary communications good?',
+                        'Placeholder created w/ cold restart enabled, can controller be commissioned?',
+                        'Did the controller(s) Auto-Sense their I/O cards properly when commissioned?',
+                        'Software Upgrade(flash) newly integrated controllers, RIO/CIOC, and I/O to same system revision installed if able.',
+                        'Can the controller(s) be downloaded?',
+                        'Are all controllers and I/O cards error free after being downloaded? Note: Errors due to incomplete field I/O wiring are not a concern at this time.',
+                        'Using Diagnostics, are both Primary and Secondary communications with each of the relevant Server and PC nodes good?',
+                        'Have the system diagnostics been performed and do the diagnostics readings result in expected ?',
+                        'Are servers, stations, routers, and so on, cleaned up (software) and reinstalled according to station specific installation, placeholders created with alarm and events assigned?',
+                        'Downloaded setup data to controllers, CIOC/RIO, and PP if needed, to update enumeration sets and node tables.'
+                    ]
+                }
+            ];
+
+            // Load existing checklist data
+            try {
+                const response = await fetch(`/api/ii-documents/${currentDocumentId}/ii-checklist`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const existingItems = await response.json();
+                
+                // Convert to lookup object
+                if (Array.isArray(existingItems)) {
+                    existingItems.forEach(item => {
+                        const key = `${item.section_name}|${item.item_name}`;
+                        checklistData[key] = item;
+                    });
+                } else {
+                    console.warn('Expected array but got:', typeof existingItems, existingItems);
+                }
+            } catch (error) {
+                console.error('Error loading existing checklist data:', error);
+            }
+
+            // Render each section
+            sections.forEach(section => {
+                renderChecklistSection(section);
+            });
+
+            updateProgress();
+        }
+
+        function getMeasurementFields(itemText, existing) {
+            let fields = '';
+            
+            // For impedance/grounding measurements
+            if (itemText.includes('impedance') || itemText.includes('grounding') || 
+                itemText.includes('DIG') || itemText.includes('DCG')) {
+                fields += `
+                    <div class="measurement-fields">
+                        <div class="measurement-row">
+                            <label>Ohms:</label>
+                            <input type="text" class="measurement-input" data-field="measurement_ohms" 
+                                   value="${existing.measurement_ohms || ''}" placeholder="0.00">
+                            <label>AC mA:</label>
+                            <input type="text" class="measurement-input" data-field="measurement_ac_ma" 
+                                   value="${existing.measurement_ac_ma || ''}" placeholder="0.00">
+                            <label>DC mA:</label>
+                            <input type="text" class="measurement-input" data-field="measurement_dc_ma" 
+                                   value="${existing.measurement_dc_ma || ''}" placeholder="0.00">
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // For voltage measurements
+            if (itemText.includes('voltage') || itemText.includes('VDC') || itemText.includes('VAC')) {
+                fields += `
+                    <div class="measurement-fields">
+                        <div class="measurement-row">
+                            <label>Voltage:</label>
+                            <input type="text" class="measurement-input" data-field="measurement_voltage" 
+                                   value="${existing.measurement_voltage || ''}" placeholder="0.00">
+                            <label>Frequency (Hz):</label>
+                            <input type="text" class="measurement-input" data-field="measurement_frequency" 
+                                   value="${existing.measurement_frequency || ''}" placeholder="60">
+                        </div>
+                    </div>
+                `;
+            }
+            
+            return fields;
+        }
+
+        function renderChecklistSection(section) {
+            const container = document.getElementById(section.containerId);
+            if (!container) return;
+
+            let html = '';
+            section.items.forEach((item, index) => {
+                const key = `${section.name}|${item}`;
+                const existing = checklistData[key] || {};
+                const itemId = `${section.name.replace(/\s+/g, '_')}_${index}`;
+                
+                html += `
+                    <div class="checklist-item" data-section="${section.name}" data-item="${item}">
+                        <div class="checklist-item-header">${item}</div>
+                        <div class="checklist-controls">
+                            <div class="answer-buttons">
+                                <button class="answer-btn pass ${existing.answer === 'Pass' ? 'active' : ''}" 
+                                        data-answer="Pass">Pass</button>
+                                <button class="answer-btn fail ${existing.answer === 'Fail' ? 'active' : ''}" 
+                                        data-answer="Fail">Fail</button>
+                                <button class="answer-btn na ${existing.answer === 'N.A.' ? 'active' : ''}" 
+                                        data-answer="N.A.">N.A.</button>
+                            </div>
+                            <div class="flex-1">
+                                <input type="text" placeholder="Comments..." class="form-input form-input-sm comments-input" 
+                                       value="${existing.comments || ''}">
+                            </div>
+                        </div>
+                        ${getMeasurementFields(item, existing)}
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+            
+            // Add event listeners for this section
+            container.querySelectorAll('.answer-btn').forEach(btn => {
+                btn.addEventListener('click', handleAnswerClick);
+            });
+            
+            container.querySelectorAll('.comments-input').forEach(input => {
+                input.addEventListener('change', handleCommentsChange);
+            });
+            
+            container.querySelectorAll('.measurement-input').forEach(input => {
+                input.addEventListener('change', handleMeasurementChange);
+            });
+        }
+
+        function handleAnswerClick(e) {
+            const btn = e.target;
+            const checklistItem = btn.closest('.checklist-item');
+            const sectionName = checklistItem.dataset.section;
+            const itemName = checklistItem.dataset.item;
+            const answer = btn.dataset.answer;
+            
+            // Update button states
+            checklistItem.querySelectorAll('.answer-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            
+            // Save answer
+            setAnswer(sectionName, itemName, answer);
+        }
+
+        function handleCommentsChange(e) {
+            const input = e.target;
+            const checklistItem = input.closest('.checklist-item');
+            const sectionName = checklistItem.dataset.section;
+            const itemName = checklistItem.dataset.item;
+            const comments = input.value;
+            
+            setComments(sectionName, itemName, comments);
+        }
+
+        function handleMeasurementChange(e) {
+            const input = e.target;
+            const checklistItem = input.closest('.checklist-item');
+            const sectionName = checklistItem.dataset.section;
+            const itemName = checklistItem.dataset.item;
+            
+            // Save the measurement data by triggering a save of the current answer
+            const key = `${sectionName}|${itemName}`;
+            const existing = checklistData[key] || {};
+            if (existing.answer) {
+                setAnswer(sectionName, itemName, existing.answer);
+            }
+        }
+
+        function updateProgress() {
+            const totalItems = Object.keys(checklistData).length;
+            const completedItems = Object.values(checklistData).filter(item => item.answer && item.answer !== '').length;
+            
+            const percentage = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+            
+            document.getElementById('progress-text').textContent = `${completedItems} of ${totalItems} items completed`;
+            document.getElementById('progress-fill').style.width = `${percentage}%`;
+        }
+        
+        // Utility functions
+        function showMessage(message, type = 'info') {
+            const messageEl = document.getElementById('message');
+            messageEl.textContent = message;
+            messageEl.className = `message ${type} show`;
+            setTimeout(() => {
+                messageEl.classList.remove('show');
+            }, 3000);
+        }
+
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.add('show');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('show');
+        }
+
+        function goBackToSession() {
+            if (documentData && documentData.session_id) {
+                window.location.href = `/ii-session-overview.html?id=${documentData.session_id}`;
+            }
+        }
+
+        function logout() {
+            if (confirm('Are you sure you want to logout?')) {
+                window.location.href = '/login.html';
+            }
+        }
+
+        async function setAnswer(sectionName, itemName, answer) {
+            try {
+                const key = `${sectionName}|${itemName}`;
+                const existing = checklistData[key] || {};
+                
+                // Get measurement values from the item's measurement inputs
+                const itemElement = document.querySelector(`[data-section="${sectionName}"][data-item="${itemName}"]`);
+                const measurementData = {};
+                if (itemElement) {
+                    const measurementInputs = itemElement.querySelectorAll('.measurement-input');
+                    measurementInputs.forEach(input => {
+                        const field = input.getAttribute('data-field');
+                        measurementData[field] = input.value;
+                    });
+                }
+                
+                const data = {
+                    section_name: sectionName,
+                    item_name: itemName,
+                    answer: answer,
+                    comments: existing.comments || '',
+                    performed_by: sessionData.ii_performed_by || '',
+                    date_completed: new Date().toISOString().split('T')[0],
+                    ...measurementData
+                };
+                
+                const response = await fetch(`/api/ii-documents/${currentDocumentId}/ii-checklist`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    checklistData[key] = result;
+                    updateProgress();
+                } else {
+                    throw new Error('Failed to save checklist item');
+                }
+            } catch (error) {
+                console.error('Error saving checklist item:', error);
+                showMessage('Error saving checklist item', 'error');
+            }
+        }
+
+        async function setComments(sectionName, itemName, comments) {
+            try {
+                const key = `${sectionName}|${itemName}`;
+                const existing = checklistData[key] || {};
+                
+                const data = {
+                    section_name: sectionName,
+                    item_name: itemName,
+                    answer: existing.answer || '',
+                    comments: comments,
+                    performed_by: sessionData.ii_performed_by || '',
+                    date_completed: existing.date_completed || new Date().toISOString().split('T')[0]
+                };
+                
+                const response = await fetch(`/api/ii-documents/${currentDocumentId}/ii-checklist`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    checklistData[key] = result;
+                }
+            } catch (error) {
+                console.error('Error saving comments:', error);
+            }
+        }
+
+        async function loadEquipmentUsed() {
+            try {
+                const response = await fetch(`/api/ii-documents/${currentDocumentId}/ii-equipment-used`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                equipmentUsed = Array.isArray(data) ? data : [];
+                renderEquipmentUsed();
+            } catch (error) {
+                console.error('Error loading equipment used:', error);
+                equipmentUsed = []; // Fallback to empty array
+                renderEquipmentUsed();
+            }
+        }
+
+        function renderEquipmentUsed() {
+            const tbody = document.getElementById('equipment-used-table');
+            
+            if (equipmentUsed.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-gray-500">No equipment recorded</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = equipmentUsed.map(item => `
+                <tr>
+                    <td>${item.manufacturer || ''}</td>
+                    <td>${item.type || ''}</td>
+                    <td>${item.serial_number || ''}</td>
+                    <td>${item.recalibration_date || ''}</td>
+                    <td>${item.used_in_section || ''}</td>
+                    <td>
+                        <button class="btn btn-xs btn-danger" onclick="deleteEquipment(${item.id})">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function addEquipment(e) {
+            e.preventDefault();
+            
+            try {
+                const data = {
+                    manufacturer: document.getElementById('equipment-manufacturer').value,
+                    type: document.getElementById('equipment-type').value,
+                    serial_number: document.getElementById('equipment-serial').value,
+                    recalibration_date: document.getElementById('equipment-recal-date').value,
+                    used_in_section: document.getElementById('equipment-section').value
+                };
+                
+                const response = await fetch(`/api/ii-documents/${currentDocumentId}/ii-equipment-used`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                if (response.ok) {
+                    equipmentUsed = await response.json();
+                    renderEquipmentUsed();
+                    closeModal('add-equipment-modal');
+                    document.getElementById('add-equipment-form').reset();
+                    showMessage('Equipment added successfully', 'success');
+                } else {
+                    throw new Error('Failed to add equipment');
+                }
+            } catch (error) {
+                console.error('Error adding equipment:', error);
+                showMessage('Error adding equipment', 'error');
+            }
+        }
+
+        async function deleteEquipment(itemId) {
+            if (!confirm('Are you sure you want to delete this equipment item?')) return;
+            
+            try {
+                const response = await fetch(`/api/ii-equipment-used/${itemId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    await loadEquipmentUsed();
+                    showMessage('Equipment deleted successfully', 'success');
+                } else {
+                    throw new Error('Failed to delete equipment');
+                }
+            } catch (error) {
+                console.error('Error deleting equipment:', error);
+                showMessage('Error deleting equipment', 'error');
+            }
+        }
+
+        async function completeDocument() {
+            if (!confirm('Are you sure you want to mark this document as complete? You can still edit it later if needed.')) {
+                return;
+            }
+            
+            try {
+                // Mark document as complete (you could add a 'completed' flag to documents if needed)
+                showMessage('Document marked as complete!', 'success');
+                setTimeout(() => {
+                    // Redirect back to session overview
+                    window.location.href = `/ii-session-overview.html?id=${documentData.session_id}`;
+                }, 1500);
+            } catch (error) {
+                console.error('Error completing document:', error);
+                showMessage('Error completing document', 'error');
+            }
+        }
+
+        async function exportDocumentPDF() {
+            try {
+                showMessage('Generating PDF...', 'info');
+                
+                const response = await fetch(`/api/ii-documents/${currentDocumentId}/export-pdf`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${documentData.document_name || 'II-Document'}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    showMessage('PDF exported successfully!', 'success');
+                } else {
+                    throw new Error('Failed to export PDF');
+                }
+            } catch (error) {
+                console.error('Error exporting PDF:', error);
+                showMessage('Error exporting PDF', 'error');
+            }
+        }
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cabinet PM App - Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="theme-system.js"></script>
+    <script src="sound-system.js"></script>
+</head>
+<body>
+    <!-- Professional Navigation Bar -->
+    <nav class="nav-bar">
+        <div class="nav-content">
+            <a href="/dashboard.html" class="nav-brand">ECI Cabinet PM</a>
+            <div class="nav-links">
+                <a href="/dashboard.html" class="active">Dashboard</a>
+                <a href="/customers.html">Customers</a>
+                <a href="/sessions.html">PM Sessions</a>
+                <a href="/sync">Cloud Sync</a>
+                <a href="/sync.html">File Sync (Legacy)</a>
+                <span id="username-display" class="text-gray-600 text-sm"></span>
+                <button id="logout-btn" class="btn btn-secondary">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <header class="page-header flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">Dashboard</h1>
+                <p class="text-gray-600">Professional Control Cabinet Preventative Maintenance System</p>
+            </div>
+        </header>
+
+        <main>
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="stats-card">
+                    <div class="stats-number" id="total-customers">0</div>
+                    <div class="stats-label">Total Customers</div>
+                </div>
+                <div class="stats-card">
+                    <div class="stats-number" id="total-sessions">0</div>
+                    <div class="stats-label">PM Sessions</div>
+                </div>
+                <div class="stats-card">
+                    <div class="stats-number" id="completed-sessions">0</div>
+                    <div class="stats-label">Completed</div>
+                </div>
+                <div class="stats-card">
+                    <div class="stats-number" id="total-cabinets">0</div>
+                    <div class="stats-label">Total Cabinets</div>
+                </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Recent Sessions -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-xl font-semibold text-gray-900">Recent PM Sessions</h2>
+                    </div>
+                    <div class="card-body">
+                        <div id="recent-sessions-list">
+                            <!-- Recent sessions will be loaded here -->
+                        </div>
+                        <div class="mt-4">
+                            <a href="/sessions.html" class="btn btn-secondary btn-sm">View All Sessions</a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="text-xl font-semibold text-gray-900">Quick Actions</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="flex flex-col gap-3">
+                            <a href="/customers.html" class="btn btn-primary">
+                                👥 Manage Customers
+                            </a>
+                            <button id="new-session-btn" class="btn btn-success">
+                                📋 New PM Session
+                            </button>
+                            <a href="/sessions.html" class="btn btn-secondary">
+                                📊 View All Sessions
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+
+
+    <div id="message" class="message"></div>
+
+    <script>
+        let currentCustomerId = null;
+        
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDashboardStats();
+            loadRecentSessions();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            // Logout
+            document.getElementById('logout-btn').addEventListener('click', logout);
+            
+            // New session
+            document.getElementById('new-session-btn').addEventListener('click', () => {
+                window.location.href = '/sessions.html?action=new';
+            });
+
+            // Modal close buttons
+            document.querySelectorAll('.close').forEach(closeBtn => {
+                closeBtn.addEventListener('click', (e) => {
+                    const modal = e.target.closest('.modal');
+                    closeModal(modal.id);
+                });
+            });
+
+            // Close modals when clicking outside
+            window.addEventListener('click', (e) => {
+                if (e.target.classList.contains('modal')) {
+                    closeModal(e.target.id);
+                }
+            });
+        }
+
+        async function loadDashboardStats() {
+            try {
+                console.log('DEBUG: Loading dashboard stats with optimized single API call');
+                
+                // Single efficient API call for all statistics!
+                const statsResponse = await fetch('/api/dashboard/stats');
+                const stats = await statsResponse.json();
+                
+                document.getElementById('total-customers').textContent = stats.total_customers || 0;
+                document.getElementById('total-sessions').textContent = stats.total_sessions || 0;
+                document.getElementById('completed-sessions').textContent = stats.completed_sessions || 0;
+                document.getElementById('total-cabinets').textContent = stats.total_cabinets || 0;
+                
+                console.log('DEBUG: Dashboard stats loaded successfully:', stats);
+                
+            } catch (error) {
+                console.error('Error loading dashboard stats:', error);
+                showMessage('Error loading dashboard statistics', 'error');
+            }
+        }
+        
+        async function loadRecentSessions() {
+            try {
+                console.log('DEBUG: Loading recent sessions with optimized single API call');
+                
+                // Single efficient API call for all sessions with customer info!
+                const sessionsResponse = await fetch('/api/sessions/all');
+                const allSessions = await sessionsResponse.json();
+                
+                // Sort by creation date and take first 5 (already sorted in query)
+                const recentSessions = allSessions.slice(0, 5);
+                
+                console.log('DEBUG: Loaded', allSessions.length, 'total sessions, showing', recentSessions.length, 'recent');
+                
+                const recentSessionsList = document.getElementById('recent-sessions-list');
+                recentSessionsList.innerHTML = '';
+                
+                if (recentSessions.length === 0) {
+                    recentSessionsList.innerHTML = '<p class="text-gray-500 text-sm">No recent sessions</p>';
+                } else {
+                    recentSessions.forEach(session => {
+                        const sessionDiv = document.createElement('div');
+                        sessionDiv.className = 'flex justify-between items-center py-2 border-b border-gray-100 last:border-b-0';
+                        sessionDiv.innerHTML = `
+                            <div>
+                                <div class="font-medium text-gray-900">${session.session_name}</div>
+                                <div class="text-sm text-gray-500">${session.customer_name}</div>
+                            </div>
+                            <div class="text-right">
+                                <span class="badge badge-${session.status || 'active'}">${(session.status || 'active').toUpperCase()}</span>
+                                <div class="text-xs text-gray-500 mt-1">${new Date(session.created_at).toLocaleDateString()}</div>
+                            </div>
+                        `;
+                        recentSessionsList.appendChild(sessionDiv);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading recent sessions:', error);
+            }
+        }
+
+
+
+
+
+        async function logout() {
+            try {
+                const response = await fetch('/logout', { method: 'POST' });
+                const result = await response.json();
+                
+                if (result.success) {
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                window.location.href = '/';
+            }
+        }
+
+        function openModal(modalId) {
+            document.getElementById(modalId).style.display = 'block';
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        function showMessage(text, type = 'info', duration = 5000) {
+            const message = document.getElementById('message');
+            
+            // Clear any existing timeout
+            if (message.timeout) {
+                clearTimeout(message.timeout);
+            }
+            
+            // Set message content with close button
+            message.innerHTML = `
+                ${text}
+                <button class="message-close" onclick="hideMessage()">&times;</button>
+            `;
+            message.className = `message ${type}`;
+            
+            // Auto-hide after duration
+            message.timeout = setTimeout(() => {
+                hideMessage();
+            }, duration);
+        }
+
+        function hideMessage() {
+            const message = document.getElementById('message');
+            message.textContent = '';
+            message.className = 'message';
+            if (message.timeout) {
+                clearTimeout(message.timeout);
+            }
+        }
+    </script>
+</body>
+</html> 
