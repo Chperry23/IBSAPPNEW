@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cabinet PM App - Customer Nodes</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/theme-system.js"></script>
+    <script src="/sound-system.js"></script>
+    <style>
+        /* Enhanced modal styles for better scrolling */
+        .modal {
+            overflow-y: auto;
+        }
+        
+        .modal-content {
+            margin: 2% auto;
+            max-width: 800px;
+            width: 90%;
+        }
+        
+        /* Ensure modal doesn't exceed viewport height */
+        @media (max-height: 600px) {
+            .modal-content {
+                margin: 1% auto;
+                max-height: 98vh;
+            }
+        }
+        
+        /* Node type badges */
+        .node-type-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .node-type-controller {
+            background-color: #dbeafe;
+            color: #1e40af;
+        }
+        
+        .node-type-cioc {
+            background-color: #e0e7ff;
+            color: #3730a3;
+        }
+        
+        .node-type-csls {
+            background-color: #fef3c7;
+            color: #92400e;
+        }
+        
+        .node-type-wireless {
+            background-color: #f3e8ff;
+            color: #7c3aed;
+        }
+        
+        .node-type-operator {
+            background-color: #dcfce7;
+            color: #166534;
+        }
+        
+        .node-type-application {
+            background-color: #fef3c7;
+            color: #92400e;
+        }
+        
+        .node-type-other {
+            background-color: #f3f4f6;
+            color: #374151;
+        }
+        
+        /* Redundancy badge */
+        .redundancy-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 600;
+            background-color: #fee2e2;
+            color: #dc2626;
+            margin-left: 4px;
+        }
+        
+        /* Assignment status */
+        .assignment-status {
+            font-size: 12px;
+            padding: 2px 6px;
+            border-radius: 8px;
+        }
+        
+        .assigned {
+            background-color: #fee2e2;
+            color: #dc2626;
+        }
+        
+        .available {
+            background-color: #d1fae5;
+            color: #059669;
+        }
+        
+        /* Node tables */
+        .nodes-table {
+            font-size: 13px;
+            margin-bottom: 2rem;
+        }
+        
+        .nodes-table th {
+            font-size: 12px;
+            padding: 8px;
+        }
+        
+        .nodes-table td {
+            padding: 8px;
+            vertical-align: top;
+        }
+        
+        /* Section headers */
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 2rem 0 1rem 0;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .section-count {
+            font-size: 0.875rem;
+            color: #6b7280;
+            background-color: #f3f4f6;
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+        }
+        
+        /* Filter controls */
+        .filter-controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        .filter-controls select,
+        .filter-controls input {
+            min-width: 150px;
+        }
+        
+        /* Empty state */
+        .empty-section {
+            text-align: center;
+            padding: 2rem;
+            color: #6b7280;
+            background-color: #f9fafb;
+            border-radius: 0.5rem;
+            margin-bottom: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-left">
+                <h1>Customer Nodes</h1>
+                <div class="breadcrumb">
+                    <a href="/pages/customers.html">Customers</a>
+                    <span>&gt;</span>
+                    <span id="customer-name-breadcrumb">Loading...</span>
+                    <span>&gt;</span>
+                    <span>Nodes</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <button id="back-to-customer" class="btn btn-secondary">← Back to Customers</button>
+                <button id="logout-btn" class="btn btn-outline">Logout</button>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="content-header">
+                <div class="content-title">
+                    <h2 id="page-title">Node Management</h2>
+                    <p class="text-gray-600">Manage equipment nodes and controller assignments</p>
+                </div>
+                <div class="content-actions">
+                    <button id="import-nodes-btn" class="btn btn-primary">Import Nodes</button>
+                </div>
+            </div>
+
+            <div class="filter-controls">
+                <input type="text" id="search-nodes" placeholder="Search nodes..." class="form-input">
+                <select id="filter-assignment" class="form-select">
+                    <option value="">All Assignments</option>
+                    <option value="available">Available</option>
+                    <option value="assigned">Assigned</option>
+                </select>
+                <button id="clear-filters" class="btn btn-outline btn-sm">Clear Filters</button>
+            </div>
+
+            <div class="content-body">
+                <div id="nodes-container">
+                    <!-- Controllers Section -->
+                    <div class="section-header">
+                        <h3 class="section-title">Controllers & Control Hardware</h3>
+                        <span id="controllers-count" class="section-count">0 items</span>
+                    </div>
+                    
+                    <div id="controllers-table-container" class="hidden">
+                        <table class="table nodes-table">
+                            <thead>
+                                <tr>
+                                    <th>Node Name</th>
+                                    <th>Type</th>
+                                    <th>Model</th>
+                                    <th>Serial</th>
+                                    <th>Firmware</th>
+                                    <th>Status</th>
+                                    <th>Assignment</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="controllers-table-body">
+                                <!-- Controllers will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div id="no-controllers" class="empty-section hidden">
+                        <h4>No Controllers Found</h4>
+                        <p>Import nodes to see control hardware here.</p>
+                    </div>
+
+                    <!-- Workstations & Servers Section -->
+                    <div class="section-header">
+                        <h3 class="section-title">Workstations & Servers</h3>
+                        <span id="workstations-count" class="section-count">0 items</span>
+                    </div>
+                    
+                    <div id="workstations-table-container" class="hidden">
+                        <table class="table nodes-table">
+                            <thead>
+                                <tr>
+                                    <th>Node Name</th>
+                                    <th>Type</th>
+                                    <th>Model</th>
+                                    <th>Serial</th>
+                                    <th>OS Info</th>
+                                    <th>Status</th>
+                                    <th>Assignment</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="workstations-table-body">
+                                <!-- Workstations will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div id="no-workstations" class="empty-section hidden">
+                        <h4>No Workstations Found</h4>
+                        <p>Import nodes to see workstations and servers here.</p>
+                    </div>
+
+                    <div id="no-nodes" class="no-data">
+                        <h3>No Nodes Found</h3>
+                        <p>Import your first node list to get started with equipment tracking.</p>
+                        <button class="btn btn-primary" onclick="openModal('import-nodes-modal')">Import Nodes</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Import Nodes Modal -->
+    <div id="import-nodes-modal" class="modal">
+        <div class="modal-content" style="max-height: 90vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="flex-shrink: 0;">
+                <h3>Import Customer Nodes</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body" style="flex: 1; overflow-y: auto; max-height: calc(90vh - 140px);">
+                <div class="mb-4">
+                    <p class="text-gray-600 mb-2">Import nodes from CSV file or paste data directly:</p>
+                    <p class="text-sm text-gray-500">Expected format: Node Name, Type, Model, Description, Serial, Firmware, Version, Status, Redundant, OS Name, OS Service Pack, Bios Version, OEM Type Description</p>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Upload CSV File</label>
+                    <input type="file" id="nodes-csv-file" accept=".csv,.txt" class="form-input">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Or Paste Data</label>
+                    <textarea id="nodes-bulk-data" rows="8" class="form-textarea" 
+                              placeholder="Example:&#10;CTRL_A,Controller,VE3007,DeltaV MX Controller,K245060181,Rev 7.19,15.0.0.8530.xr,Current,Yes,NA,NA,,,&#10;WS1,Local Operator,,Windows 10 Enterprise,Not available,,15.0.0.8521.xr,Unclassified,No,Windows 10,None,Microsoft Corporation,Virtual Machine"></textarea>
+                </div>
+                
+                <div id="nodes-import-preview" class="hidden">
+                    <h4 class="text-lg font-semibold mb-2">Preview:</h4>
+                    <div id="nodes-preview-content" class="bg-gray-50 p-3 rounded border" style="max-height: 200px; overflow-y: auto;"></div>
+                </div>
+                
+                <div id="import-progress" class="hidden">
+                    <div class="progress-bar">
+                        <div id="import-progress-bar" class="progress-fill"></div>
+                    </div>
+                    <p id="import-progress-text" class="text-sm text-gray-600 mt-2"></p>
+                </div>
+            </div>
+            <div class="modal-footer" style="flex-shrink: 0; border-top: 1px solid #e5e7eb; padding-top: 1rem; margin-top: 1rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('import-nodes-modal')">Cancel</button>
+                <button type="button" id="nodes-preview-btn" class="btn btn-outline">Preview</button>
+                <button type="button" id="nodes-import-btn" class="btn btn-primary" disabled>Import</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="message" class="message"></div>
+
+    <script>
+        let currentCustomerId = null;
+        let currentCustomerName = '';
+        let nodes = [];
+        let filteredNodes = [];
+        let controllers = [];
+        let workstations = [];
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            parseUrlParams();
+            setupEventListeners();
+            loadNodes();
+        });
+
+        function parseUrlParams() {
+            const urlParams = new URLSearchParams(window.location.search);
+            currentCustomerId = urlParams.get('customer');
+            currentCustomerName = urlParams.get('name') || 'Unknown Customer';
+            
+            if (!currentCustomerId) {
+                window.location.href = '/pages/customers.html';
+                return;
+            }
+            
+            // Update page elements
+            document.getElementById('customer-name-breadcrumb').textContent = currentCustomerName;
+            document.getElementById('page-title').textContent = `${currentCustomerName} - Nodes`;
+            document.title = `Cabinet PM App - ${currentCustomerName} Nodes`;
+        }
+
+        function setupEventListeners() {
+            // Navigation
+            document.getElementById('logout-btn').addEventListener('click', logout);
+            document.getElementById('back-to-customer').addEventListener('click', () => {
+                window.location.href = '/pages/customers.html';
+            });
+            
+            // Import nodes
+            document.getElementById('import-nodes-btn').addEventListener('click', () => {
+                openModal('import-nodes-modal');
+            });
+            
+            // Filtering and search
+            document.getElementById('search-nodes').addEventListener('input', filterNodes);
+            document.getElementById('filter-assignment').addEventListener('change', filterNodes);
+            document.getElementById('clear-filters').addEventListener('click', clearFilters);
+            
+            // Import functionality
+            document.getElementById('nodes-csv-file').addEventListener('change', handleNodesFileUpload);
+            document.getElementById('nodes-preview-btn').addEventListener('click', previewNodesImport);
+            document.getElementById('nodes-import-btn').addEventListener('click', importNodes);
+            
+            // Modal close buttons
+            document.querySelectorAll('.close').forEach(closeBtn => {
+                closeBtn.addEventListener('click', (e) => {
+                    const modal = e.target.closest('.modal');
+                    closeModal(modal.id);
+                });
+            });
+
+            // Close modals when clicking outside
+            window.addEventListener('click', (e) => {
+                if (e.target.classList.contains('modal')) {
+                    closeModal(e.target.id);
+                }
+            });
+        }
+
+        async function loadNodes() {
+            try {
+                const response = await fetch(`/api/customers/${currentCustomerId}/nodes`);
+                if (!response.ok) throw new Error('Failed to load nodes');
+                
+                nodes = await response.json();
+                processNodes();
+                displayNodes();
+            } catch (error) {
+                console.error('Error loading nodes:', error);
+                showMessage('Error loading nodes', 'error');
+            }
+        }
+
+        function processNodes() {
+            // Separate controllers and workstations
+            const allControllers = [];
+            const allWorkstations = [];
+            const partnersToSkip = new Set();
+
+            // First pass: identify partners to skip
+            nodes.forEach(node => {
+                if (node.node_name.includes('-partner')) {
+                    partnersToSkip.add(node.node_name);
+                }
+            });
+
+            // Second pass: categorize nodes and handle redundancy
+            nodes.forEach(node => {
+                // Skip partner nodes as they'll be handled as redundancy badges
+                if (partnersToSkip.has(node.node_name)) {
+                    return;
+                }
+
+                // Check if this node has a partner
+                const partnerName = node.node_name + '-partner';
+                const hasPartner = nodes.some(n => n.node_name === partnerName);
+                
+                // Add redundancy info
+                const nodeWithRedundancy = {
+                    ...node,
+                    hasPartner: hasPartner
+                };
+
+                // Categorize nodes
+                if (isControllerType(node.node_type)) {
+                    allControllers.push(nodeWithRedundancy);
+                } else if (isWorkstationType(node.node_type)) {
+                    allWorkstations.push(nodeWithRedundancy);
+                }
+            });
+
+            controllers = allControllers;
+            workstations = allWorkstations;
+            
+            // Apply current filters
+            filterNodes();
+        }
+
+        function isControllerType(nodeType) {
+            const controllerTypes = [
+                'Controller',
+                'CIOC',
+                'CSLS',
+                'Wireless Gateway',
+                'Charm Smart Logic Solver'
+            ];
+            return controllerTypes.some(type => 
+                nodeType.toLowerCase().includes(type.toLowerCase())
+            );
+        }
+
+        function isWorkstationType(nodeType) {
+            const workstationTypes = [
+                'Local Operator',
+                'Local Application',
+                'Local ProfessionalPlus',
+                'Server',
+                'Workstation'
+            ];
+            return workstationTypes.some(type => 
+                nodeType.toLowerCase().includes(type.toLowerCase())
+            );
+        }
+
+        function displayNodes() {
+            const noNodes = document.getElementById('no-nodes');
+            
+            if (nodes.length === 0) {
+                noNodes.classList.remove('hidden');
+                hideAllTables();
+                return;
+            }
+            
+            noNodes.classList.add('hidden');
+            displayControllers();
+            displayWorkstations();
+        }
+
+        function displayControllers() {
+            const tableContainer = document.getElementById('controllers-table-container');
+            const noControllers = document.getElementById('no-controllers');
+            const tableBody = document.getElementById('controllers-table-body');
+            const countElement = document.getElementById('controllers-count');
+            
+            const filteredControllers = controllers.filter(node => matchesFilters(node));
+            countElement.textContent = `${filteredControllers.length} items`;
+            
+            if (filteredControllers.length === 0) {
+                tableContainer.classList.add('hidden');
+                noControllers.classList.remove('hidden');
+                return;
+            }
+            
+            tableContainer.classList.remove('hidden');
+            noControllers.classList.add('hidden');
+            
+            tableBody.innerHTML = '';
+            
+            filteredControllers.forEach(node => {
+                const row = document.createElement('tr');
+                const nodeTypeBadge = getNodeTypeBadge(node.node_type);
+                const redundancyBadge = node.hasPartner ? '<span class="redundancy-badge">REDUNDANT</span>' : '';
+                const assignmentStatus = node.assigned_cabinet_id ? 
+                    `<span class="assignment-status assigned">Assigned to ${node.cabinet_name || 'Cabinet'}</span>` :
+                    `<span class="assignment-status available">Available</span>`;
+                
+                row.innerHTML = `
+                    <td><strong>${node.node_name}</strong>${redundancyBadge}</td>
+                    <td>${nodeTypeBadge}</td>
+                    <td>${node.model || '-'}</td>
+                    <td>${node.serial || '-'}</td>
+                    <td>${node.firmware || '-'}</td>
+                    <td>${node.status || '-'}</td>
+                    <td>${assignmentStatus}</td>
+                    <td>
+                        ${node.assigned_cabinet_id ? 
+                            `<button class="btn btn-sm btn-outline" onclick="unassignNode(${node.id})">Unassign</button>` :
+                            `<button class="btn btn-sm btn-success" onclick="showAssignDialog(${node.id})">Assign</button>`
+                        }
+                        <button class="btn btn-sm btn-danger btn-minimal" onclick="deleteNode(${node.id})" title="Delete Node">×</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        function displayWorkstations() {
+            const tableContainer = document.getElementById('workstations-table-container');
+            const noWorkstations = document.getElementById('no-workstations');
+            const tableBody = document.getElementById('workstations-table-body');
+            const countElement = document.getElementById('workstations-count');
+            
+            const filteredWorkstations = workstations.filter(node => matchesFilters(node));
+            countElement.textContent = `${filteredWorkstations.length} items`;
+            
+            if (filteredWorkstations.length === 0) {
+                tableContainer.classList.add('hidden');
+                noWorkstations.classList.remove('hidden');
+                return;
+            }
+            
+            tableContainer.classList.remove('hidden');
+            noWorkstations.classList.add('hidden');
+            
+            tableBody.innerHTML = '';
+            
+            filteredWorkstations.forEach(node => {
+                const row = document.createElement('tr');
+                const nodeTypeBadge = getNodeTypeBadge(node.node_type);
+                const osInfo = [node.os_name, node.os_service_pack, node.bios_version].filter(Boolean).join(' / ') || '-';
+                const assignmentStatus = node.assigned_cabinet_id ? 
+                    `<span class="assignment-status assigned">Assigned to ${node.cabinet_name || 'Cabinet'}</span>` :
+                    `<span class="assignment-status available">Available</span>`;
+                
+                row.innerHTML = `
+                    <td><strong>${node.node_name}</strong></td>
+                    <td>${nodeTypeBadge}</td>
+                    <td>${node.model || node.oem_type_description || '-'}</td>
+                    <td>${node.serial || '-'}</td>
+                    <td>${osInfo}</td>
+                    <td>${node.status || '-'}</td>
+                    <td>${assignmentStatus}</td>
+                    <td>
+                        ${node.assigned_cabinet_id ? 
+                            `<button class="btn btn-sm btn-outline" onclick="unassignNode(${node.id})">Unassign</button>` :
+                            `<button class="btn btn-sm btn-success" onclick="showAssignDialog(${node.id})">Assign</button>`
+                        }
+                        <button class="btn btn-sm btn-danger btn-minimal" onclick="deleteNode(${node.id})" title="Delete Node">×</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        function hideAllTables() {
+            document.getElementById('controllers-table-container').classList.add('hidden');
+            document.getElementById('workstations-table-container').classList.add('hidden');
+            document.getElementById('no-controllers').classList.add('hidden');
+            document.getElementById('no-workstations').classList.add('hidden');
+        }
+
+        function getNodeTypeBadge(nodeType) {
+            let badgeClass = 'node-type-other';
+            
+            if (nodeType === 'Controller') badgeClass = 'node-type-controller';
+            else if (nodeType.includes('CIOC') || nodeType.includes('Charm')) badgeClass = 'node-type-cioc';
+            else if (nodeType.includes('CSLS')) badgeClass = 'node-type-csls';
+            else if (nodeType.includes('Wireless')) badgeClass = 'node-type-wireless';
+            else if (nodeType.includes('Operator')) badgeClass = 'node-type-operator';
+            else if (nodeType.includes('Application')) badgeClass = 'node-type-application';
+            
+            return `<span class="node-type-badge ${badgeClass}">${nodeType}</span>`;
+        }
+
+        function matchesFilters(node) {
+            const searchTerm = document.getElementById('search-nodes').value.toLowerCase();
+            const assignmentFilter = document.getElementById('filter-assignment').value;
+            
+            const matchesSearch = !searchTerm || 
+                node.node_name.toLowerCase().includes(searchTerm) ||
+                (node.model && node.model.toLowerCase().includes(searchTerm)) ||
+                (node.serial && node.serial.toLowerCase().includes(searchTerm)) ||
+                (node.node_type && node.node_type.toLowerCase().includes(searchTerm));
+            
+            const matchesAssignment = !assignmentFilter || 
+                (assignmentFilter === 'available' && !node.assigned_cabinet_id) ||
+                (assignmentFilter === 'assigned' && node.assigned_cabinet_id);
+            
+            return matchesSearch && matchesAssignment;
+        }
+
+        function filterNodes() {
+            displayNodes();
+        }
+
+        function clearFilters() {
+            document.getElementById('search-nodes').value = '';
+            document.getElementById('filter-assignment').value = '';
+            displayNodes();
+        }
+
+        function handleNodesFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('nodes-bulk-data').value = e.target.result;
+            };
+            reader.readAsText(file);
+        }
+
+        function previewNodesImport() {
+            const data = document.getElementById('nodes-bulk-data').value.trim();
+            if (!data) {
+                showMessage('Please provide data to preview', 'error');
+                return;
+            }
+            
+            const parsedNodes = parseNodesData(data);
+            if (parsedNodes.length === 0) {
+                showMessage('No valid nodes found in the data', 'error');
+                return;
+            }
+            
+            const previewContent = document.getElementById('nodes-preview-content');
+            previewContent.innerHTML = `
+                <div class="mb-2"><strong>Found ${parsedNodes.length} nodes:</strong></div>
+                <div style="max-height: 150px; overflow-y: auto;">
+                    ${parsedNodes.map((node, index) => `
+                        <div class="p-2 border-b text-sm">
+                            <strong>${node.node_name}</strong> - ${node.node_type} 
+                            ${node.model ? `(${node.model})` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            
+            document.getElementById('nodes-import-preview').classList.remove('hidden');
+            document.getElementById('nodes-import-btn').disabled = false;
+        }
+
+        function parseNodesData(data) {
+            const lines = data.split('\n').filter(line => line.trim());
+            const nodes = [];
+            
+            lines.forEach((line, index) => {
+                if (index === 0 && line.toLowerCase().includes('node name')) {
+                    return; // Skip header row
+                }
+                
+                const parts = line.split(',').map(part => part.trim());
+                if (parts.length >= 2) {
+                    nodes.push({
+                        node_name: parts[0] || '',
+                        node_type: parts[1] || '',
+                        model: parts[2] || null,
+                        description: parts[3] || null,
+                        serial: parts[4] || null,
+                        firmware: parts[5] || null,
+                        version: parts[6] || null,
+                        status: parts[7] || null,
+                        redundant: parts[8] || null,
+                        os_name: parts[9] || null,
+                        os_service_pack: parts[10] || null,
+                        bios_version: parts[11] || null,
+                        oem_type_description: parts[12] || null
+                    });
+                }
+            });
+            
+            return nodes;
+        }
+
+        async function importNodes() {
+            const data = document.getElementById('nodes-bulk-data').value.trim();
+            if (!data) {
+                if (typeof playErrorSound === 'function') {
+                    playErrorSound();
+                }
+                showMessage('Please provide data to import', 'error');
+                return;
+            }
+            
+            const parsedNodes = parseNodesData(data);
+            if (parsedNodes.length === 0) {
+                if (typeof playErrorSound === 'function') {
+                    playErrorSound();
+                }
+                showMessage('No valid nodes found in the data', 'error');
+                return;
+            }
+            
+            const importBtn = document.getElementById('nodes-import-btn');
+            const progressDiv = document.getElementById('import-progress');
+            const progressBar = document.getElementById('import-progress-bar');
+            const progressText = document.getElementById('import-progress-text');
+            
+            importBtn.disabled = true;
+            progressDiv.classList.remove('hidden');
+            progressText.textContent = 'Importing nodes...';
+            
+            try {
+                const response = await fetch(`/api/customers/${currentCustomerId}/nodes/import`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ nodes: parsedNodes })
+                });
+                
+                const result = await response.json();
+                
+                if (result.results) {
+                    const successful = result.results.filter(r => r.success).length;
+                    const failed = result.results.filter(r => !r.success).length;
+                    
+                    progressBar.style.width = '100%';
+                    progressText.textContent = `Successfully imported ${successful} of ${result.results.length} nodes`;
+                    
+                    if (failed > 0) {
+                        console.warn('Import errors:', result.results.filter(r => !r.success));
+                        if (typeof playErrorSound === 'function') {
+                            playErrorSound();
+                        }
+                        showMessage(`Imported ${successful} nodes with ${failed} errors`, 'warning');
+                    } else {
+                        if (typeof playSuccessSound === 'function') {
+                            playSuccessSound();
+                        }
+                        showMessage(`Successfully imported ${successful} nodes`, 'success');
+                    }
+                    
+                    setTimeout(() => {
+                        closeModal('import-nodes-modal');
+                        loadNodes();
+                    }, 2000);
+                } else {
+                    throw new Error(result.error || 'Import failed');
+                }
+            } catch (error) {
+                console.error('Import error:', error);
+                if (typeof playErrorSound === 'function') {
+                    playErrorSound();
+                }
+                showMessage('Error importing nodes: ' + error.message, 'error');
+            } finally {
+                importBtn.disabled = false;
+                setTimeout(() => {
+                    progressDiv.classList.add('hidden');
+                    progressBar.style.width = '0%';
+                }, 3000);
+            }
+        }
+
+        async function unassignNode(nodeId) {
+            if (!confirm('Are you sure you want to unassign this node?')) return;
+            
+            try {
+                const response = await fetch(`/api/nodes/${nodeId}/unassign`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                if (response.ok) {
+                    if (typeof playSuccessSound === 'function') {
+                        playSuccessSound();
+                    }
+                    showMessage('Node unassigned successfully', 'success');
+                    loadNodes();
+                } else {
+                    throw new Error('Failed to unassign node');
+                }
+            } catch (error) {
+                console.error('Error unassigning node:', error);
+                if (typeof playErrorSound === 'function') {
+                    playErrorSound();
+                }
+                showMessage('Error unassigning node', 'error');
+            }
+        }
+
+        async function deleteNode(nodeId) {
+            if (!confirm('Are you sure you want to delete this node? This action cannot be undone.')) return;
+            
+            try {
+                const response = await fetch(`/api/nodes/${nodeId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    if (typeof playSuccessSound === 'function') {
+                        playSuccessSound();
+                    }
+                    showMessage('Node deleted successfully', 'success');
+                    loadNodes();
+                } else {
+                    throw new Error('Failed to delete node');
+                }
+            } catch (error) {
+                console.error('Error deleting node:', error);
+                if (typeof playErrorSound === 'function') {
+                    playErrorSound();
+                }
+                showMessage('Error deleting node', 'error');
+            }
+        }
+
+        function showAssignDialog(nodeId) {
+            // For now, just show a message that this feature is coming
+            // In the future, we could show a modal with available cabinets
+            showMessage('Controller assignment will be available when editing cabinets', 'info');
+        }
+
+        // Utility functions
+        function openModal(modalId) {
+            document.getElementById(modalId).style.display = 'block';
+        }
+
+        function closeModal(modalId) {
+            const modal = document.getElementById(modalId);
+            modal.style.display = 'none';
+            
+            // Reset import modal
+            if (modalId === 'import-nodes-modal') {
+                document.getElementById('nodes-csv-file').value = '';
+                document.getElementById('nodes-bulk-data').value = '';
+                document.getElementById('nodes-import-preview').classList.add('hidden');
+                document.getElementById('nodes-import-btn').disabled = true;
+                document.getElementById('import-progress').classList.add('hidden');
+            }
+        }
+
+        function showMessage(message, type = 'info') {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = message;
+            messageDiv.className = `message ${type}`;
+            messageDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        async function logout() {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+                window.location.href = '/';
+            } catch (error) {
+                console.error('Logout error:', error);
+                window.location.href = '/';
+            }
+        }
+    </script>
+</body>
+</html>

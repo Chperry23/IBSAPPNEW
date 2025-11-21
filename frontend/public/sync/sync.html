@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Sync - Cabinet PM</title>
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .sync-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .sync-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .sync-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        
+        .sync-status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .sync-status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .sync-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .sync-btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .sync-btn.pull {
+            background: #007bff;
+            color: white;
+        }
+        
+        .sync-btn.pull:hover {
+            background: #0056b3;
+        }
+        
+        .sync-btn.push {
+            background: #28a745;
+            color: white;
+        }
+        
+        .sync-btn.push:hover {
+            background: #1e7e34;
+        }
+        
+        .sync-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .sync-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-item {
+            text-align: center;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+        
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+        }
+        
+        .config-section {
+            border-top: 1px solid #dee2e6;
+            padding-top: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .log-section {
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 15px;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .log-entry.success {
+            color: #28a745;
+        }
+        
+        .log-entry.error {
+            color: #dc3545;
+        }
+        
+        .log-entry.info {
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="sync-container">
+        <div class="header-section">
+            <h1>Database Synchronization</h1>
+            <p>Manage synchronization between tablet and master database</p>
+        </div>
+
+        <!-- Sync Status -->
+        <div class="sync-card">
+            <h2>Sync Status</h2>
+            <div id="sync-status" class="sync-status disconnected">
+                <span>🔄 Checking connection...</span>
+                <button id="refresh-status" class="btn btn-sm">Refresh</button>
+            </div>
+            
+            <div class="sync-stats" id="sync-stats">
+                <div class="stat-item">
+                    <div class="stat-number" id="unsynced-total">-</div>
+                    <div class="stat-label">Unsynced Records</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="unsynced-sessions">-</div>
+                    <div class="stat-label">Sessions</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="unsynced-cabinets">-</div>
+                    <div class="stat-label">Cabinets</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="unsynced-maintenance">-</div>
+                    <div class="stat-label">Maintenance</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sync Actions -->
+        <div class="sync-card">
+            <h2>Sync Actions</h2>
+            <div class="sync-actions">
+                <button id="pull-btn" class="sync-btn pull">
+                    📥 Pull from Master
+                    <div style="font-size: 12px; margin-top: 5px;">Download fresh customer/node data</div>
+                </button>
+                <button id="push-btn" class="sync-btn push">
+                    📤 Push to Master
+                    <div style="font-size: 12px; margin-top: 5px;">Upload your PM session data</div>
+                </button>
+            </div>
+            
+            <div style="text-align: center; margin-top: 15px;">
+                <button id="setup-btn" class="btn btn-secondary">
+                    🔧 Initial Setup
+                </button>
+            </div>
+        </div>
+
+        <!-- Configuration -->
+        <div class="sync-card">
+            <h2>Configuration</h2>
+            <div class="config-section">
+                <div class="form-group">
+                    <label for="server-folder-path" class="form-label">Server Folder Path</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="server-folder-path" class="form-input" 
+                               placeholder="I:\ENG\IBS\APP TEST or \\server\share\cabinet_pm"
+                               style="flex: 1;">
+                        <button id="browse-folder-btn" class="btn btn-secondary" type="button">Browse...</button>
+                    </div>
+                    <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                        This is the shared network folder where the master database will be stored
+                    </small>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button id="test-connection-btn" class="btn btn-secondary">Test Connection</button>
+                    <button id="configure-btn" class="btn btn-primary">Save Configuration</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Activity Log -->
+        <div class="sync-card">
+            <h2>Activity Log</h2>
+            <div id="sync-log" class="log-section">
+                <div class="log-entry info">System ready - waiting for sync operations...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Sync management functionality
+        let syncInProgress = false;
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshStatus();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            document.getElementById('refresh-status').addEventListener('click', refreshStatus);
+            document.getElementById('pull-btn').addEventListener('click', pullFromMaster);
+            document.getElementById('push-btn').addEventListener('click', pushToMaster);
+            document.getElementById('setup-btn').addEventListener('click', runSetup);
+            document.getElementById('configure-btn').addEventListener('click', saveConfiguration);
+            document.getElementById('test-connection-btn').addEventListener('click', testConnection);
+            document.getElementById('browse-folder-btn').addEventListener('click', browseFolder);
+        }
+
+        async function browseFolder() {
+            try {
+                // Create a hidden file input for directory selection
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.webkitdirectory = true;
+                input.style.display = 'none';
+                
+                input.addEventListener('change', function(event) {
+                    if (event.target.files.length > 0) {
+                        // Get the folder path from the first file
+                        const file = event.target.files[0];
+                        const folderPath = file.webkitRelativePath.split('/')[0];
+                        const fullPath = file.path ? file.path.replace(/[^\/\\]+$/, '') : '';
+                        
+                        // Try to extract the full folder path
+                        if (fullPath) {
+                            document.getElementById('server-folder-path').value = fullPath;
+                        } else {
+                            // Fallback: ask user to manually enter the path
+                            const userPath = prompt('Please enter the full path to the folder you selected:', '');
+                            if (userPath) {
+                                document.getElementById('server-folder-path').value = userPath;
+                            }
+                        }
+                        logEntry('info', 'Folder selected: ' + (fullPath || folderPath));
+                    }
+                });
+                
+                // Trigger the file dialog
+                document.body.appendChild(input);
+                input.click();
+                document.body.removeChild(input);
+                
+            } catch (error) {
+                logEntry('error', 'Folder browsing not supported in this browser. Please enter path manually.');
+                
+                // Fallback: provide common path examples
+                const commonPaths = [
+                    'I:\\ENG\\IBS\\APP TEST',
+                    'C:\\Shared\\CabinetPM',
+                    '\\\\server\\share\\cabinet_pm'
+                ];
+                
+                const selectedPath = prompt(
+                    'Please enter the server folder path. Common examples:\n\n' + 
+                    commonPaths.join('\n') + '\n\nEnter your path:'
+                );
+                
+                if (selectedPath) {
+                    document.getElementById('server-folder-path').value = selectedPath;
+                    logEntry('info', 'Manual path entered: ' + selectedPath);
+                }
+            }
+        }
+
+        async function refreshStatus() {
+            try {
+                const response = await fetch('/api/sync/status');
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateSyncStatus(true, data.status);
+                } else {
+                    updateSyncStatus(false, null);
+                }
+            } catch (error) {
+                updateSyncStatus(false, null);
+                logEntry('error', `Error checking sync status: ${error.message}`);
+            }
+        }
+
+        function updateSyncStatus(connected, status) {
+            const statusElement = document.getElementById('sync-status');
+            
+            if (connected) {
+                statusElement.className = 'sync-status connected';
+                statusElement.innerHTML = `
+                    <span>✅ Connected to master database</span>
+                    <button id="refresh-status" class="btn btn-sm">Refresh</button>
+                `;
+                
+                // Update stats
+                if (status) {
+                    document.getElementById('unsynced-total').textContent = status.totalUnsynced;
+                    document.getElementById('unsynced-sessions').textContent = status.unsyncedRecords.sessions || 0;
+                    document.getElementById('unsynced-cabinets').textContent = status.unsyncedRecords.cabinets || 0;
+                    document.getElementById('unsynced-maintenance').textContent = 
+                        (status.unsyncedRecords.session_node_maintenance || 0) + 
+                        (status.unsyncedRecords.session_node_tracker || 0);
+                }
+            } else {
+                statusElement.className = 'sync-status disconnected';
+                statusElement.innerHTML = `
+                    <span>❌ Cannot connect to master database</span>
+                    <button id="refresh-status" class="btn btn-sm">Refresh</button>
+                `;
+                
+                // Clear stats
+                document.getElementById('unsynced-total').textContent = '-';
+                document.getElementById('unsynced-sessions').textContent = '-';
+                document.getElementById('unsynced-cabinets').textContent = '-';
+                document.getElementById('unsynced-maintenance').textContent = '-';
+            }
+            
+            // Re-attach event listener
+            document.getElementById('refresh-status').addEventListener('click', refreshStatus);
+        }
+
+        async function pullFromMaster() {
+            if (syncInProgress) return;
+            
+            syncInProgress = true;
+            updateButtonStates();
+            logEntry('info', 'Starting pull from master...');
+            
+            try {
+                const response = await fetch('/api/sync/pull', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    logEntry('success', 'Successfully pulled data from master');
+                    refreshStatus();
+                } else {
+                    logEntry('error', `Pull failed: ${data.error}`);
+                }
+            } catch (error) {
+                logEntry('error', `Pull failed: ${error.message}`);
+            } finally {
+                syncInProgress = false;
+                updateButtonStates();
+            }
+        }
+
+        async function pushToMaster() {
+            if (syncInProgress) return;
+            
+            syncInProgress = true;
+            updateButtonStates();
+            logEntry('info', 'Starting push to master...');
+            
+            try {
+                const response = await fetch('/api/sync/push', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    const total = Object.values(data.results).reduce((sum, count) => sum + count, 0);
+                    logEntry('success', `Successfully pushed ${total} records to master`);
+                    refreshStatus();
+                } else {
+                    logEntry('error', `Push failed: ${data.error}`);
+                }
+            } catch (error) {
+                logEntry('error', `Push failed: ${error.message}`);
+            } finally {
+                syncInProgress = false;
+                updateButtonStates();
+            }
+        }
+
+        async function runSetup() {
+            if (syncInProgress) return;
+            
+            syncInProgress = true;
+            updateButtonStates();
+            logEntry('info', 'Running initial setup...');
+            
+            try {
+                const response = await fetch('/api/sync/setup', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    logEntry('success', 'Initial setup completed successfully');
+                    refreshStatus();
+                } else {
+                    logEntry('error', `Setup failed: ${data.error}`);
+                }
+            } catch (error) {
+                logEntry('error', `Setup failed: ${error.message}`);
+            } finally {
+                syncInProgress = false;
+                updateButtonStates();
+            }
+        }
+
+        async function saveConfiguration() {
+            const serverFolderPath = document.getElementById('server-folder-path').value.trim();
+            
+            if (!serverFolderPath) {
+                logEntry('error', 'Please enter a server folder path');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/sync/configure', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ serverFolderPath })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    logEntry('success', 'Configuration saved successfully');
+                    refreshStatus();
+                } else {
+                    logEntry('error', `Configuration failed: ${data.error}`);
+                }
+            } catch (error) {
+                logEntry('error', `Configuration failed: ${error.message}`);
+            }
+        }
+
+        async function testConnection() {
+            const serverFolderPath = document.getElementById('server-folder-path').value.trim();
+            if (!serverFolderPath) {
+                logEntry('error', 'Please enter a server folder path to test connection.');
+                return;
+            }
+
+            // First configure the path, then test
+            try {
+                const configResponse = await fetch('/api/sync/configure', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ serverFolderPath })
+                });
+                
+                const configData = await configResponse.json();
+                
+                if (configData.success) {
+                    logEntry('success', `Connection to ${serverFolderPath} successful!`);
+                } else {
+                    logEntry('error', `Connection failed: ${configData.error}`);
+                }
+            } catch (error) {
+                logEntry('error', `Connection test failed: ${error.message}`);
+            }
+        }
+
+        function updateButtonStates() {
+            const buttons = ['pull-btn', 'push-btn', 'setup-btn', 'configure-btn', 'test-connection-btn'];
+            buttons.forEach(id => {
+                document.getElementById(id).disabled = syncInProgress;
+            });
+        }
+
+        function logEntry(type, message) {
+            const logSection = document.getElementById('sync-log');
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${timestamp}] ${message}`;
+            
+            logSection.appendChild(entry);
+            logSection.scrollTop = logSection.scrollHeight;
+            
+            // Keep only last 50 entries
+            while (logSection.children.length > 50) {
+                logSection.removeChild(logSection.firstChild);
+            }
+        }
+    </script>
+</body>
+</html> 

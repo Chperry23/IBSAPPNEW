@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MongoDB Server Sync - Cabinet PM</title>
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .sync-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .sync-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .sync-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        
+        .sync-status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .sync-status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .sync-status.not-configured {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .sync-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .sync-btn {
+            padding: 15px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            text-align: center;
+        }
+        
+        .sync-btn.pull {
+            background: #007bff;
+            color: white;
+        }
+        
+        .sync-btn.pull:hover:not(:disabled) {
+            background: #0056b3;
+        }
+        
+        .sync-btn.push {
+            background: #28a745;
+            color: white;
+        }
+        
+        .sync-btn.push:hover:not(:disabled) {
+            background: #1e7e34;
+        }
+        
+        .sync-btn.full-sync {
+            background: #6f42c1;
+            color: white;
+        }
+        
+        .sync-btn.full-sync:hover:not(:disabled) {
+            background: #5a2d91;
+        }
+        
+        .sync-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        
+        .sync-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-item {
+            text-align: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+        
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            margin-top: 5px;
+        }
+        
+        .device-info {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            margin-bottom: 15px;
+        }
+        
+        .config-section {
+            border-top: 1px solid #dee2e6;
+            padding-top: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .form-input.connection-string {
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .log-section {
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 15px;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .log-entry.success {
+            color: #28a745;
+        }
+        
+        .log-entry.error {
+            color: #dc3545;
+        }
+        
+        .log-entry.info {
+            color: #007bff;
+        }
+        
+        .help-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+            display: block;
+        }
+        
+        .connection-examples {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 11px;
+        }
+        
+        .connection-examples h4 {
+            margin: 0 0 10px 0;
+            font-family: sans-serif;
+            font-size: 14px;
+        }
+        
+        /* Sync link styling */
+        .sync-link {
+            color: #10b981 !important;
+            font-weight: 500;
+        }
+        
+        .sync-link:hover {
+            color: #059669 !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- Professional Navigation Bar -->
+    <nav class="nav-bar">
+        <div class="nav-content">
+            <a href="/dashboard.html" class="nav-brand">ECI Cabinet PM</a>
+            <div class="nav-links">
+                <a href="/dashboard.html">Dashboard</a>
+                <a href="/pages/customers.html">Customers</a>
+                <a href="/pages/sessions.html">PM Sessions</a>
+                <a href="/sync/mongo-sync.html" class="active sync-link">🔄 Sync</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="sync-container">
+        <div class="header-section">
+                    <h1>🌐 MongoDB Server Synchronization</h1>
+        <p>Sync your offline tablet data with the MongoDB server database</p>
+        </div>
+
+        <!-- Device Information -->
+        <div class="sync-card">
+            <h2>Device Information</h2>
+            <div id="device-info" class="device-info">
+                Loading device information...
+            </div>
+        </div>
+
+        <!-- Sync Status -->
+        <div class="sync-card">
+            <h2>Server Sync Status</h2>
+            <div id="sync-status" class="sync-status not-configured">
+                <span>🔄 Checking connection...</span>
+                <button id="refresh-status" class="btn btn-sm">Refresh</button>
+            </div>
+            
+            <div class="sync-stats" id="sync-stats">
+                <div class="stat-item">
+                    <div class="stat-number" id="unsynced-total">-</div>
+                    <div class="stat-label">Unsynced Records</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="unsynced-sessions">-</div>
+                    <div class="stat-label">Sessions</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="unsynced-cabinets">-</div>
+                    <div class="stat-label">Cabinets</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="unsynced-maintenance">-</div>
+                    <div class="stat-label">Maintenance</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sync Actions -->
+        <div class="sync-card">
+            <h2>Sync Actions</h2>
+            <div class="sync-actions">
+                <button id="pull-btn" class="sync-btn pull" disabled>
+                    📥 Pull from Server
+                    <div style="font-size: 12px; margin-top: 5px;">Get latest data from all devices</div>
+                </button>
+                <button id="push-btn" class="sync-btn push" disabled>
+                    📤 Push to Server
+                    <div style="font-size: 12px; margin-top: 5px;">Upload your changes</div>
+                </button>
+                <button id="full-sync-btn" class="sync-btn full-sync" disabled>
+                    🔄 Full Sync
+                    <div style="font-size: 12px; margin-top: 5px;">Pull then Push (recommended)</div>
+                </button>
+                <button id="full-refresh-btn" class="sync-btn full-sync" disabled style="background: #dc3545; border-color: #dc3545;">
+                    🔄 Full Refresh
+                    <div style="font-size: 12px; margin-top: 5px;">Replace ALL local data with master</div>
+                </button>
+            </div>
+            
+            <div style="text-align: center; margin-top: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <button id="setup-btn" class="btn btn-secondary">
+                    🔧 Initial Setup
+                </button>
+                <button id="migrate-btn" class="btn btn-warning">
+                    📦 Migrate Existing Data
+                </button>
+            </div>
+        </div>
+
+        <!-- MongoDB Configuration -->
+        <div class="sync-card">
+            <h2>MongoDB Configuration</h2>
+            <div class="config-section">
+                <div class="form-group">
+                    <label for="mongo-connection-string" class="form-label">MongoDB Connection String</label>
+                    <input type="password" id="mongo-connection-string" class="form-input connection-string" 
+                           placeholder="mongodb+srv://username:password@cluster.mongodb.net/cabinet_pm?retryWrites=true&w=majority">
+                    <small class="help-text">
+                        Enter your MongoDB Atlas connection string. This will be encrypted and stored securely.
+                    </small>
+                    
+                    <div class="connection-examples">
+                        <h4>Connection String Examples:</h4>
+                        <div>MongoDB Atlas: mongodb+srv://user:pass@cluster.mongodb.net/cabinet_pm</div>
+                        <div>Local MongoDB: mongodb://localhost:27017/cabinet_pm</div>
+                        <div>MongoDB with auth: mongodb://user:pass@host:27017/cabinet_pm</div>
+                    </div>
+                </div>
+                
+                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                    <button id="test-connection-btn" class="btn btn-secondary">Test Connection</button>
+                    <button id="configure-btn" class="btn btn-primary">Save Configuration</button>
+                    <button id="show-hide-btn" class="btn btn-secondary">👁️ Show/Hide</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Activity Log -->
+        <div class="sync-card">
+            <h2>Activity Log</h2>
+            <div id="sync-log" class="log-section">
+                <div class="log-entry info">MongoDB Server Sync system ready...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Sync management functionality
+        let syncInProgress = false;
+        let isPasswordVisible = false;
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDeviceInfo();
+            refreshStatus();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            document.getElementById('refresh-status').addEventListener('click', refreshStatus);
+            document.getElementById('pull-btn').addEventListener('click', pullFromServer);
+            document.getElementById('push-btn').addEventListener('click', pushToServer);
+            document.getElementById('full-sync-btn').addEventListener('click', fullSync);
+            document.getElementById('full-refresh-btn').addEventListener('click', fullRefresh);
+            document.getElementById('setup-btn').addEventListener('click', runSetup);
+            document.getElementById('migrate-btn').addEventListener('click', runInitialMigration);
+            document.getElementById('configure-btn').addEventListener('click', saveConfiguration);
+            document.getElementById('test-connection-btn').addEventListener('click', testConnection);
+            document.getElementById('show-hide-btn').addEventListener('click', togglePasswordVisibility);
+        }
+
+        async function loadDeviceInfo() {
+            try {
+                const response = await fetch('/api/mongo-sync/device-info');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const info = data.deviceInfo;
+                    document.getElementById('device-info').innerHTML = `
+                        Device ID: ${info.deviceId}<br>
+                        Hostname: ${info.hostname}<br>
+                        Platform: ${info.platform} (${info.arch})<br>
+                        Node.js: ${info.nodeVersion}
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('device-info').textContent = 'Error loading device info';
+            }
+        }
+
+        function togglePasswordVisibility() {
+            const input = document.getElementById('mongo-connection-string');
+            const button = document.getElementById('show-hide-btn');
+            
+            if (isPasswordVisible) {
+                input.type = 'password';
+                button.textContent = '👁️ Show';
+                isPasswordVisible = false;
+            } else {
+                input.type = 'text';
+                button.textContent = '🙈 Hide';
+                isPasswordVisible = true;
+            }
+        }
+
+        async function refreshStatus() {
+            try {
+                const response = await fetch('/api/mongo-sync/status');
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateSyncStatus(data.status);
+                } else {
+                    updateSyncStatus({ configured: false });
+                }
+            } catch (error) {
+                updateSyncStatus({ configured: false });
+                logEntry('error', `Error checking sync status: ${error.message}`);
+            }
+        }
+
+        function updateSyncStatus(status) {
+            const statusElement = document.getElementById('sync-status');
+            const buttons = ['pull-btn', 'push-btn', 'full-sync-btn', 'full-refresh-btn'];
+            
+            if (!status.configured) {
+                statusElement.className = 'sync-status not-configured';
+                statusElement.innerHTML = `
+                    <span>⚙️ MongoDB connection not configured</span>
+                    <button id="refresh-status" class="btn btn-sm">Refresh</button>
+                `;
+                
+                // Disable sync buttons
+                buttons.forEach(id => {
+                    document.getElementById(id).disabled = true;
+                });
+                
+                // Clear stats
+                document.getElementById('unsynced-total').textContent = '-';
+                document.getElementById('unsynced-sessions').textContent = '-';
+                document.getElementById('unsynced-cabinets').textContent = '-';
+                document.getElementById('unsynced-maintenance').textContent = '-';
+                
+            } else if (status.mongoConnectionString === '✅ Configured') {
+                statusElement.className = 'sync-status connected';
+                statusElement.innerHTML = `
+                    <span>✅ Connected to MongoDB server (Device: ${status.deviceId})</span>
+                    <button id="refresh-status" class="btn btn-sm">Refresh</button>
+                `;
+                
+                // Enable sync buttons
+                buttons.forEach(id => {
+                    document.getElementById(id).disabled = false;
+                });
+                
+                // Update stats
+                document.getElementById('unsynced-total').textContent = status.totalUnsynced || 0;
+                document.getElementById('unsynced-sessions').textContent = status.unsyncedRecords?.sessions || 0;
+                document.getElementById('unsynced-cabinets').textContent = status.unsyncedRecords?.cabinets || 0;
+                document.getElementById('unsynced-maintenance').textContent = 
+                    (status.unsyncedRecords?.session_node_maintenance || 0) + 
+                    (status.unsyncedRecords?.session_node_tracker || 0);
+                    
+            } else {
+                statusElement.className = 'sync-status disconnected';
+                statusElement.innerHTML = `
+                    <span>❌ Cannot connect to MongoDB server</span>
+                    <button id="refresh-status" class="btn btn-sm">Refresh</button>
+                `;
+                
+                // Disable sync buttons
+                buttons.forEach(id => {
+                    document.getElementById(id).disabled = true;
+                });
+            }
+            
+            // Re-attach event listener
+            document.getElementById('refresh-status').addEventListener('click', refreshStatus);
+        }
+
+        async function pullFromServer() {
+            if (syncInProgress) return;
+            
+            syncInProgress = true;
+            updateButtonStates();
+            logEntry('info', 'Pulling data from MongoDB server...');
+            
+            try {
+                const response = await fetch('/api/mongo-sync/pull', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    const results = data.results;
+                    logEntry('success', `Pull completed: ${results.totalPulled} records retrieved`);
+                    
+                    // Detailed breakdown of what was pulled
+                    if (results.details) {
+                        // Show summary
+                        const readOnlyTotal = Object.values(results.readOnlyTables).reduce((a,b) => a+b, 0);
+                        const syncTotal = Object.values(results.syncTables).reduce((a,b) => a+b, 0);
+                        logEntry('info', `📋 Read-only: ${readOnlyTotal} | Sync tables: ${syncTotal}`);
+                        
+                        // Show detailed breakdown for tables with changes
+                        Object.entries(results.details.readOnly || {}).forEach(([table, detail]) => {
+                            if (detail.downloaded > 0) {
+                                logEntry('info', `   📥 ${table}: ${detail.downloaded} records (${detail.before} → ${detail.after})`);
+                            }
+                        });
+                        
+                        Object.entries(results.details.sync || {}).forEach(([table, detail]) => {
+                            if (detail.downloaded > 0) {
+                                logEntry('info', `   📥 ${table}: ${detail.downloaded} new/updated (${detail.before} → ${detail.after})`);
+                            } else if (detail.before > 0) {
+                                logEntry('info', `   ℹ️ ${table}: No updates (${detail.before} records)`);
+                            }
+                        });
+                    } else {
+                        // Fallback to old format
+                        const readOnlyTotal = Object.values(results.readOnlyTables).reduce((a,b) => a+b, 0);
+                        const syncTotal = Object.values(results.syncTables).reduce((a,b) => a+b, 0);
+                        logEntry('info', `Read-only: ${readOnlyTotal} | Sync tables: ${syncTotal}`);
+                    }
+                    
+                    refreshStatus();
+                } else {
+                    logEntry('error', `Pull failed: ${data.error}`);
+                }
+            } catch (error) {
+                logEntry('error', `Pull failed: ${error.message}`);
+            } finally {
+                syncInProgress = false;
+                updateButtonStates();
+            }
+        }
+
+        async function pushToServer() {
+            if (syncInProgress) return;
+            
+            syncInProgress = true;
+            updateButtonStates();
+            logEntry('info', 'Pushing changes to MongoDB server...');
+            
+            try {
+                const response = await fetch('/api/mongo-sync/push', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    const total = data.results.totalPushed;
+                    logEntry('success', `Push completed: ${total} records uploaded`);
+                    
+                    // Enhanced logging with details
+                    if (data.results.details) {
+                        // Show detailed breakdown for tables with changes
+                        Object.entries(data.results.details).forEach(([table, detail]) => {
+                            if (detail.pushed > 0) {
+                                logEntry('info', `   📤 ${table}: ${detail.pushed}/${detail.unsynced} records uploaded`);
+                            } else if (detail.unsynced > 0) {
+                                logEntry('info', `   ℹ️ ${table}: ${detail.unsynced} unsynced (upload failed)`);
+                            } else {
+                                logEntry('info', `   ✅ ${table}: All records synced`);
+                            }
+                        });
+                    } else {
+                        // Fallback to old format
+                        Object.entries(data.results).forEach(([table, count]) => {
+                            if (table !== 'totalPushed' && table !== 'details' && count > 0) {
+                                logEntry('info', `   📤 ${table}: ${count} records`);
+                            }
+                        });
+                    }
+                    
+                    refreshStatus();
+                } else {
+                    logEntry('error', `Push failed: ${data.error}`);
+                }
+            } catch (error) {
+                logEntry('error', `Push failed: ${error.message}`);
+            } finally {
+                syncInProgress = false;
+                updateButtonStates();
+            }
+        }
+
+        async function fullSync() {
+            if (syncInProgress) return;
+            
+            syncInProgress = true;
+            updateButtonStates();
+            logEntry('info', 'Starting full sync (pull + push)...');
+            
+            try {
+                const response = await fetch('/api/mongo-sync/full-sync', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    logEntry('success', 'Full sync completed successfully');
+                    
+                    if (data.pull && data.pull.success) {
+                        logEntry('info', `Pulled: ${data.pull.results.totalPulled} records`);
+                    }
+                    
+                    if (data.push && data.push.success) {
+                        logEntry('info', `Pushed: ${data.push.results.totalPushed} records`);
+                    }
+                    
+                    refreshStatus();
+                } else {
+                    logEntry('error', `Full sync failed: ${data.error}`);
+                }
+            } catch (error) {
+                logEntry('error', `Full sync failed: ${error.message}`);
+            } finally {
+                syncInProgress = false;
+                updateButtonStates();
+            }
+        }
+
+        async function fullRefresh() {
+            if (syncInProgress) return;
+            
+            if (!confirm('⚠️ WARNING: This will DELETE ALL local data and replace it with master data. This cannot be undone. Are you sure?')) {
+                return;
+            }
+            
+            if (!confirm('🚨 FINAL WARNING: All your local sessions, cabinets, and data will be permanently deleted and replaced. Continue?')) {
+                return;
+            }
+            
+            syncInProgress = true;
+            updateButtonStates();
+            logEntry('info', 'Starting full refresh - replacing all local data with master data...');
+            
+            try {
+                const response = await fetch('/api/mongo-sync/full-refresh', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    logEntry('success', `Full refresh completed: ${data.totalRefreshed} records refreshed`);
+                    
+                    // Log details for each table
+                    if (data.results) {
+                        Object.entries(data.results).forEach(([table, count]) => {
+                            logEntry('info', `${table}: ${count} records`);
+                        });
+                    }
+                    
+                    refreshStatus();
+                    
+                    // Show success message
+                    alert('✅ Full refresh completed successfully! All local data has been replaced with master data.');
+                } else {
+                    logEntry('error', `Full refresh failed: ${data.error}`);
+                    alert('❌ Full refresh failed. Check the logs for details.');
+                }
+            } catch (error) {
+                logEntry('error', `Full refresh failed: ${error.message}`);
+                alert('❌ Full refresh failed. Check the logs for details.');
+            } finally {
+                syncInProgress = false;
+                updateButtonStates();
+            }
+        }
+
+        async function runSetup() {
+            if (syncInProgress) return;
+            
+            syncInProgress = true;
+            updateButtonStates();
+            logEntry('info', 'Running initial setup...');
+            
+            try {
+                const response = await fetch('/api/mongo-sync/setup', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    logEntry('success', 'Initial setup completed - UUIDs generated');
+                    refreshStatus();
+                } else {
+                    logEntry('error', `Setup failed: ${data.error}`);
+                }
+            } catch (error) {
+                logEntry('error', `Setup failed: ${error.message}`);
+            } finally {
+                syncInProgress = false;
+                updateButtonStates();
+            }
+        }
+
+        async function runInitialMigration() {
+            if (syncInProgress) return;
+            
+            if (!confirm('This will mark ALL existing SQLite records for sync to MongoDB. This should only be done ONCE for initial migration. Continue?')) {
+                return;
+            }
+            
+            syncInProgress = true;
+            updateButtonStates();
+            logEntry('info', 'Running initial migration of existing data...');
+            
+            try {
+                const response = await fetch('/api/mongo-sync/initial-migration', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    logEntry('success', `Initial migration completed: ${data.recordsMarked} records marked for sync`);
+                    logEntry('info', 'Now click "Push to Server" to upload all your existing data');
+                    refreshStatus();
+                } else {
+                    logEntry('error', `Migration failed: ${data.error}`);
+                }
+            } catch (error) {
+                logEntry('error', `Migration failed: ${error.message}`);
+            } finally {
+                syncInProgress = false;
+                updateButtonStates();
+            }
+        }
+
+        async function saveConfiguration() {
+            const connectionString = document.getElementById('mongo-connection-string').value.trim();
+            
+            if (!connectionString) {
+                logEntry('error', 'Please enter a MongoDB connection string');
+                return;
+            }
+            
+            if (!connectionString.startsWith('mongodb://') && !connectionString.startsWith('mongodb+srv://')) {
+                logEntry('error', 'Connection string must start with mongodb:// or mongodb+srv://');
+                return;
+            }
+            
+            try {
+                logEntry('info', 'Testing MongoDB connection...');
+                
+                const response = await fetch('/api/mongo-sync/configure', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ connectionString })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    logEntry('success', 'MongoDB connection configured successfully');
+                    logEntry('info', 'Connection test passed');
+                    
+                    // Clear the input for security
+                    document.getElementById('mongo-connection-string').value = '';
+                    
+                    refreshStatus();
+                } else {
+                    logEntry('error', `Configuration failed: ${data.error}`);
+                }
+            } catch (error) {
+                logEntry('error', `Configuration failed: ${error.message}`);
+            }
+        }
+
+        async function testConnection() {
+            if (!document.getElementById('mongo-connection-string').value.trim()) {
+                logEntry('error', 'Please enter a connection string before testing');
+                return;
+            }
+            
+            // First save the configuration, then test
+            await saveConfiguration();
+        }
+
+        function updateButtonStates() {
+            const buttons = ['pull-btn', 'push-btn', 'full-sync-btn', 'full-refresh-btn', 'setup-btn', 'migrate-btn', 'configure-btn', 'test-connection-btn'];
+            buttons.forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) {
+                    if (syncInProgress) {
+                        btn.disabled = true;
+                        if (btn.textContent.includes('🔄')) {
+                            btn.innerHTML = btn.innerHTML.replace('🔄', '⏳');
+                        }
+                    } else {
+                        // Only enable sync buttons if configured
+                        if (['pull-btn', 'push-btn', 'full-sync-btn', 'full-refresh-btn'].includes(id)) {
+                            // Will be handled by refreshStatus()
+                        } else {
+                            btn.disabled = false;
+                        }
+                        
+                        if (btn.textContent.includes('⏳')) {
+                            btn.innerHTML = btn.innerHTML.replace('⏳', '🔄');
+                        }
+                    }
+                }
+            });
+        }
+
+        function logEntry(type, message) {
+            const logSection = document.getElementById('sync-log');
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${timestamp}] ${message}`;
+            
+            logSection.appendChild(entry);
+            logSection.scrollTop = logSection.scrollHeight;
+            
+            // Keep only last 100 entries
+            while (logSection.children.length > 100) {
+                logSection.removeChild(logSection.firstChild);
+            }
+        }
+    </script>
+</body>
+</html>

@@ -51,7 +51,7 @@ const isPackaged = typeof process.pkg !== 'undefined';
 
 // Set up proper paths for packaged executable
 const appBasePath = isPackaged ? path.dirname(process.execPath) : __dirname;
-const dbPath = path.join(appBasePath, 'cabinet_pm_tablet.db');
+const dbPath = path.join(appBasePath, 'data', 'cabinet_pm_tablet.db');
 
 console.log('🔧 Environment Setup:');
 console.log(`   Packaged: ${isPackaged}`);
@@ -816,8 +816,9 @@ app.use(session({
 // Detect if running as executable and adjust paths (reuse isPackaged from above)
 const basePath = isPackaged ? path.dirname(process.execPath) : __dirname;
 
-app.use(express.static(path.join(basePath, 'public')));
-app.use('/assets', express.static(path.join(basePath, 'assets')));
+// Serve static files from frontend/public directory
+app.use(express.static(path.join(basePath, 'frontend', 'public')));
+app.use('/assets', express.static(path.join(basePath, 'frontend', 'public', 'assets')));
 
 // Authentication middleware
 function requireAuth(req, res, next) {
@@ -835,7 +836,7 @@ app.get('/', (req, res) => {
   if (req.session && req.session.userId) {
     res.redirect('/dashboard');
   } else {
-    res.sendFile(path.join(basePath, 'public', 'login.html'));
+    res.sendFile(path.join(basePath, 'frontend', 'public', 'login.html'));
   }
 });
 
@@ -907,18 +908,15 @@ app.post('/logout', (req, res) => {
 
 // Dashboard
 app.get('/dashboard', requireAuth, (req, res) => {
-  res.sendFile(path.join(basePath, 'public', 'dashboard.html'));
+  res.sendFile(path.join(basePath, 'frontend', 'public', 'dashboard.html'));
 });
 
 // Sync - Default to MongoDB Cloud Sync
 app.get('/sync', requireAuth, (req, res) => {
-  res.sendFile(path.join(basePath, 'public', 'mongo-sync.html'));
+  res.sendFile(path.join(basePath, 'frontend', 'public', 'sync', 'mongo-sync.html'));
 });
 
-// Legacy File Sync
-app.get('/sync.html', requireAuth, (req, res) => {
-  res.sendFile(path.join(basePath, 'public', 'sync.html'));
-});
+// Legacy File Sync removed - no longer needed
 
 // API Routes
 
@@ -2090,6 +2088,7 @@ app.post('/api/cabinets/:cabinetId/pdf', requireAuth, async (req, res) => {
     
     await page.setContent(pdfHtml, { waitUntil: 'networkidle0', timeout: 60000 });
     
+    console.log('📄 Generating compressed PDF (PDF Lite mode)...');
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
@@ -2098,10 +2097,19 @@ app.post('/api/cabinets/:cabinetId/pdf', requireAuth, async (req, res) => {
         bottom: '0.5in',
         left: '0.5in',
         right: '0.5in'
-      }
+      },
+      // PDF Lite compression settings (similar to Exchange Editor 300 DPI)
+      preferCSSPageSize: true,
+      displayHeaderFooter: false,
+      tagged: false,
+      outline: false,
+      scale: 0.9  // Reduce scale for smaller file size
     });
     
     await browser.close();
+    
+    const originalSize = pdfBuffer.length;
+    console.log(`📊 PDF generated: ${(originalSize / 1024).toFixed(1)} KB (compressed)`);
     
     // Send PDF
     res.setHeader('Content-Type', 'application/pdf');
@@ -2278,6 +2286,7 @@ app.post('/api/sessions/:sessionId/export-pdfs', requireAuth, async (req, res) =
     page.setDefaultTimeout(120000); // 2 minute timeout for large reports
     await page.setContent(combinedHtml, { waitUntil: 'domcontentloaded', timeout: 120000 });
     
+    console.log('📄 Generating compressed combined PDF (PDF Lite mode)...');
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
@@ -2286,10 +2295,19 @@ app.post('/api/sessions/:sessionId/export-pdfs', requireAuth, async (req, res) =
         bottom: '0.5in',
         left: '0.5in',
         right: '0.5in'
-      }
+      },
+      // PDF Lite compression settings (similar to Exchange Editor 300 DPI)
+      preferCSSPageSize: true,
+      displayHeaderFooter: false,
+      tagged: false,
+      outline: false,
+      scale: 0.9  // Reduce scale for smaller file size
     });
     
     await browser.close();
+    
+    const originalSize = pdfBuffer.length;
+    console.log(`📊 Combined PDF generated: ${(originalSize / 1024).toFixed(1)} KB (compressed)`);
     
     // Send combined PDF
     res.setHeader('Content-Type', 'application/pdf');
@@ -2587,7 +2605,7 @@ async function generateCombinedPDFHtml(data) {
   const fs = require('fs');
   const path = require('path');
   let logoData = '';
-  const logoPath = path.join(basePath, 'assets', 'deltav-logo.png');
+  const logoPath = path.join(basePath, 'assets', 'Lifecycle logo.png');
   
   try {
     if (fs.existsSync(logoPath)) {
@@ -2665,7 +2683,7 @@ async function generateCombinedPDFHtml(data) {
     <body>
       <div class="title-page">
         <div class="logo-container">
-          ${logoData ? `<img src="${logoData}" alt="DeltaV Logo" class="logo-image">` : `
+          ${logoData ? `<img src="${logoData}" alt="Lifecycle Logo" class="logo-image">` : `
             <div class="logo">
               ECI
               <div class="logo-subtitle">Emerson Impact Partner</div>
@@ -2865,7 +2883,8 @@ async function generateCombinedPDFHtml(data) {
     </div>
   `).join('');
   
-  return titlePage + riskAssessmentPage + maintenanceReportPage + cabinetPages + pmNotesPage + diagnosticsPage + `
+  // New order: Title → Risk Assessment → Node Maintenance → PM Notes → Diagnostics → Cabinets
+  return titlePage + riskAssessmentPage + maintenanceReportPage + pmNotesPage + diagnosticsPage + cabinetPages + `
     </body>
     </html>
   `;
@@ -2926,7 +2945,7 @@ function generatePMNotesPage(pmNotesData, sessionInfo, logoData) {
     <div class="page-break">
       <div class="header">
         <div class="logo">
-          ${logoData ? `<img src="${logoData}" alt="DeltaV Logo" class="logo-image">` : 'ECI'}
+          ${logoData ? `<img src="${logoData}" alt="Lifecycle Logo" class="logo-image">` : 'ECI'}
         </div>
         <div class="header-text">
           <div>ECI</div>
@@ -2993,8 +3012,10 @@ function getBase64Logo() {
   const path = require('path');
   let logoData = '';
   
-  // Try multiple logo paths
+  // Try multiple logo paths - prioritize Lifecycle logo
   const logoPaths = [
+    path.join(basePath, 'assets', 'Lifecycle logo.png'),
+    path.join(__dirname, 'assets', 'Lifecycle logo.png'),
     path.join(basePath, 'assets', 'deltav-logo.png'),
     path.join(basePath, 'assets', 'eci-logo.png'),
     path.join(__dirname, 'assets', 'deltav-logo.png'),
@@ -3102,7 +3123,7 @@ async function generateCombinedIIPDF(session, documents) {
       </style>
     </head>
     <body>
-      ${logoData ? `<img src="data:image/png;base64,${logoData}" alt="DeltaV Logo" class="logo">` : ''}
+      ${logoData ? `<img src="data:image/png;base64,${logoData}" alt="Lifecycle Logo" class="logo">` : ''}
       
       <div class="main-title">DeltaV</div>
       <div class="main-title">Installation & Integration Procedure</div>
@@ -3263,7 +3284,7 @@ function generateIIIntroPages(session, logoData) {
       <!-- Page 1: Table of Contents -->
       <div class="page" style="page-break-before: always; margin-top: 60px; padding-top: 15px;">
         <div class="header">
-          ${logoData ? `<img src="data:image/png;base64,${logoData}" alt="ECI Logo" class="logo">` : '<div style="font-size: 20px; font-weight: bold;">ECI</div>'}
+          ${logoData ? `<img src="data:image/png;base64,${logoData}" alt="Lifecycle Logo" class="logo">` : '<div style="font-size: 20px; font-weight: bold;">ECI</div>'}
           <div>
             <h1>DeltaV Installation & Integration Procedure</h1>
             <div><strong>Customer:</strong> ${session.ii_customer_name || session.customer_name}</div>
@@ -3825,7 +3846,7 @@ function generateIIPDF(document, session, checklistItems, equipmentUsed) {
     <body>
       <div class="header">
         <div>
-          ${logoData ? `<img src="data:image/png;base64,${logoData}" alt="ECI Logo" class="logo">` : ''}
+          ${logoData ? `<img src="data:image/png;base64,${logoData}" alt="Lifecycle Logo" class="logo">` : ''}
         </div>
         <div class="header-info">
           <h1>DeltaV Installation & Integration Procedure</h1>
@@ -5647,12 +5668,14 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
     </table>
     ` : ''}
     
+    ${inspection.comments && inspection.comments.trim() ? `
     <div class="comments-section">
       <div class="comments-header">Comments</div>
       <div class="comments-body">
-        ${inspection.comments ? inspection.comments.replace(/\n/g, '<br>') : 'No additional comments.'}
+        ${inspection.comments.replace(/\n/g, '<br>')}
       </div>
     </div>
+    ` : ''}
   `;
 }
 
@@ -5993,12 +6016,14 @@ function generatePDFHtml(data) {
       </table>
       ` : ''}
       
+      ${inspection.comments && inspection.comments.trim() ? `
       <div class="comments-section">
         <div class="comments-header">Comments</div>
         <div class="comments-body">
-          ${inspection.comments ? inspection.comments.replace(/\n/g, '<br>') : 'No additional comments.'}
+          ${inspection.comments.replace(/\n/g, '<br>')}
         </div>
       </div>
+      ` : ''}
       
       <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #0066cc; text-align: center; color: #666;">
         <p><strong>Report generated on ${formatDate(new Date().toISOString())}</strong></p>
@@ -7472,8 +7497,10 @@ try {
   console.log('❌ Error stack:', error.stack);
 }
 
+// Legacy sync endpoints disabled - using distributed sync only
+/*
 // Add MongoDB Cloud Sync endpoints
-console.log('🔧 Loading MongoDB sync endpoints...');
+console.log('🔧 Loading MongoDB sync endpoints (legacy)...');
 try {
   const mongoSyncEndpointsPath = path.join(__dirname, 'mongo-sync-endpoints.js');
   console.log('📁 MongoDB sync endpoints path:', mongoSyncEndpointsPath);
@@ -7487,6 +7514,29 @@ try {
 } catch (error) {
   console.log('❌ MongoDB sync endpoints not available:', error.message);
   console.log('❌ Error stack:', error.stack);
+}
+
+// Add Clean Sync endpoints (new schema-based approach)
+console.log('🔧 Loading clean sync endpoints with proper schemas...');
+try {
+  const addCleanSyncEndpoints = require('./clean-sync-endpoints');
+  addCleanSyncEndpoints(app, db);
+  console.log('✅ Clean sync endpoints added to app');
+} catch (error) {
+  console.log('❌ Clean sync endpoints not available:', error.message);
+  console.log('❌ Error:', error.stack);
+}
+*/
+
+// Add Distributed Sync endpoints (multi-client offline-first)
+console.log('🔧 Loading distributed sync endpoints for multi-client offline sync...');
+try {
+  const addDistributedSyncEndpoints = require('./distributed-sync-endpoints');
+  addDistributedSyncEndpoints(app, db);
+  console.log('✅ Distributed sync endpoints added to app');
+} catch (error) {
+  console.log('❌ Distributed sync endpoints not available:', error.message);
+  console.log('❌ Error:', error.stack);
   
   // Fallback: Add basic MongoDB sync endpoints directly
   console.log('🔧 Adding fallback MongoDB sync endpoints...');

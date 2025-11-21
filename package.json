@@ -26,6 +26,7 @@
     "express": "^4.18.2",
     "express-session": "^1.17.3",
     "mongodb": "^6.18.0",
+    "mongoose": "^8.19.0",
     "puppeteer": "^21.5.2",
     "sqlite3": "^5.1.6",
     "uuid": "^9.0.0"
@@ -35,13 +36,10 @@
   },
   "pkg": {
     "assets": [
-      "public/**/*",
-      "assets/**/*",
-      "cabinet_pm_tablet.db",
+      "frontend/public/**/*",
+      "data/**/*",
       "node_modules/sqlite3/lib/binding/napi-v6-win32-x64/node_sqlite3.node",
-      "mongo-cloud-sync.js",
-      "mongo-sync-endpoints.js",
-      "MONGO-SYNC-SETUP-GUIDE.md"
+      "backend/**/*"
     ],
     "targets": [
       "node16-win-x64"

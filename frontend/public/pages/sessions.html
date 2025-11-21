@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cabinet PM App - PM Sessions</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/theme-system.js"></script>
+    <script src="/sound-system.js"></script>
+    <style>
+        /* Improved Action Buttons Styling */
+        .action-buttons-improved {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            justify-content: flex-start;
+            flex-wrap: wrap;
+        }
+        
+        .btn-action {
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 500;
+            border-radius: 4px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            min-width: 50px;
+            text-align: center;
+        }
+        
+        .btn-action:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .btn-action.btn-primary {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+        
+        .btn-action.btn-primary:hover {
+            background: #2563eb;
+            border-color: #2563eb;
+        }
+        
+        .btn-action.btn-success {
+            background: #10b981;
+            color: white;
+            border-color: #10b981;
+        }
+        
+        .btn-action.btn-success:hover {
+            background: #059669;
+            border-color: #059669;
+        }
+        
+        .btn-action.btn-secondary {
+            background: #6b7280;
+            color: white;
+            border-color: #6b7280;
+        }
+        
+        .btn-action.btn-secondary:hover {
+            background: #4b5563;
+            border-color: #4b5563;
+        }
+        
+        .btn-action.btn-outline {
+            background: transparent;
+            color: #6b7280;
+            border-color: #d1d5db;
+        }
+        
+        .btn-action.btn-outline:hover {
+            background: #f9fafb;
+            color: #374151;
+            border-color: #9ca3af;
+        }
+        
+        .btn-action.btn-danger {
+            background: #ef4444;
+            color: white;
+            border-color: #ef4444;
+        }
+        
+        .btn-action.btn-danger:hover {
+            background: #dc2626;
+            border-color: #dc2626;
+        }
+        
+        /* Make Actions column a bit wider */
+        .table th:last-child,
+        .table td:last-child {
+            min-width: 280px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Professional Navigation Bar -->
+    <nav class="nav-bar">
+        <div class="nav-content">
+            <a href="/dashboard.html" class="nav-brand">ECI Cabinet PM</a>
+            <div class="nav-links">
+                <a href="/dashboard.html">Dashboard</a>
+                <a href="/pages/customers.html">Customers</a>
+                <a href="/pages/sessions.html" class="active">PM Sessions</a>
+                <a href="/sync/distributed-sync.html">🔄 Sync</a>
+                <span id="username-display" class="text-gray-600 text-sm"></span>
+                <button id="logout-btn" class="btn btn-secondary">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Breadcrumb Navigation (shown when filtering by customer) -->
+        <nav id="breadcrumb-nav" class="breadcrumb-nav hidden">
+            <a href="/pages/customers.html">Customers</a>
+            <span class="breadcrumb-separator">></span>
+            <span id="breadcrumb-customer-name">Customer Name</span>
+            <span class="breadcrumb-separator">></span>
+            <span class="breadcrumb-current">PM Sessions</span>
+        </nav>
+
+        <header class="page-header flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">PM Sessions</h1>
+                <p class="text-gray-600" id="page-subtitle">Manage preventative maintenance sessions</p>
+            </div>
+            <button id="new-session-btn" class="btn btn-primary">
+                New PM Session
+            </button>
+        </header>
+
+        <main>
+            <!-- Search and Filter -->
+            <div class="card mb-6">
+                <div class="card-body">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="search-input">
+                            <input type="text" id="search-sessions" placeholder="Search sessions..." 
+                                   class="form-input">
+                        </div>
+                        <select id="filter-status" class="form-select">
+                            <option value="">All Statuses</option>
+                            <option value="active">Active</option>
+                            <option value="completed">Completed</option>
+                        </select>
+                        <select id="filter-customer" class="form-select">
+                            <option value="">All Customers</option>
+                            <!-- Customers will be loaded here -->
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sessions Table -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="text-xl font-semibold text-gray-900">Sessions List</h2>
+                </div>
+                <div class="card-body p-0">
+                    <div class="overflow-x-auto">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Session Name</th>
+                                    <th>Customer</th>
+                                    <th>Status</th>
+                                    <th>Cabinets</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sessions-table-body">
+                                <!-- Sessions will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="no-sessions" class="no-data hidden">
+                        No PM sessions found. Create your first session to get started.
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- New Session Modal -->
+    <div id="session-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>New PM Session</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="session-form">
+                    <div class="form-group">
+                        <label for="session-customer" class="form-label">Customer *</label>
+                        <select id="session-customer" name="customer_id" required class="form-select">
+                            <option value="">Select a customer</option>
+                            <!-- Customers will be loaded here -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="session-name" class="form-label">Session Name *</label>
+                        <input type="text" id="session-name" name="session_name" required 
+                               placeholder="e.g., PM-12/15/2024" pattern="^PM-\d{2}/\d{2}/\d{4}$" class="form-input">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('session-modal')">Cancel</button>
+                <button type="submit" form="session-form" class="btn btn-primary">Create Session</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Session Modal -->
+    <div id="edit-session-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Edit PM Session</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="edit-session-form">
+                    <div class="form-group">
+                        <label for="edit-session-name" class="form-label">Session Name *</label>
+                        <input type="text" id="edit-session-name" name="session_name" required class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-session-status" class="form-label">Status</label>
+                        <select id="edit-session-status" name="status" class="form-select">
+                            <option value="active">Active</option>
+                            <option value="completed">Completed</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger" id="delete-session-btn">Delete Session</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('edit-session-modal')">Cancel</button>
+                <button type="submit" form="edit-session-form" class="btn btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Import Cabinets Modal -->
+    <div id="bulk-import-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Bulk Import Cabinets</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="bulk-import-form">
+                    <div class="form-group">
+                        <label for="cabinet-list" class="form-label">Cabinet Locations (one per line)</label>
+                        <textarea id="cabinet-list" name="cabinet_list" rows="10" 
+                                  placeholder="Building A - Control Room 1&#10;Building A - Control Room 2&#10;Building B - Main Panel&#10;..."
+                                  class="form-textarea"></textarea>
+                        <p class="text-sm text-gray-600 mt-2">
+                            Enter each cabinet location on a separate line. Empty lines will be ignored.
+                        </p>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('bulk-import-modal')">Cancel</button>
+                <button type="submit" form="bulk-import-form" class="btn btn-primary">Import Cabinets</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Duplicate Session Modal -->
+    <div id="duplicate-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Duplicate Session</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="duplicate-form">
+                    <div class="form-group">
+                        <label for="duplicate-name" class="form-label">New Session Name</label>
+                        <input type="text" id="duplicate-name" name="session_name" required class="form-input"
+                               placeholder="Enter name for duplicated session">
+                    </div>
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
+                        <h4 class="text-sm font-medium text-blue-900 mb-2">What will be duplicated:</h4>
+                        <ul class="text-sm text-blue-800 space-y-1">
+                            <li>• Session structure and cabinet locations</li>
+                            <li>• Number and types of power supplies, distribution blocks, etc.</li>
+                            <li>• All form fields will be reset to default values</li>
+                            <li>• Inspection data will be cleared for new PM</li>
+                        </ul>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('duplicate-modal')">Cancel</button>
+                <button type="submit" form="duplicate-form" class="btn btn-success">Create Duplicate</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="message" class="message"></div>
+
+    <script>
+        let sessions = [];
+        let customers = [];
+        let currentEditingSession = null;
+        let currentBulkImportSession = null;
+        
+        // Initialize sessions page
+        document.addEventListener('DOMContentLoaded', async function() {
+            console.log('DEBUG: Page loading started');
+            checkUrlParams();
+            setupEventListeners();
+            console.log('DEBUG: Loading customers...');
+            await loadCustomers();
+            console.log('DEBUG: Customers loaded, now loading sessions...');
+            await loadSessions();
+            console.log('DEBUG: Page loading completed');
+        });
+
+        function checkUrlParams() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const action = urlParams.get('action');
+            const customerId = urlParams.get('customer');
+            const customerName = urlParams.get('name');
+            
+            if (action === 'new') {
+                setTimeout(() => openModal('session-modal'), 100);
+            }
+            
+            if (customerId && customerName) {
+                // Update page title and subtitle
+                document.getElementById('page-subtitle').textContent = `PM Sessions for ${decodeURIComponent(customerName)}`;
+                document.querySelector('h1').textContent = `PM Sessions - ${decodeURIComponent(customerName)}`;
+                
+                // Show breadcrumb navigation
+                const breadcrumb = document.getElementById('breadcrumb-nav');
+                const breadcrumbCustomerName = document.getElementById('breadcrumb-customer-name');
+                breadcrumbCustomerName.textContent = decodeURIComponent(customerName);
+                breadcrumb.classList.remove('hidden');
+                
+                // Store the customer filter for later use
+                window.preSelectedCustomer = customerId;
+                window.preSelectedCustomerName = decodeURIComponent(customerName);
+                
+                // Add a "View All Sessions" button to clear the filter
+                const headerDiv = document.querySelector('.page-header > div');
+                if (!document.getElementById('view-all-btn')) {
+                    const viewAllBtn = document.createElement('button');
+                    viewAllBtn.id = 'view-all-btn';
+                    viewAllBtn.className = 'btn btn-secondary btn-sm';
+                    viewAllBtn.textContent = 'View All Sessions';
+                    viewAllBtn.style.marginLeft = '1rem';
+                    viewAllBtn.onclick = () => {
+                        // Clear URL parameters and reload
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        location.reload();
+                    };
+                    headerDiv.appendChild(viewAllBtn);
+                }
+            }
+        }
+
+        function setupEventListeners() {
+            // Logout
+            document.getElementById('logout-btn').addEventListener('click', logout);
+            
+            // New session
+            document.getElementById('new-session-btn').addEventListener('click', () => {
+                // Auto-populate with today's date in PM-MM/DD/YYYY format
+                const today = new Date();
+                const formattedDate = today.toLocaleDateString('en-US');
+                setTimeout(() => {
+                    document.getElementById('session-name').value = `PM-${formattedDate}`;
+                }, 100);
+                openModal('session-modal');
+            });
+            
+            // Search and filter
+            document.getElementById('search-sessions').addEventListener('input', filterSessions);
+            document.getElementById('filter-status').addEventListener('change', filterSessions);
+            document.getElementById('filter-customer').addEventListener('change', filterSessions);
+
+            // Form submissions
+            document.getElementById('session-form').addEventListener('submit', createSession);
+            document.getElementById('edit-session-form').addEventListener('submit', editSession);
+            document.getElementById('bulk-import-form').addEventListener('submit', bulkImportCabinets);
+            document.getElementById('duplicate-form').addEventListener('submit', createDuplicateSession);
+            document.getElementById('delete-session-btn').addEventListener('click', deleteSession);
+
+            // Modal close buttons
+            document.querySelectorAll('.close').forEach(closeBtn => {
+                closeBtn.addEventListener('click', (e) => {
+                    const modal = e.target.closest('.modal');
+                    closeModal(modal.id);
+                });
+            });
+
+            // Close modals when clicking outside
+            window.addEventListener('click', (e) => {
+                if (e.target.classList.contains('modal')) {
+                    closeModal(e.target.id);
+                }
+            });
+        }
+
+        async function loadCustomers() {
+            try {
+                const response = await fetch('/api/customers');
+                customers = await response.json();
+                
+                // Populate customer selects
+                const sessionCustomerSelect = document.getElementById('session-customer');
+                const filterCustomerSelect = document.getElementById('filter-customer');
+                
+                sessionCustomerSelect.innerHTML = '<option value="">Select a customer</option>';
+                
+                customers.forEach(customer => {
+                    const option1 = document.createElement('option');
+                    option1.value = customer.id;
+                    option1.textContent = customer.name;
+                    sessionCustomerSelect.appendChild(option1);
+                    
+                    const option2 = document.createElement('option');
+                    option2.value = customer.id;
+                    option2.textContent = customer.name;
+                    filterCustomerSelect.appendChild(option2);
+                });
+                
+                // Auto-select customer if coming from customer page
+                if (window.preSelectedCustomer) {
+                    filterCustomerSelect.value = window.preSelectedCustomer;
+                    sessionCustomerSelect.value = window.preSelectedCustomer;
+                }
+                
+            } catch (error) {
+                showMessage('Error loading customers', 'error');
+            }
+        }
+
+        async function loadSessions() {
+            try {
+                console.log('DEBUG: loadSessions started - using efficient single API call');
+                
+                // Single efficient API call instead of 921 individual calls!
+                const response = await fetch('/api/sessions/all');
+                sessions = await response.json();
+                
+                console.log('DEBUG: Total sessions loaded:', sessions.length);
+                
+                // Apply filter if customer was pre-selected
+                if (window.preSelectedCustomer) {
+                    console.log('DEBUG: Applying customer filter for preselected customer');
+                    filterSessions();
+                } else {
+                    console.log('DEBUG: Displaying all sessions');
+                    displaySessions(sessions);
+                }
+            } catch (error) {
+                console.error('DEBUG: Error loading sessions:', error);
+                showMessage('Error loading sessions', 'error');
+            }
+        }
+
+        function displaySessions(sessionsToShow) {
+            const tableBody = document.getElementById('sessions-table-body');
+            const noSessions = document.getElementById('no-sessions');
+            
+            tableBody.innerHTML = '';
+            
+            if (sessionsToShow.length === 0) {
+                noSessions.classList.remove('hidden');
+                // Update message based on whether we're filtering by customer
+                if (window.preSelectedCustomer) {
+                    noSessions.textContent = `No PM sessions found for ${window.preSelectedCustomerName}. Create a new session to get started.`;
+                } else {
+                    noSessions.textContent = 'No PM sessions found. Create your first session to get started.';
+                }
+                return;
+            }
+            
+            noSessions.classList.add('hidden');
+            
+            sessionsToShow.forEach(session => {
+                console.log('DEBUG: Rendering session:', session.session_name, 'with ID:', session.id, 'Type:', typeof session.id);
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><strong>${session.session_name}</strong></td>
+                    <td>${session.customer_name}</td>
+                    <td>
+                        <span class="badge badge-${session.status || 'active'}">
+                            ${(session.status || 'ACTIVE').toUpperCase()}
+                        </span>
+                    </td>
+                    <td>${session.cabinet_count || 0} cabinets</td>
+                    <td>${new Date(session.created_at).toLocaleDateString('en-US')}</td>
+                    <td>
+                        <div class="action-buttons-improved">
+                            <button class="btn-action btn-primary" onclick="openSession('${session.id}')" title="Open Session">
+                                Open
+                            </button>
+                            ${(session.status || 'active') === 'active' ? 
+                                `<button class="btn-action btn-success" onclick="completeSession('${session.id}')" title="Complete Session">
+                                    Complete
+                                </button>` : 
+                                `<button class="btn-action btn-secondary" onclick="editSessionModal('${session.id}')" title="Edit Session">
+                                    Edit
+                                </button>`
+                            }
+                            <button class="btn-action btn-outline" onclick="duplicateSession('${session.id}')" title="Duplicate Session">
+                                Duplicate
+                            </button>
+                            <button class="btn-action btn-outline" onclick="bulkImportModal('${session.id}')" title="Import Cabinets">
+                                Import
+                            </button>
+                            <button class="btn-action btn-danger" onclick="deleteSessionDirect('${session.id}')" title="Delete Session">
+                                Delete
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        function filterSessions() {
+            const searchTerm = document.getElementById('search-sessions').value.toLowerCase();
+            const statusFilter = document.getElementById('filter-status').value;
+            const customerFilter = document.getElementById('filter-customer').value;
+            
+            let filtered = sessions.filter(session => {
+                const matchesSearch = session.session_name.toLowerCase().includes(searchTerm) ||
+                                     session.customer_name.toLowerCase().includes(searchTerm);
+                
+                const matchesStatus = !statusFilter || (session.status || 'active') === statusFilter;
+                
+                const matchesCustomer = !customerFilter || session.customer_id.toString() === customerFilter;
+                
+                return matchesSearch && matchesStatus && matchesCustomer;
+            });
+            
+            displaySessions(filtered);
+        }
+
+        async function createSession(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            try {
+                const response = await fetch('/api/sessions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    closeModal('session-modal');
+                    loadSessions();
+                                        playSuccessSound();
+                    showMessage('PM Session created successfully', 'success');
+                    e.target.reset();
+                } else {
+                    showMessage(result.error || 'Error creating session', 'error');
+                }
+            } catch (error) {
+                playErrorSound();
+                showMessage('Error creating session', 'error');
+            }
+        }
+
+        function editSessionModal(sessionId) {
+            currentEditingSession = sessions.find(s => s.id === sessionId);
+            if (!currentEditingSession) {
+                console.error('Session not found:', sessionId);
+                showMessage('Session not found', 'error');
+                return;
+            }
+            
+            document.getElementById('edit-session-name').value = currentEditingSession.session_name;
+            document.getElementById('edit-session-status').value = currentEditingSession.status || 'active';
+            
+            openModal('edit-session-modal');
+        }
+
+        async function editSession(e) {
+            e.preventDefault();
+            if (!currentEditingSession) return;
+            
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+
+            try {
+                const response = await fetch(`/api/sessions/${currentEditingSession.id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    closeModal('edit-session-modal');
+                    loadSessions();
+                    if (typeof playSuccessSound === 'function') {
+                        playSuccessSound();
+                    }
+                    showMessage('Session updated successfully', 'success');
+                } else {
+                    playErrorSound();
+                    showMessage(result.error || 'Error updating session', 'error');
+                }
+            } catch (error) {
+                showMessage('Error updating session', 'error');
+            }
+        }
+
+        async function deleteSession() {
+            if (!currentEditingSession) return;
+            
+            if (!confirm(`Are you sure you want to delete "${currentEditingSession.session_name}"? This will also delete all associated cabinets and data.`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/sessions/${currentEditingSession.id}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    closeModal('edit-session-modal');
+                    loadSessions();
+                    showMessage('Session deleted successfully', 'success');
+                } else {
+                    showMessage(result.error || 'Error deleting session', 'error');
+                }
+            } catch (error) {
+                showMessage('Error deleting session', 'error');
+            }
+        }
+
+        async function deleteSessionDirect(sessionId) {
+            console.log('DEBUG: deleteSessionDirect called with ID:', sessionId, 'Type:', typeof sessionId);
+            console.log('DEBUG: Available sessions:', sessions.map(s => ({id: s.id, name: s.session_name})));
+            const session = sessions.find(s => s.id === sessionId);
+            if (!session) {
+                console.error('Session not found:', sessionId);
+                showMessage('Session not found', 'error');
+                return;
+            }
+            
+            if (!confirm(`Are you sure you want to delete "${session.session_name}"? This will also delete all associated cabinets and data.`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/sessions/${sessionId}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    loadSessions();
+                    showMessage('Session deleted successfully', 'success');
+                } else {
+                    showMessage(result.error || 'Error deleting session', 'error');
+                }
+            } catch (error) {
+                showMessage('Error deleting session', 'error');
+            }
+        }
+
+        async function completeSession(sessionId) {
+            const session = sessions.find(s => s.id === sessionId);
+            if (!session) {
+                console.error('Session not found:', sessionId);
+                showMessage('Session not found', 'error');
+                return;
+            }
+            
+            if (!confirm(`Mark "${session.session_name}" as completed? This will change the session status to completed.`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/sessions/${sessionId}/complete`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    loadSessions();
+                    showMessage('Session marked as completed successfully', 'success');
+                } else {
+                    showMessage(result.error || 'Error completing session', 'error');
+                }
+            } catch (error) {
+                showMessage('Error completing session', 'error');
+            }
+        }
+
+        function bulkImportModal(sessionId) {
+            currentBulkImportSession = sessions.find(s => s.id === sessionId);
+            if (!currentBulkImportSession) {
+                console.error('Session not found for bulk import:', sessionId);
+                showMessage('Session not found', 'error');
+                return;
+            }
+            
+            document.getElementById('cabinet-list').value = '';
+            openModal('bulk-import-modal');
+        }
+
+        async function bulkImportCabinets(e) {
+            e.preventDefault();
+            if (!currentBulkImportSession) return;
+            
+            const cabinetList = document.getElementById('cabinet-list').value;
+            const cabinetNames = cabinetList.split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0);
+            
+            if (cabinetNames.length === 0) {
+                showMessage('Please enter at least one cabinet location', 'error');
+                return;
+            }
+
+            try {
+                let successCount = 0;
+                let errorCount = 0;
+                
+                for (const cabinetName of cabinetNames) {
+                    try {
+                        const response = await fetch('/api/cabinets', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                pm_session_id: currentBulkImportSession.id,
+                                cabinet_location: cabinetName,
+                                cabinet_date: new Date().toISOString().split('T')[0]
+                            })
+                        });
+
+                        const result = await response.json();
+                        if (result.success) {
+                            successCount++;
+                        } else {
+                            errorCount++;
+                        }
+                    } catch (error) {
+                        errorCount++;
+                    }
+                }
+                
+                closeModal('bulk-import-modal');
+                loadSessions();
+                
+                if (errorCount === 0) {
+                    showMessage(`Successfully imported ${successCount} cabinets`, 'success');
+                } else {
+                    showMessage(`Imported ${successCount} cabinets, ${errorCount} failed`, 'info');
+                }
+                
+            } catch (error) {
+                showMessage('Error importing cabinets', 'error');
+            }
+        }
+
+        let currentDuplicatingSession = null;
+
+        function duplicateSession(sessionId) {
+            currentDuplicatingSession = sessions.find(s => s.id === sessionId);
+            if (!currentDuplicatingSession) {
+                console.error('Session not found:', sessionId);
+                showMessage('Session not found', 'error');
+                return;
+            }
+            
+            // Pre-fill with a suggested name using today's date
+            const today = new Date();
+            const formattedDate = today.toLocaleDateString('en-US');
+            document.getElementById('duplicate-name').value = `PM-${formattedDate}`;
+            openModal('duplicate-modal');
+        }
+
+        async function createDuplicateSession(e) {
+            e.preventDefault();
+            if (!currentDuplicatingSession) return;
+            
+            const formData = new FormData(e.target);
+            const newSessionName = formData.get('session_name');
+
+            try {
+                // Use the new server-side duplicate endpoint
+                const response = await fetch(`/api/sessions/${currentDuplicatingSession.id}/duplicate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_name: newSessionName
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    closeModal('duplicate-modal');
+                    loadSessions();
+                    if (typeof playSuccessSound === 'function') {
+                        playSuccessSound();
+                    }
+                    showMessage('Session duplicated successfully with controller assignments', 'success');
+                } else {
+                    if (typeof playErrorSound === 'function') {
+                        playErrorSound();
+                    }
+                    showMessage(result.error || 'Error duplicating session', 'error');
+                }
+            } catch (error) {
+                console.error('Error duplicating session:', error);
+                showMessage('Error duplicating session: ' + error.message, 'error');
+            }
+        }
+
+        function openSession(sessionId) {
+            if (!sessionId) {
+                console.error('No session ID provided');
+                showMessage('Invalid session ID', 'error');
+                return;
+            }
+            window.location.href = `/pages/session.html?id=${encodeURIComponent(sessionId)}`;
+        }
+
+        function openModal(modalId) {
+            document.getElementById(modalId).style.display = 'block';
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+            currentEditingSession = null;
+            currentBulkImportSession = null;
+        }
+
+        function showMessage(text, type = 'info', duration = 5000) {
+            const message = document.getElementById('message');
+            
+            // Clear any existing timeout
+            if (message.timeout) {
+                clearTimeout(message.timeout);
+            }
+            
+            // Set message content with close button
+            message.innerHTML = `
+                ${text}
+                <button class="message-close" onclick="hideMessage()">&times;</button>
+            `;
+            message.className = `message ${type}`;
+            
+            // Auto-hide after duration
+            message.timeout = setTimeout(() => {
+                hideMessage();
+            }, duration);
+        }
+
+        function hideMessage() {
+            const message = document.getElementById('message');
+            message.textContent = '';
+            message.className = 'message';
+            if (message.timeout) {
+                clearTimeout(message.timeout);
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('sessionId');
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html> 

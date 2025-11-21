@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clean Database Sync - Cabinet PM</title>
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .sync-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .sync-section {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border-left: 4px solid #0066cc;
+        }
+        
+        .sync-section h2 {
+            color: #0066cc;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .status-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
+        
+        .status-card h4 {
+            margin: 0 0 8px 0;
+            color: #374151;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .status-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #0066cc;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #dc2626, #b91c1c);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(220, 38, 38, 0.3);
+        }
+        
+        .btn-warning {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #059669, #047857);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #0066cc, #0052a3);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #0066cc;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .warning-box {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        
+        .warning-box h4 {
+            color: #92400e;
+            margin: 0 0 8px 0;
+        }
+        
+        .danger-box {
+            background: #fee2e2;
+            border: 1px solid #dc2626;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        
+        .danger-box h4 {
+            color: #991b1b;
+            margin: 0 0 8px 0;
+        }
+        
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+        
+        .comparison-table th,
+        .comparison-table td {
+            border: 1px solid #e2e8f0;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        
+        .comparison-table th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #374151;
+        }
+        
+        .count-match {
+            color: #059669;
+            font-weight: 600;
+        }
+        
+        .count-diff {
+            color: #dc2626;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/dashboard.html" class="nav-brand">ECI Cabinet PM</a>
+            <div class="nav-links">
+                <a href="/dashboard.html">Dashboard</a>
+                <a href="/pages/customers.html">Customers</a>
+                <a href="/pages/sessions.html">PM Sessions</a>
+                <a href="/sync">Legacy Sync</a>
+                <a href="/clean-sync.html" class="active">🔄 Clean Sync</a>
+                <span id="username-display" class="text-gray-600 text-sm"></span>
+                <button id="logout-btn" class="btn btn-secondary">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="sync-container">
+        <h1>🔄 Clean Database Sync Management</h1>
+        <p>Manage synchronization between local SQLite database and MongoDB master server with proper schemas.</p>
+
+        <!-- Connection Status -->
+        <div class="sync-section">
+            <h2>🔗 Connection Status</h2>
+            <div id="connection-status">
+                <p>Checking connection...</p>
+            </div>
+            <button onclick="testConnection()" class="btn-primary">Test Connection</button>
+        </div>
+
+        <!-- Database Status Comparison -->
+        <div class="sync-section">
+            <h2>📊 Database Status</h2>
+            <div id="database-status">
+                <p>Loading database status...</p>
+            </div>
+            <button onclick="refreshStatus()" class="btn-primary">Refresh Status</button>
+        </div>
+
+        <!-- Sync Operations -->
+        <div class="sync-section">
+            <h2>🔄 Sync Operations</h2>
+            
+            <div class="warning-box">
+                <h4>⚠️ Important Notes:</h4>
+                <ul>
+                    <li><strong>Pull from Master:</strong> Downloads data from master server to local database</li>
+                    <li><strong>Push to Master:</strong> Uploads local data to master server (safe operation)</li>
+                    <li><strong>Reset Master:</strong> ⚠️ DANGER - Completely deletes all master data</li>
+                    <li><strong>Reset & Repopulate:</strong> ⚠️ DANGER - Resets master then uploads all local data</li>
+                </ul>
+            </div>
+
+            <div class="action-buttons">
+                <button onclick="pullFromMaster()" class="btn-success">📥 Pull from Master</button>
+                <button onclick="pushToMaster()" class="btn-warning">📤 Push to Master</button>
+                <button onclick="resetAndRepopulate()" class="btn-danger">💥 Reset & Repopulate Master</button>
+            </div>
+        </div>
+
+        <!-- Danger Zone -->
+        <div class="sync-section">
+            <h2>💥 Danger Zone</h2>
+            
+            <div class="danger-box">
+                <h4>⚠️ DESTRUCTIVE OPERATIONS</h4>
+                <p>These operations will permanently delete data. Use with extreme caution!</p>
+            </div>
+
+            <div class="action-buttons">
+                <button onclick="resetMasterDatabase()" class="btn-danger">🗑️ Reset Master Database Only</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="message" class="message"></div>
+
+    <script>
+        // Load user info
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserInfo();
+            refreshStatus();
+            testConnection();
+        });
+
+        function loadUserInfo() {
+            const username = localStorage.getItem('username');
+            if (username) {
+                document.getElementById('username-display').textContent = `Logged in as: ${username}`;
+            }
+        }
+
+        // Logout functionality
+        document.getElementById('logout-btn').addEventListener('click', async function() {
+            try {
+                const response = await fetch('/logout', { method: 'POST' });
+                if (response.ok) {
+                    localStorage.removeItem('username');
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+        });
+
+        // Test MongoDB connection
+        async function testConnection() {
+            try {
+                showMessage('Testing MongoDB connection...', 'info');
+                
+                const response = await fetch('/api/clean-sync/test-connection', {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                const statusDiv = document.getElementById('connection-status');
+                if (result.success) {
+                    statusDiv.innerHTML = `
+                        <div style="color: #059669; font-weight: 600;">
+                            ✅ Connected to MongoDB Master Server
+                        </div>
+                        <p>Connection string: mongodb://172.16.10.124:27017/cabinet_pm_db</p>
+                    `;
+                    showMessage('MongoDB connection successful!', 'success');
+                } else {
+                    statusDiv.innerHTML = `
+                        <div style="color: #dc2626; font-weight: 600;">
+                            ❌ Failed to connect to MongoDB Master Server
+                        </div>
+                        <p>Error: ${result.error || 'Unknown error'}</p>
+                    `;
+                    showMessage('MongoDB connection failed!', 'error');
+                }
+            } catch (error) {
+                console.error('Connection test error:', error);
+                showMessage('Connection test failed!', 'error');
+            }
+        }
+
+        // Refresh database status
+        async function refreshStatus() {
+            try {
+                showMessage('Loading database status...', 'info');
+                
+                const response = await fetch('/api/clean-sync/status');
+                const result = await response.json();
+                
+                const statusDiv = document.getElementById('database-status');
+                
+                if (result.success && result.status) {
+                    const { localCounts, masterCounts } = result.status;
+                    
+                    let tableHtml = `
+                        <table class="comparison-table">
+                            <thead>
+                                <tr>
+                                    <th>Table</th>
+                                    <th>Local Count</th>
+                                    <th>Master Count</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+                    
+                    const tables = Object.keys(localCounts);
+                    tables.forEach(table => {
+                        const localCount = localCounts[table] || 0;
+                        const masterCount = masterCounts[table] || 0;
+                        const isMatch = localCount === masterCount;
+                        const statusClass = isMatch ? 'count-match' : 'count-diff';
+                        const statusText = isMatch ? '✅ Match' : '⚠️ Different';
+                        
+                        tableHtml += `
+                            <tr>
+                                <td><strong>${table}</strong></td>
+                                <td>${localCount}</td>
+                                <td>${masterCount}</td>
+                                <td class="${statusClass}">${statusText}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    tableHtml += '</tbody></table>';
+                    statusDiv.innerHTML = tableHtml;
+                    
+                    showMessage('Database status loaded successfully!', 'success');
+                } else {
+                    statusDiv.innerHTML = `<p style="color: #dc2626;">Error loading status: ${result.error || 'Unknown error'}</p>`;
+                    showMessage('Failed to load database status!', 'error');
+                }
+            } catch (error) {
+                console.error('Status refresh error:', error);
+                showMessage('Failed to refresh status!', 'error');
+            }
+        }
+
+        // Pull from master
+        async function pullFromMaster() {
+            if (!confirm('Pull all data from master server to local database? This will update your local data.')) {
+                return;
+            }
+            
+            try {
+                showMessage('📥 Pulling data from master server...', 'info');
+                
+                const response = await fetch('/api/clean-sync/pull-all', {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage(`✅ Successfully pulled ${result.totalPulled} records from master!`, 'success');
+                    refreshStatus();
+                } else {
+                    showMessage(`❌ Pull failed: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('Pull error:', error);
+                showMessage('Pull operation failed!', 'error');
+            }
+        }
+
+        // Push to master
+        async function pushToMaster() {
+            if (!confirm('Push all local data to master server? This will update the master database.')) {
+                return;
+            }
+            
+            try {
+                showMessage('📤 Pushing data to master server...', 'info');
+                
+                const response = await fetch('/api/clean-sync/push-all', {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage(`✅ Successfully pushed ${result.totalPushed} records to master!`, 'success');
+                    refreshStatus();
+                } else {
+                    showMessage(`❌ Push failed: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('Push error:', error);
+                showMessage('Push operation failed!', 'error');
+            }
+        }
+
+        // Reset master database only
+        async function resetMasterDatabase() {
+            if (!confirm('⚠️ DANGER: This will completely delete ALL data in the master database. Are you absolutely sure?')) {
+                return;
+            }
+            
+            if (!confirm('⚠️ FINAL WARNING: This action cannot be undone. All master data will be permanently lost. Continue?')) {
+                return;
+            }
+            
+            try {
+                showMessage('💥 Resetting master database...', 'info');
+                
+                const response = await fetch('/api/clean-sync/reset-master', {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage(`✅ Master database reset complete! Deleted ${result.totalDeleted} records.`, 'success');
+                    refreshStatus();
+                } else {
+                    showMessage(`❌ Reset failed: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('Reset error:', error);
+                showMessage('Reset operation failed!', 'error');
+            }
+        }
+
+        // Reset and repopulate (complete workflow)
+        async function resetAndRepopulate() {
+            if (!confirm('⚠️ DANGER: This will reset the master database and repopulate it with local data. Continue?')) {
+                return;
+            }
+            
+            if (!confirm('⚠️ FINAL WARNING: This will delete all master data and replace it with local data. This action cannot be undone. Continue?')) {
+                return;
+            }
+            
+            try {
+                showMessage('🔄 Resetting master and repopulating with local data...', 'info');
+                
+                const response = await fetch('/api/clean-sync/reset-and-repopulate', {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage(`✅ Complete! Reset ${result.resetResult.totalDeleted} records, pushed ${result.pushResult.totalPushed} records.`, 'success');
+                    refreshStatus();
+                } else {
+                    showMessage(`❌ Operation failed: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('Reset and repopulate error:', error);
+                showMessage('Reset and repopulate operation failed!', 'error');
+            }
+        }
+
+        // Message system
+        function showMessage(text, type = 'info', duration = 5000) {
+            const message = document.getElementById('message');
+            
+            // Add loading spinner for info messages
+            const spinner = type === 'info' && text.includes('...') ? 
+                '<div class="loading-spinner"></div>' : '';
+            
+            message.innerHTML = `
+                ${spinner}${text}
+                <button class="message-close" onclick="hideMessage()">&times;</button>
+            `;
+            message.className = `message ${type}`;
+            
+            // Don't auto-hide loading messages
+            if (type !== 'info' || !text.includes('...')) {
+                setTimeout(() => {
+                    hideMessage();
+                }, duration);
+            }
+        }
+
+        function hideMessage() {
+            const message = document.getElementById('message');
+            message.textContent = '';
+            message.className = 'message';
+        }
+    </script>
+</body>
+</html>
