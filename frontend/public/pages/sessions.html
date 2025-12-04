@@ -204,9 +204,14 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="session-name" class="form-label">Session Name *</label>
-                        <input type="text" id="session-name" name="session_name" required 
-                               placeholder="e.g., PM-12/15/2024" pattern="^PM-\d{2}/\d{2}/\d{4}$" class="form-input">
+                        <label for="session-date" class="form-label">Session Date *</label>
+                        <input type="date" id="session-date" name="session_date" required class="form-input">
+                        <small class="text-gray-500">Session name will be auto-generated from this date</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="session-name" class="form-label">Session Name (Preview)</label>
+                        <input type="text" id="session-name" name="session_name" readonly 
+                               placeholder="Select a date to generate name..." class="form-input bg-gray-100">
                     </div>
                 </form>
             </div>
@@ -375,14 +380,18 @@
             
             // New session
             document.getElementById('new-session-btn').addEventListener('click', () => {
-                // Auto-populate with today's date in PM-MM/DD/YYYY format
-                const today = new Date();
-                const formattedDate = today.toLocaleDateString('en-US');
-                setTimeout(() => {
-                    document.getElementById('session-name').value = `PM-${formattedDate}`;
-                }, 100);
+                // Set today's date as default
+                const today = new Date().toISOString().split('T')[0];
+                document.getElementById('session-date').value = today;
+                
+                // Generate session name from today's date
+                generateSessionName();
+                
                 openModal('session-modal');
             });
+            
+            // Auto-generate session name when date changes
+            document.getElementById('session-date').addEventListener('change', generateSessionName);
             
             // Search and filter
             document.getElementById('search-sessions').addEventListener('input', filterSessions);
@@ -853,6 +862,24 @@
                 return;
             }
             window.location.href = `/pages/session.html?id=${encodeURIComponent(sessionId)}`;
+        }
+
+        function generateSessionName() {
+            const dateInput = document.getElementById('session-date');
+            const nameInput = document.getElementById('session-name');
+            
+            if (dateInput.value) {
+                // Convert date to MM/DD/YYYY format
+                const date = new Date(dateInput.value + 'T00:00:00'); // Add time to avoid timezone issues
+                const month = date.getMonth() + 1;
+                const day = date.getDate();
+                const year = date.getFullYear();
+                
+                // Generate name in format: PM-M/D/YYYY (no zero-padding)
+                nameInput.value = `PM-${month}/${day}/${year}`;
+            } else {
+                nameInput.value = '';
+            }
         }
 
         function openModal(modalId) {
