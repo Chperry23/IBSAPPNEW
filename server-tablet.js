@@ -804,6 +804,12 @@ async function isSessionCompleted(sessionId) {
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
+// Debug middleware to log all requests
+app.use((req, res, next) => {
+  console.log(`📨 ${req.method} ${req.path}`);
+  next();
+});
+
 // Session configuration
 app.use(session({
   secret: 'cabinet-pm-secret-key',
@@ -819,9 +825,20 @@ app.use(session({
 // Detect if running as executable and adjust paths (reuse isPackaged from above)
 const basePath = isPackaged ? path.dirname(process.execPath) : __dirname;
 
-// Serve static files from frontend/public directory
-app.use(express.static(path.join(basePath, 'frontend', 'public')));
-app.use('/assets', express.static(path.join(basePath, 'frontend', 'public', 'assets')));
+// Check if React build exists, otherwise use old HTML frontend
+const reactBuildPath = path.join(basePath, 'frontend-react', 'dist');
+const useReactBuild = fs.existsSync(reactBuildPath);
+
+if (useReactBuild) {
+  console.log('✨ Serving React build from:', reactBuildPath);
+  // Serve React app static files
+  app.use(express.static(reactBuildPath));
+} else {
+  console.log('📄 Serving HTML frontend from:', path.join(basePath, 'frontend', 'public'));
+  // Serve static files from frontend/public directory (legacy)
+  app.use(express.static(path.join(basePath, 'frontend', 'public')));
+  app.use('/assets', express.static(path.join(basePath, 'frontend', 'public', 'assets')));
+}
 
 // Authentication middleware
 function requireAuth(req, res, next) {
@@ -833,13 +850,20 @@ function requireAuth(req, res, next) {
 }
 
 // Routes
+// Note: All page routes are now handled by React Router via the catch-all route at the end
 
-// Login page
-app.get('/', (req, res) => {
+// Auth check endpoint (for persistent login)
+app.get('/api/auth/check', (req, res) => {
   if (req.session && req.session.userId) {
-    res.redirect('/dashboard');
+    res.json({ 
+      authenticated: true, 
+      user: { 
+        id: req.session.userId, 
+        username: req.session.username 
+      } 
+    });
   } else {
-    res.sendFile(path.join(basePath, 'frontend', 'public', 'login.html'));
+    res.json({ authenticated: false });
   }
 });
 
@@ -909,15 +933,7 @@ app.post('/logout', (req, res) => {
   });
 });
 
-// Dashboard
-app.get('/dashboard', requireAuth, (req, res) => {
-  res.sendFile(path.join(basePath, 'frontend', 'public', 'dashboard.html'));
-});
-
-// Sync - Default to MongoDB Cloud Sync
-app.get('/sync', requireAuth, (req, res) => {
-  res.sendFile(path.join(basePath, 'frontend', 'public', 'sync', 'mongo-sync.html'));
-});
+// Dashboard and other pages are now served by React Router (see catch-all route at end)
 
 // Legacy File Sync removed - no longer needed
 
@@ -6956,7 +6972,7 @@ app.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => {
             sns.os_service_pack,
             sns.bios_version,
             sns.oem_type_description,
-            sns.assigned_cabinet_name
+            sns.assigned_cabinet_location as assigned_cabinet_name
           FROM session_node_snapshots sns
           WHERE sns.session_id = ?
           ORDER BY sns.node_type, sns.node_name
@@ -7468,28 +7484,20 @@ app.post('/api/sessions/:sessionId/node-maintenance', requireAuth, async (req, r
       });
     }
     
-    // First, delete existing maintenance data for this session
-    await db.prepare('DELETE FROM session_node_maintenance WHERE session_id = ?').run([sessionId]);
-    
-    // Insert new maintenance data
+    // Use UPSERT (INSERT OR REPLACE) to handle existing records
     let insertedCount = 0;
     
     for (const [nodeId, maintenance] of Object.entries(maintenanceData)) {
-      // Only insert if at least one field has data
-      const hasData = maintenance.dv_checked || maintenance.os_checked || maintenance.macafee_checked ||
-                     maintenance.redundancy_checked || maintenance.cold_restart_checked || 
-                     maintenance.no_errors_checked || maintenance.hdd_replaced || maintenance.hf_updated ||
-                     maintenance.firmware_updated_checked || maintenance.completed ||
-                     (maintenance.free_time && maintenance.free_time.trim()) ||
-                     maintenance.performance_value;
-      
-      if (hasData) {
+      // ALWAYS save the record - even if all fields are false
+      // This ensures unchecking works properly
+      try {
         await db.prepare(`
-          INSERT INTO session_node_maintenance (
+          INSERT OR REPLACE INTO session_node_maintenance (
             session_id, node_id, dv_checked, os_checked, macafee_checked,
             free_time, redundancy_checked, cold_restart_checked, no_errors_checked,
-            hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked, completed
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked, completed,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         `).run([
           sessionId,
           parseInt(nodeId),
@@ -7508,6 +7516,8 @@ app.post('/api/sessions/:sessionId/node-maintenance', requireAuth, async (req, r
           maintenance.completed ? 1 : 0
         ]);
         insertedCount++;
+      } catch (insertError) {
+        console.error('Error inserting node maintenance for node', nodeId, ':', insertError);
       }
     }
     
@@ -7567,6 +7577,34 @@ async function startServer() {
     } catch (error) {
       console.log('❌ Enhanced Merge Replication endpoints not available:', error.message);
       console.log('❌ Error stack:', error.stack);
+    }
+    
+    // Catch-all route for React Router (must be last)
+    // Serves index.html for all routes that don't match API endpoints
+    if (useReactBuild) {
+      console.log('✅ Adding catch-all route for React Router');
+      console.log('📂 React build path:', reactBuildPath);
+      console.log('📄 Index.html path:', path.join(reactBuildPath, 'index.html'));
+      console.log('📄 Index.html exists?', fs.existsSync(path.join(reactBuildPath, 'index.html')));
+      
+      app.get('*', (req, res) => {
+        console.log('🎯 Catch-all route hit for:', req.path);
+        try {
+          const indexPath = path.join(reactBuildPath, 'index.html');
+          console.log('📤 Sending file:', indexPath);
+          res.sendFile(indexPath, (err) => {
+            if (err) {
+              console.error('❌ Error sending file:', err);
+              res.status(500).send('Error loading page');
+            }
+          });
+        } catch (error) {
+          console.error('❌ Catch-all route error:', error);
+          res.status(500).send('Server error');
+        }
+      });
+    } else {
+      console.log('⚠️  React build not found, not adding catch-all route');
     }
     
     // Start listening only after everything is initialized

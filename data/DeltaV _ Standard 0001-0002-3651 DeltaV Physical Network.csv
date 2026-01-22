@@ -1,0 +1,80 @@
+Node Name,Type,Model,Description,Serial,Firmware,Version,Status,Redundant,OS Name,OS Service Pack,Bios Version,OEM Type Description,SMS Filter,SMS Type
+PROPLUS,Local ProfessionalPlus,,Windows Server 2016 Standard (64-bit),Not available,,14.3.1.7386.xr,Unclassified,No,NA,NA,2.21.2 02/19/2024,Unknown,Computer|462512a9-1370-4d4b-b566-2dd06180ad20,IbsSystemDevice
+BEXEC,Local Application,SE2702C*,Windows Server 2016 Standard (64-bit),36J7CH2,,14.3.1.7386.xr,Expired Warranty,No,Windows Server 2016 Standard (64-bit),None,Dell Inc. 2.17.0 03/15/2023,POWEREDGE R730,Computer|d77bd664-6061-4491-9299-93bbedbacf9a,IbsSystemDevice
+BEXEC_BLDG27,Local Application,SE2702C*,Windows Server 2016 Standard (64-bit),2ZGNHQ2,,14.3.1.7386.xr,Expired Warranty,No,Windows Server 2016 Standard (64-bit),None,Dell Inc. 2.17.0 03/15/2023,POWEREDGE R730,Computer|591e4455-2787-4c45-a622-e737c0bc23f9,IbsSystemDevice
+BEXEC_BLDG9,Local Application,SE2702C*,Windows Server 2016 Standard (64-bit),C6QZQP2,,14.3.1.7386.xr,Expired Warranty,No,Windows Server 2016 Standard (64-bit),None,Dell Inc. 2.17.0 03/15/2023,POWEREDGE R730,Computer|37e26ff0-d383-481d-9cca-c98826ce2ac0,IbsSystemDevice
+HISTORIAN,Local Application,,Windows Server 2016 Standard (64-bit),Not available,,14.3.1.7386.xr,Unclassified,No,NA,NA,2.19.1 06/04/2023,Unknown,Computer|e2d0efaa-258f-4ff7-8528-9f607cda3aa1,IbsSystemDevice
+OS_CTRLRM27A,Local Operator,SE2612C02,Windows 10 Enterprise 2016 LTSB (64-bit),8PZJZB3,,14.3.1.7386.xr,Under Warranty,No,Windows 10 Enterprise 2016 LTSB (64-bit),None,Dell Inc. 2.39.0 11/07/2024,5820 XL Tower,Computer|48161d87-097e-49c0-a735-522d8319215b,IbsSystemDevice
+OS_CTRLRM32A,Local Operator,SE2612C02,Windows 10 Enterprise 2016 LTSB (64-bit),GJYQZB3,,14.3.1.7386.xr,Under Warranty,No,Windows 10 Enterprise 2016 LTSB (64-bit),None,Dell Inc. 2.39.0 11/07/2024,5820 XL Tower,Computer|e3721b78-93a5-4ab8-95b1-31b76f312b36,IbsSystemDevice
+OS_CTRLRM32B,Local Operator,SE2612C02,Windows 10 Enterprise 2016 LTSB (64-bit),BWD8RN3,,14.3.1.7386.xr,Under Warranty,No,Windows 10 Enterprise 2016 LTSB (64-bit),None,Dell Inc. 2.39.0 11/07/2024,5820 XL Tower,Computer|567a220e-1dd6-4910-958f-86c0c82174b0,IbsSystemDevice
+OS_EMULSIONS,Local Operator,SE2612C02,Windows 10 Enterprise 2016 LTSB (64-bit),GJZJZB3,,14.3.1.7386.xr,Under Warranty,No,Windows 10 Enterprise 2016 LTSB (64-bit),None,Dell Inc. 2.39.0 11/07/2024,5820 XL Tower,Computer|38b6851d-0399-4d58-8ab0-039d49cab06b,IbsSystemDevice
+OS_LATEX1,Local Operator,SE2613C02,Windows 10 Enterprise 2016 LTSB (64-bit),7739ZC3,,14.3.1.7386.xr,Under Warranty,No,Windows 10 Enterprise 2016 LTSB (64-bit),None,Dell Inc. 2.22.2 09/12/2024,7920 XL Rack,Computer|e0e8999b-eca4-425e-a663-3b0cdc2f6f34,IbsSystemDevice
+OS_LATEX2,Local Operator,SE2613C02,Windows 10 Enterprise 2016 LTSB (64-bit),7741ZC3,,14.3.1.7386.xr,Under Warranty,No,Windows 10 Enterprise 2016 LTSB (64-bit),None,Dell Inc. 2.22.2 09/12/2024,7920 XL Rack,Computer|882e426c-edc7-422f-a772-17dd7b21ff46,IbsSystemDevice
+OS_RG21REACTOR,Local Operator,SE2613C02,Windows 10 Enterprise 2016 LTSB (64-bit),7748ZC3,,14.3.1.7386.xr,Under Warranty,No,Windows 10 Enterprise 2016 LTSB (64-bit),None,Dell Inc. 2.22.2 09/12/2024,7920 XL Rack,Computer|1a83aa30-8875-441a-b815-9ab91a2b80c9,IbsSystemDevice
+OS_RS18REACTOR,Local Operator,SE2612C02,Windows 10 Enterprise 2016 LTSB (64-bit),6X9QD33,,14.3.1.7386.xr,Expired Warranty,No,Windows 10 Enterprise 2016 LTSB (64-bit),None,Dell Inc. 2.31.0 07/06/2023,5820 XL Tower,Computer|c56c9d7c-4d9d-46ff-b269-a3bbf3433c7a,IbsSystemDevice
+OS_SUPRV,Local Operator,SE2612C02,Windows 10 Enterprise 2016 LTSB (64-bit),GJZQZB3,,14.3.1.7386.xr,Under Warranty,No,Windows 10 Enterprise 2016 LTSB (64-bit),None,Dell Inc. 2.39.0 11/07/2024,5820 XL Tower,Computer|6c04a9c9-c85e-410d-bb3c-4576215410f0,IbsSystemDevice
+TERMSVR,Local Operator,SE2702C*,Windows Server 2016 Standard (64-bit),JYJJHQ2,,14.3.1.7386.xr,Expired Warranty,No,Windows Server 2016 Standard (64-bit),None,Dell Inc. 2.17.0 03/15/2023,POWEREDGE R730,Computer|8a41fd00-ba3e-413a-a7ca-40be6d7115d7,IbsSystemDevice
+TERMSVR_BLDG27,Local Operator,SE2702C*,Windows Server 2016 Standard (64-bit),2ZGPHQ2,,14.3.1.7386.xr,Expired Warranty,No,Windows Server 2016 Standard (64-bit),None,Dell Inc. 2.13.0 05/14/2021,POWEREDGE R730,Computer|8a62f8ab-d7ae-46d5-8334-99b32b9ea3ac,IbsSystemDevice
+OS_BLD19_GENMFC,Not available,,Not available,Unknown,,Not available,Unclassified,No,NA,NA,Not available,Not available,Computer|38aa18d4-8ff8-4333-b30e-4bfd8f3d9b35,IbsSystemDevice
+OS_RG10REACTOR,Not available,,Not available,Unknown,,Not available,Unclassified,No,NA,NA,Not available,Not available,Computer|ae618339-2cb7-438f-90b6-113941dc23ec,IbsSystemDevice
+OS_RG9REACTOR,Not available,,Not available,Unknown,,Not available,Unclassified,No,NA,NA,Not available,Not available,Computer|61aa19fe-ef6d-44fb-a0b2-824f6bc746f3,IbsSystemDevice
+CTRL_BLDG2,Controller,VE3008,DeltaV MQ Controller,P173574991,Rev 10.3,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|3a57285b-fe78-42fd-b64c-18648b0045ce,IbsSystemDevice
+CTRL_BLDG2-partner,Controller,VE3008,DeltaV MQ Controller,P173575057,Rev 10.3,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|e7ba868a-b376-4d43-94e7-80cede2f8006,IbsSystemDevice
+CTRL_CM100_00,Controller,SE3007,DeltaV SX Controller,K203160040,Rev 47.10,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|6a82550f-32c7-428e-8f42-0fb4ad145e4b,IbsSystemDevice
+CTRL_CM100_00-partner,Controller,SE3007,DeltaV SX Controller,K203160080,Rev 47.10,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|34e7c1b1-90a2-4a74-9438-ced1612cf2a5,IbsSystemDevice
+CTRL_CM100_01,Controller,SE3007,DeltaV SX Controller,K203261938,Rev 47.10,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|bc77b4f5-3c89-464a-a4f7-06c7c78a423b,IbsSystemDevice
+CTRL_CM100_01-partner,Controller,SE3007,DeltaV SX Controller,K203261925,Rev 47.10,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|69e9fda2-934d-47b0-8f95-b0450c3ecea9,IbsSystemDevice
+CTRL_EAST_TANKS,Controller,SE3007,DeltaV SX Controller,P191481279,Rev 47.6,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|fff213e0-e592-41aa-8946-f59851211cc5,IbsSystemDevice
+CTRL_EAST_TANKS-partner,Controller,SE3007,DeltaV SX Controller,P191481264,Rev 47.6,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|4a023207-c1df-4574-890f-322a79560c70,IbsSystemDevice
+CTRL_EMULSIONS,Controller,VE3008,DeltaV MQ Controller,P170673469,Rev 10.2,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|ccf61e09-bd16-471b-98dd-e24353149341,IbsSystemDevice
+CTRL_EMULSIONS-partner,Controller,VE3008,DeltaV MQ Controller,P172078955,Rev 10.3,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|bdd9c048-67b9-49b5-bc57-d5e57dd3e0dc,IbsSystemDevice
+CTRL_LATEX,Controller,SE3007,DeltaV SX Controller,P160574020,Rev 47.4,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|2d5e224b-9c6a-43fa-a449-b847d42589ac,IbsSystemDevice
+CTRL_LATEX-partner,Controller,SE3007,DeltaV SX Controller,P160574009,Rev 47.4,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|0923fd62-c304-4004-bf5f-1a511829c658,IbsSystemDevice
+CTRL_RG21REACTOR,Controller,VE3008,DeltaV MQ Controller,K241960401,Rev 10.19,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|46f3b490-5984-41e7-885f-2c82f548b48a,IbsSystemDevice
+CTRL_RG21REACTOR-partner,Controller,VE3008,DeltaV MQ Controller,K241960393,Rev 10.19,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|ee1fabcc-cc93-4672-a10f-962f380bd6ac,IbsSystemDevice
+CTRL_RS18REACTOR,Controller,VE3008,DeltaV MQ Controller,K242360697,Rev 10.19,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|fc2ee0ab-d615-4a81-a567-6fa1ab70c121,IbsSystemDevice
+CTRL_RS18REACTOR-partner,Controller,VE3008,DeltaV MQ Controller,K242360778,Rev 10.19,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|91782823-3c7a-425c-ab89-7713ade64811,IbsSystemDevice
+CTRL_SABLDG,Controller,SE3007,DeltaV SX Controller,P184172149,Rev 47.6,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|1926e9d8-c851-46c1-84ac-2dbb92192df1,IbsSystemDevice
+CTRL_SABLDG-partner,Controller,SE3007,DeltaV SX Controller,P184172129,Rev 47.6,14.3.1.7412.xr,Current,Yes,NA,NA,,,Controller|a4e51112-7eb3-43bc-81b2-6e5e0469a6ef,IbsSystemDevice
+CIOC-1,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P160870476,Rev 8.12,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|e997717b-3b5d-432e-965c-3a4ec74ac412,IbsSystemDevice
+CIOC-10,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P184278327,Rev 8.15,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|ce7dd737-cc54-4be3-aac4-275028415068,IbsSystemDevice
+CIOC-10-partner,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P184278389,Rev 8.15,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|4c9f8455-dde0-42bd-97b6-fa54ff0c1e38,IbsSystemDevice
+CIOC-11,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P184278438,Rev 8.15,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|7c30b091-e646-4e96-9e27-ab2596f615be,IbsSystemDevice
+CIOC-11-partner,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P184280544,Rev 8.15,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|84a84f9d-c0d0-4fff-a5c4-c91433cff043,IbsSystemDevice
+CIOC-12,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P184278318,Rev 8.15,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|00e0b57a-36d7-4a5b-a524-0520cfa8df76,IbsSystemDevice
+CIOC-12-partner,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P184278450,Rev 8.15,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|a6b0072f-8665-4612-8bb4-9c3c98b37b69,IbsSystemDevice
+CIOC-1-partner,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P160870508,Rev 8.12,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|8f044dd7-2c07-400c-91e0-36ade8436774,IbsSystemDevice
+CIOC-2,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P160870526,Rev 8.12,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|5a21a723-411b-4f79-9280-00981327b10f,IbsSystemDevice
+CIOC-2-partner,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P160870518,Rev 8.12,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|f6c79967-673d-404c-bfb6-84eb55e53982,IbsSystemDevice
+CIOC-3,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P160870479,Rev 8.12,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|8b9d417f-0248-48d2-98ca-6a8ab7bb1b7b,IbsSystemDevice
+CIOC-3-partner,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P160870528,Rev 8.12,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|a1c0d3ff-75be-42ce-afb5-07663bd5ad9d,IbsSystemDevice
+CIOC-4,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P160870484,Rev 8.12,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|fd408a7d-dea8-40aa-abd9-c697553b50a7,IbsSystemDevice
+CIOC-4-partner,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P160870525,Rev 8.12,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|71248d4f-5a65-44df-a4c6-d68a96457f58,IbsSystemDevice
+CIOC-5,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P160870492,Rev 8.12,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|bfe8513f-d96c-4d4a-a351-bb5a4f38b0b7,IbsSystemDevice
+CIOC-5-partner,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P160978119,Rev 8.12,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|ef07f6aa-7c2c-4cd8-8fee-794ccbfa8cf3,IbsSystemDevice
+CIOC-6,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P160870524,Rev 8.12,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|a079a64c-6053-4118-bb83-35be0a222e56,IbsSystemDevice
+CIOC-6-partner,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P160870481,Rev 8.12,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|1d4a6623-8ed8-4391-aa63-284fa4aa6de6,IbsSystemDevice
+CIOC-7,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P160978065,Rev 8.12,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|a9815eec-7a46-42de-8fe8-08c025796729,IbsSystemDevice
+CIOC-7-partner,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P160978083,Rev 8.12,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|2d4ae693-2318-49cf-b817-a442d2dd7aca,IbsSystemDevice
+CIOC-8,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,K193362019,Rev 8.17,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|fd049754-6233-4ac7-803f-5741b9d6432e,IbsSystemDevice
+CIOC-8-partner,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P160978022,Rev 8.12,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|0a4e2a3a-2c05-454f-9fea-380fabf9a9c9,IbsSystemDevice
+CIOC-9,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P184280546,Rev 8.15,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|d585c858-4b67-4115-959c-daaa38a01e5d,IbsSystemDevice
+CIOC-9-partner,CIOC,KL2101X1-BA1,DeltaV CHARM I/O Card,P184278444,Rev 8.15,14.3.1.7383.xr,Supported,Yes,NA,NA,,,CIOC|88c0e094-d850-4d98-b2bb-d32f2b985227,IbsSystemDevice
+Unknown,Power Supply,,,mt0000,,,Unclassified,No,NA,NA,,,PowerSupply|2d5960fb-1c3b-4218-a073-486f7b4d5235,IbsSystemDevice
+Unknown,Power Supply,VE5008,24/12 Vdc System Power Supply,MT51125178,,,Retired,No,NA,NA,,,PowerSupply|7b0f1344-454c-4504-88ee-b14427b63a33,IbsSystemDevice
+Unknown,Power Supply,VE5008,24/12 Vdc System Power Supply,MT61734556,,,Retired,No,NA,NA,,,PowerSupply|96990b86-6fd5-473c-8726-c7c231b4ea8c,IbsSystemDevice
+Unknown,Power Supply,VE5008,24/12 Vdc System Power Supply,MT61935115,,,Retired,No,NA,NA,,,PowerSupply|1dfc254f-ef40-41b5-a3b3-1bfd7f7d1a89,IbsSystemDevice
+BDG32IDF16PRI_$X,Smart Network Devices,VE6046Px,SMART_SWITCH,943969801060912666,1.30,09.0.15,Supported,No,NA,NA,,,SmartSwitch|a93a7b2a-1575-4afb-9192-0cda55ce7e91,IbsSystemDevice
+BDG32IDF16SEC_$X,Smart Network Devices,VE6046Px,SMART_SWITCH,943969801060912658,1.30,09.0.15,Supported,No,NA,NA,,,SmartSwitch|800f1707-a52c-457e-a580-18f28f1b9b80,IbsSystemDevice
+BLD27CAB0PRI_$X,Smart Network Devices,,SMART_SWITCH,94343480552A804804,1.31,09.0.12,Unclassified,No,NA,NA,,,SmartSwitch|5852ca97-4198-44e0-8a07-35294550b3ca,IbsSystemDevice
+BLD27CAB0SEC_$X,Smart Network Devices,,SMART_SWITCH,94343480552A804811,1.31,09.0.12,Unclassified,No,NA,NA,,,SmartSwitch|da2d0db9-791d-4a77-96bc-cc4f98276c31,IbsSystemDevice
+BLD27CAB1PRI_$X,Smart Network Devices,,SMART_SWITCH,943434805438703841,1.31,08.0.13,Unclassified,No,NA,NA,,,SmartSwitch|8e41e085-cf64-403f-9959-05cb6ac1324f,IbsSystemDevice
+BLD27CAB1SEC_$X,Smart Network Devices,,SMART_SWITCH,94343480552A804803,1.31,09.0.12,Unclassified,No,NA,NA,,,SmartSwitch|d3aaf535-8d4d-49ef-8479-80eabe9fb25f,IbsSystemDevice
+BLD9TFPRI_$X,Smart Network Devices,,SMART_SWITCH,94343480552B205326,1.31,09.0.15,Unclassified,No,NA,NA,,,SmartSwitch|107def54-35b8-46f3-8263-273abcc3ab37,IbsSystemDevice
+BLD9TFSEC_$X,Smart Network Devices,,SMART_SWITCH,94343480552B205332,1.31,09.0.15,Unclassified,No,NA,NA,,,SmartSwitch|37ec3d51-c922-49fc-b462-ff886de81b07,IbsSystemDevice
+BLDG19CAB0PRI_$X,Smart Network Devices,VE6046Px,SMART_SWITCH,943969801040607909,1.30,04.2.14,Supported,No,NA,NA,,,SmartSwitch|b6e169fb-d7a7-44b0-8217-517a33287fc6,IbsSystemDevice
+BLDG19CAB0SEC_$X,Smart Network Devices,VE6046Px,SMART_SWITCH,943969801040607923,1.30,04.2.14,Supported,No,NA,NA,,,SmartSwitch|1425c7c9-855e-4fe7-a36b-f45f677ff8e2,IbsSystemDevice
+BLDG32P108PRI_$X,Smart Network Devices,,SMART_SWITCH,94343480552B806099,1.31,09.0.15,Unclassified,No,NA,NA,,,SmartSwitch|c09adc54-a209-4f46-8249-a5a7536948ed,IbsSystemDevice
+BLDG32P108SEC_$X,Smart Network Devices,,SMART_SWITCH,94343480552B806102,1.31,09.0.15,Unclassified,No,NA,NA,,,SmartSwitch|bbac6716-73e6-4d04-8b85-90828206b325,IbsSystemDevice
+BLDG32P109PRI_$X,Smart Network Devices,,SMART_SWITCH,94343480552B806109,1.31,09.0.15,Unclassified,No,NA,NA,,,SmartSwitch|7493a589-93b6-4992-9aa4-31df6cb7668c,IbsSystemDevice
+BLDG32P109SEC_$X,Smart Network Devices,,SMART_SWITCH,94343480552B806110,1.31,09.0.15,Unclassified,No,NA,NA,,,SmartSwitch|13458a56-05ae-49d4-afcf-cb5e469c9630,IbsSystemDevice
