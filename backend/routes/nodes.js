@@ -31,7 +31,7 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
             sns.os_service_pack,
             sns.bios_version,
             sns.oem_type_description,
-            sns.assigned_cabinet_location
+            sns.assigned_cabinet_name
           FROM session_node_snapshots sns
           WHERE sns.session_id = ?
           ORDER BY sns.node_type, sns.node_name
@@ -43,7 +43,7 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
     
     // Return current nodes for active sessions or when no sessionId provided
     const nodes = await db.prepare(`
-      SELECT n.*, c.cabinet_location as assigned_cabinet_location
+      SELECT n.*, c.cabinet_location as assigned_cabinet_name
       FROM nodes n
       LEFT JOIN cabinets c ON n.assigned_cabinet_id = c.id
       WHERE n.customer_id = ?
@@ -164,10 +164,65 @@ router.get('/api/customers/:customerId/available-controllers', requireAuth, asyn
   }
 });
 
+// Get available smart switches for a customer
+router.get('/api/customers/:customerId/available-switches', requireAuth, async (req, res) => {
+  const customerId = req.params.customerId;
+  const sessionId = req.query.sessionId;
+  
+  try {
+    let switches;
+    
+    if (sessionId) {
+      switches = await db.prepare(`
+        SELECT 
+          n.*,
+          CASE 
+            WHEN n.id IN (
+              SELECT DISTINCT n2.id 
+              FROM nodes n2
+              JOIN cabinets c ON n2.assigned_cabinet_id = c.id
+              WHERE c.pm_session_id = ?
+            ) THEN 'used_in_session'
+            WHEN n.assigned_cabinet_id IS NOT NULL THEN 'used_elsewhere'
+            ELSE 'available'
+          END as usage_status,
+          c.cabinet_name,
+          s.session_name
+        FROM nodes n
+        LEFT JOIN cabinets c ON n.assigned_cabinet_id = c.id
+        LEFT JOIN sessions s ON c.pm_session_id = s.id
+        WHERE n.customer_id = ? 
+        AND (n.node_type = 'Smart Network Devices' OR n.description = 'Smart Network Devices')
+        ORDER BY n.node_name
+      `).all([sessionId, customerId]);
+    } else {
+      switches = await db.prepare(`
+        SELECT 
+          *,
+          CASE 
+            WHEN assigned_cabinet_id IS NOT NULL THEN 'used_elsewhere'
+            ELSE 'available'
+          END as usage_status,
+          NULL as cabinet_name,
+          NULL as session_name
+        FROM nodes 
+        WHERE customer_id = ? 
+        AND (node_type = 'Smart Network Devices' OR description = 'Smart Network Devices')
+        ORDER BY node_name
+      `).all([customerId]);
+    }
+    
+    res.json(switches);
+  } catch (error) {
+    console.error('Get available switches error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 // Bulk import nodes from CSV
 router.post('/api/customers/:customerId/nodes/import', requireAuth, async (req, res) => {
   const customerId = req.params.customerId;
-  const { nodes, replace = false } = req.body;
+  const { nodes, replace = false, merge = true } = req.body;
   
   if (!Array.isArray(nodes) || nodes.length === 0) {
     return res.status(400).json({ error: 'No nodes provided' });
@@ -175,6 +230,7 @@ router.post('/api/customers/:customerId/nodes/import', requireAuth, async (req, 
   
   try {
     let importedCount = 0;
+    let updatedCount = 0;
     let errors = [];
     
     // If replace is true, delete all existing nodes for this customer first
@@ -208,32 +264,102 @@ router.post('/api/customers/:customerId/nodes/import', requireAuth, async (req, 
       await db.prepare('DELETE FROM nodes WHERE customer_id = ?').run([customerId]);
     }
     
-    // Insert new nodes
+    // Process nodes: merge (upsert) if merge=true, otherwise just insert
     for (const node of nodes) {
       try {
-        await db.prepare(`
-          INSERT INTO nodes (
-            customer_id, node_name, node_type, model, description, serial, 
-            firmware, version, status, redundant, os_name, os_service_pack,
-            bios_version, oem_type_description
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run([
-          customerId,
-          node.node_name,
-          node.node_type,
-          node.model || null,
-          node.description || null,
-          node.serial || null,
-          node.firmware || null,
-          node.version || null,
-          node.status || null,
-          node.redundant || null,
-          node.os_name || null,
-          node.os_service_pack || null,
-          node.bios_version || null,
-          node.oem_type_description || null
-        ]);
-        importedCount++;
+        if (merge && !replace) {
+          // Check if node exists by matching node_name and customer_id
+          const existingNode = await db.prepare(`
+            SELECT id FROM nodes 
+            WHERE customer_id = ? AND node_name = ?
+          `).get([customerId, node.node_name]);
+          
+          if (existingNode) {
+            // Update existing node - preserves ID and relationships
+            await db.prepare(`
+              UPDATE nodes SET 
+                node_type = ?,
+                model = ?,
+                description = ?,
+                serial = ?,
+                firmware = ?,
+                version = ?,
+                status = ?,
+                redundant = ?,
+                os_name = ?,
+                os_service_pack = ?,
+                bios_version = ?,
+                oem_type_description = ?,
+                updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?
+            `).run([
+              node.node_type,
+              node.model || null,
+              node.description || null,
+              node.serial || null,
+              node.firmware || null,
+              node.version || null,
+              node.status || null,
+              node.redundant || null,
+              node.os_name || null,
+              node.os_service_pack || null,
+              node.bios_version || null,
+              node.oem_type_description || null,
+              existingNode.id
+            ]);
+            updatedCount++;
+          } else {
+            // Insert new node
+            await db.prepare(`
+              INSERT INTO nodes (
+                customer_id, node_name, node_type, model, description, serial, 
+                firmware, version, status, redundant, os_name, os_service_pack,
+                bios_version, oem_type_description
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run([
+              customerId,
+              node.node_name,
+              node.node_type,
+              node.model || null,
+              node.description || null,
+              node.serial || null,
+              node.firmware || null,
+              node.version || null,
+              node.status || null,
+              node.redundant || null,
+              node.os_name || null,
+              node.os_service_pack || null,
+              node.bios_version || null,
+              node.oem_type_description || null
+            ]);
+            importedCount++;
+          }
+        } else {
+          // Just insert (original behavior)
+          await db.prepare(`
+            INSERT INTO nodes (
+              customer_id, node_name, node_type, model, description, serial, 
+              firmware, version, status, redundant, os_name, os_service_pack,
+              bios_version, oem_type_description
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run([
+            customerId,
+            node.node_name,
+            node.node_type,
+            node.model || null,
+            node.description || null,
+            node.serial || null,
+            node.firmware || null,
+            node.version || null,
+            node.status || null,
+            node.redundant || null,
+            node.os_name || null,
+            node.os_service_pack || null,
+            node.bios_version || null,
+            node.oem_type_description || null
+          ]);
+          importedCount++;
+        }
       } catch (nodeError) {
         errors.push(`${node.node_name}: ${nodeError.message}`);
       }
@@ -242,8 +368,10 @@ router.post('/api/customers/:customerId/nodes/import', requireAuth, async (req, 
     res.json({ 
       success: true, 
       imported: importedCount, 
+      updated: updatedCount,
       total: nodes.length,
       replaced: replace,
+      merged: merge,
       errors: errors.length > 0 ? errors : null
     });
   } catch (error) {
@@ -364,6 +492,34 @@ router.post('/api/nodes/:nodeId/unassign', requireAuth, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Unassign node error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Update node type
+router.put('/api/nodes/:nodeId', requireAuth, async (req, res) => {
+  const nodeId = req.params.nodeId;
+  const { node_type } = req.body;
+  
+  if (!node_type) {
+    return res.status(400).json({ error: 'Node type is required' });
+  }
+  
+  try {
+    const result = await db.prepare(`
+      UPDATE nodes SET 
+        node_type = ?, 
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run([node_type, nodeId]);
+    
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Update node error:', error);
     res.status(500).json({ error: 'Database error' });
   }
 });

@@ -78,34 +78,19 @@
         
         const filteredNodes = PM.Nodes.getFilteredNodes();
         
-        // Function to check if node is a controller (includes SIS and CIOC)
+        // Function to check if node is a controller
+        // Uses ONLY the node_type from import - no pattern matching
         const isController = (node) => {
-            const nodeName = (node.node_name || '').toLowerCase();
-            const nodeType = (node.node_type || '').toLowerCase();
-            const model = (node.model || '').toLowerCase();
+            const nodeType = node.node_type || '';
             
-            return node.node_type === 'Controller' || 
-                   node.node_type === 'DeltaV EIOC' ||
-                   node.node_type === 'CIOC' ||
-                   node.node_type === 'Charms Smart Logic Solver' ||
-                   node.node_type === 'SZ Controller' ||
-                   ['CP2-EIOC', 'CP3-EIOC', 'CP4-EIOC', 'UTIL-EIOC'].includes(node.node_name) ||
-                   nodeName.includes('eioc') ||
-                   nodeName.includes('ctrl') ||
-                   nodeName.includes('controller') ||
-                   nodeName.includes('ldcs') ||
-                   nodeName.includes('cioc') ||
-                   nodeName.includes('sis') ||
-                   nodeName.includes('csls') ||
-                   nodeName.includes('-sz') ||
-                   nodeName.includes('sz01') ||
-                   nodeName.includes('sz02') ||
-                   nodeName.includes('sz03') ||
-                   nodeType.includes('controller') ||
-                   nodeType.includes('cioc') ||
-                   nodeType.includes('sis') ||
-                   model.includes('controller') ||
-                   model.includes('cioc');
+            // Only classify as controller if node_type explicitly says so
+            // Do NOT use name patterns - trust the import classification
+            return nodeType === 'Controller' || 
+                   nodeType === 'DeltaV EIOC' ||
+                   nodeType === 'CIOC' ||
+                   nodeType === 'Charms Smart Logic Solver' ||
+                   nodeType === 'SZ Controller' ||
+                   nodeType === 'SIS';
         };
         
         // Separate controllers, switches, and computers (partners already excluded in getFilteredNodes)
@@ -205,6 +190,8 @@
             `;
             
             const row = document.createElement('tr');
+            row.dataset.nodeId = controller.id;
+            row.className = maintenance.completed ? 'node-completed' : '';
             row.innerHTML = `
                 <td class="px-3 py-2 text-sm font-medium text-gray-900">${controller.node_name}</td>
                 <td class="px-3 py-2 text-sm text-gray-600">
@@ -242,6 +229,13 @@
                            data-type="no_errors"
                            ${maintenance.no_errors_checked ? 'checked' : ''}>
                 </td>
+                <td class="px-3 py-2 text-center">
+                    <input type="checkbox" 
+                           class="node-checkbox completed-checkbox" 
+                           data-node-id="${controller.id}" 
+                           data-type="completed"
+                           ${maintenance.completed ? 'checked' : ''}>
+                </td>
             `;
             
             tbody.appendChild(row);
@@ -265,6 +259,8 @@
             const maintenance = nodeMaintenanceData[computer.id] || {};
             
             const row = document.createElement('tr');
+            row.dataset.nodeId = computer.id;
+            row.className = maintenance.completed ? 'node-completed' : '';
             row.innerHTML = `
                 <td class="px-3 py-2 text-sm font-medium text-gray-900">${computer.node_name}</td>
                 <td class="px-3 py-2 text-sm text-gray-600">${computer.node_type || ''}</td>
@@ -297,6 +293,13 @@
                            data-type="hdd_replaced"
                            ${maintenance.hdd_replaced ? 'checked' : ''}>
                 </td>
+                <td class="px-3 py-2 text-center">
+                    <input type="checkbox" 
+                           class="node-checkbox completed-checkbox" 
+                           data-node-id="${computer.id}" 
+                           data-type="completed"
+                           ${maintenance.completed ? 'checked' : ''}>
+                </td>
             `;
             
             tbody.appendChild(row);
@@ -316,6 +319,8 @@
             const maintenance = nodeMaintenanceData[switchNode.id] || {};
             
             const row = document.createElement('tr');
+            row.dataset.nodeId = switchNode.id;
+            row.className = maintenance.completed ? 'node-completed' : '';
             row.innerHTML = `
                 <td class="px-3 py-2 text-sm font-medium text-gray-900">${switchNode.node_name}</td>
                 <td class="px-3 py-2 text-sm text-gray-600">${switchNode.node_type || switchNode.description || ''}</td>
@@ -326,6 +331,13 @@
                            data-node-id="${switchNode.id}" 
                            data-type="firmware_updated"
                            ${maintenance.firmware_updated_checked ? 'checked' : ''}>
+                </td>
+                <td class="px-3 py-2 text-center">
+                    <input type="checkbox" 
+                           class="node-checkbox completed-checkbox" 
+                           data-node-id="${switchNode.id}" 
+                           data-type="completed"
+                           ${maintenance.completed ? 'checked' : ''}>
                 </td>
             `;
             
@@ -486,6 +498,17 @@
             nodeMaintenanceData[nodeId][type] = parseInt(e.target.value) || null;
         } else if (type === 'free_time') {
             nodeMaintenanceData[nodeId][type] = e.target.value;
+        } else if (type === 'completed') {
+            // Handle completed checkbox - toggle row highlighting
+            nodeMaintenanceData[nodeId][type] = e.target.checked;
+            const row = e.target.closest('tr');
+            if (row) {
+                if (e.target.checked) {
+                    row.classList.add('node-completed');
+                } else {
+                    row.classList.remove('node-completed');
+                }
+            }
         } else if (type === 'hdd_replaced' || type === 'hf_updated' || type === 'firmware_updated_checked') {
             nodeMaintenanceData[nodeId][type] = e.target.checked;
         } else {
@@ -599,213 +622,6 @@
             nodeMaintenanceData = {};
             PM.Nodes.renderEquipmentTables();
             PM.UI.showMessage('All maintenance data cleared', 'info');
-        }
-    }
-
-    // Node Tracker Functions
-    PM.Nodes.loadNodeTracker = async function() {
-        if (!sessionData || !sessionData.customer_id) {
-            return;
-        }
-
-        try {
-            // Load customer nodes (include sessionId for completed sessions to get snapshots)
-            const nodesUrl = `/api/customers/${sessionData.customer_id}/nodes?sessionId=${currentSessionId}`;
-            const nodesResponse = await fetch(nodesUrl);
-            const nodes = await nodesResponse.json();
-
-            // Load existing tracker data for this session
-            const trackerResponse = await fetch(`/api/sessions/${currentSessionId}/node-tracker`);
-            if (trackerResponse.ok) {
-                nodeTrackerData = await trackerResponse.json();
-            } else {
-                nodeTrackerData = {};
-            }
-
-            PM.Nodes.renderNodeTracker(nodes);
-        } catch (error) {
-            console.error('Error loading node tracker:', error);
-            PM.UI.showMessage('Error loading node tracker', 'error');
-        }
-    }
-
-    PM.Nodes.renderNodeTracker = function(nodes) {
-        const content = document.getElementById('node-tracker-content');
-        content.innerHTML = '';
-
-        if (nodes.length === 0) {
-            content.innerHTML = '<div class="text-center text-gray-500 py-8"><p>No nodes found for this customer</p></div>';
-            return;
-        }
-
-        // Filter out partner controllers
-        const filteredNodes = nodes.filter(node => {
-            const nodeType = (node.node_type || '').toLowerCase();
-            return !nodeType.includes('partner');
-        });
-
-        // Group nodes by type
-        const controllers = filteredNodes.filter(node => {
-            const nodeType = (node.node_type || '').toLowerCase();
-            const model = (node.model || '').toLowerCase();
-            
-            // Only include actual controllers, not workstations/applications
-            return (nodeType.includes('controller') || nodeType.includes('cioc') || 
-                    nodeType.includes('sis') || nodeType.includes('eioc') ||
-                    model.includes('se4101') || model.includes('ve4021')) &&
-                   !nodeType.includes('application') && !nodeType.includes('professional') && 
-                   !nodeType.includes('not available') && !nodeType.includes('workstation');
-        });
-
-        const workstations = filteredNodes.filter(node => {
-            const nodeType = (node.node_type || '').toLowerCase();
-            return nodeType.includes('workstation') || nodeType.includes('computer') || 
-                   nodeType.includes('operator') || nodeType.includes('hmi') ||
-                   nodeType.includes('application') || nodeType.includes('professional') ||
-                   nodeType.includes('not available');
-        });
-
-        const switches = filteredNodes.filter(node => {
-            const nodeType = (node.node_type || '').toLowerCase();
-            return nodeType.includes('switch') || nodeType.includes('network');
-        });
-
-        const others = filteredNodes.filter(node => 
-            !controllers.includes(node) && !workstations.includes(node) && !switches.includes(node)
-        );
-
-        // Render tables
-        if (controllers.length > 0) {
-            content.appendChild(PM.Nodes.createTrackerTable('Controllers', controllers));
-        }
-        if (workstations.length > 0) {
-            content.appendChild(PM.Nodes.createTrackerTable('Workstations', workstations));
-        }
-        if (switches.length > 0) {
-            content.appendChild(PM.Nodes.createTrackerTable('Network Switches', switches));
-        }
-        if (others.length > 0) {
-            content.appendChild(PM.Nodes.createTrackerTable('Other Equipment', others));
-        }
-    }
-
-    PM.Nodes.createTrackerTable = function(title, nodes) {
-        const section = document.createElement('div');
-        section.className = 'mb-6';
-        
-        section.innerHTML = `
-            <h3 class="text-lg font-semibold text-gray-900 mb-3">${title}</h3>
-            <div class="overflow-x-auto">
-                <table class="min-w-full bg-white border border-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Node Name</th>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model</th>
-                            <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Completed</th>
-                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        ${nodes.map(node => {
-                            const tracker = nodeTrackerData[node.id] || {};
-                            
-                            // Map model names for display
-                            let displayType = node.node_type || '';
-                            const model = (node.model || '').toLowerCase();
-                            
-                            if (model.includes('ve4021')) {
-                                displayType = 'RIU';
-                            } else if (model.includes('se4101')) {
-                                displayType = 'EIOC';
-                            }
-                            
-                            return `
-                                <tr>
-                                    <td class="px-3 py-2 text-sm font-medium text-gray-900">${node.node_name}</td>
-                                    <td class="px-3 py-2 text-sm text-gray-600">${displayType}</td>
-                                    <td class="px-3 py-2 text-sm text-gray-600">${node.model || ''}</td>
-                                    <td class="px-3 py-2 text-center">
-                                        <input type="checkbox" 
-                                               class="tracker-checkbox" 
-                                               data-node-id="${node.id}"
-                                               ${tracker.completed ? 'checked' : ''}>
-                                    </td>
-                                    <td class="px-3 py-2">
-                                        <input type="text" 
-                                               class="tracker-notes form-input text-sm" 
-                                               data-node-id="${node.id}"
-                                               value="${tracker.notes || ''}"
-                                               placeholder="Add notes...">
-                                    </td>
-                                </tr>
-                            `;
-                        }).join('')}
-                    </tbody>
-                </table>
-            </div>
-        `;
-
-        // Add event listeners
-        section.querySelectorAll('.tracker-checkbox, .tracker-notes').forEach(input => {
-            input.addEventListener('change', PM.Nodes.handleTrackerChange);
-        });
-
-        return section;
-    }
-
-    PM.Nodes.handleTrackerChange = function(e) {
-        const nodeId = e.target.getAttribute('data-node-id');
-        
-        if (!nodeTrackerData[nodeId]) {
-            nodeTrackerData[nodeId] = {};
-        }
-        
-        if (e.target.classList.contains('tracker-checkbox')) {
-            nodeTrackerData[nodeId].completed = e.target.checked;
-        } else if (e.target.classList.contains('tracker-notes')) {
-            nodeTrackerData[nodeId].notes = e.target.value;
-        }
-        
-        // Auto-save after a short delay
-        clearTimeout(window.trackerSaveTimeout);
-        window.trackerSaveTimeout = setTimeout(() => {
-            PM.Nodes.saveNodeTracker();
-        }, 1000);
-    }
-
-    PM.Nodes.saveNodeTracker = async function() {
-        if (isSessionCompleted) {
-            PM.UI.showMessage('Cannot save changes - PM session is completed', 'error');
-            return;
-        }
-        
-        try {
-            const response = await fetch(`/api/sessions/${currentSessionId}/node-tracker`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(nodeTrackerData)
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                PM.UI.showMessage('Node tracker saved successfully', 'success');
-            } else {
-                PM.UI.showMessage(result.error || 'Error saving tracker', 'error');
-            }
-        } catch (error) {
-            PM.UI.showMessage('Network error. Please try again.', 'error');
-        }
-    }
-
-    PM.Nodes.clearNodeTracker = function() {
-        if (confirm('Are you sure you want to clear all tracker data?')) {
-            nodeTrackerData = {};
-            PM.Nodes.loadNodeTracker();
-            PM.UI.showMessage('All tracker data cleared', 'info');
         }
     }
 

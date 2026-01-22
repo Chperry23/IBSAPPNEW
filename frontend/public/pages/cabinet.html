@@ -36,12 +36,15 @@
         .collapse-toggle {
             background: none;
             border: none;
-            font-size: 1.2em;
+            font-size: 1.5em;
             cursor: pointer;
-            padding: 0.25rem;
-            border-radius: 4px;
+            padding: 0.75rem;
+            border-radius: 6px;
             transition: transform 0.2s ease, background-color 0.2s ease;
             color: #6b7280;
+            min-width: 48px;
+            min-height: 48px;
+            touch-action: manipulation;
         }
         
         .collapse-toggle:hover {
@@ -68,11 +71,12 @@
         }
         
         .section-status {
-            font-size: 0.875rem;
-            padding: 0.25rem 0.5rem;
+            font-size: 0.95rem;
+            padding: 0.5rem 0.75rem;
             border-radius: 12px;
             font-weight: 500;
-            margin-left: 0.5rem;
+            margin-left: 0.75rem;
+            min-height: 32px;
         }
         
         .section-status.complete {
@@ -131,21 +135,28 @@
                         <button type="button" class="collapse-toggle" aria-label="Toggle section">➖</button>
                     </div>
                     <div class="card-body collapsible-content" id="cabinet-info-content">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div class="form-group">
-                                <label for="cabinet-location" class="form-label">Cabinet Location</label>
-                                <input type="text" id="cabinet-location" name="cabinet_location" required class="form-input">
+                                <label for="cabinet-name" class="form-label">Cabinet Name</label>
+                                <input type="text" id="cabinet-name" name="cabinet_name" required class="form-input">
                             </div>
                             <div class="form-group">
                                 <label for="cabinet-date" class="form-label">Date</label>
                                 <input type="date" id="cabinet-date" name="cabinet_date" class="form-input">
                             </div>
+                            <div class="form-group">
+                                <label for="cabinet-location-select" class="form-label">Cabinet Location</label>
+                                <select id="cabinet-location-select" name="location_id" class="form-select">
+                                    <option value="">Unassigned</option>
+                                    <!-- Locations will be populated here -->
+                                </select>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Controllers Section -->
-                <div class="card mb-6">
+                <!-- Controllers Section (Cabinets only) -->
+                <div class="card mb-6 cabinet-only-section">
                     <div class="card-header collapsible-header" data-section="controllers">
                         <div class="flex items-center">
                         <h2 class="text-xl font-semibold text-gray-900">Controllers</h2>
@@ -163,8 +174,27 @@
                     </div>
                 </div>
 
-                <!-- Power Supplies Section -->
-                <div class="card mb-6">
+                <!-- Workstations Section (Racks only) -->
+                <div class="card mb-6 rack-only-section" style="display: none;">
+                    <div class="card-header collapsible-header" data-section="workstations">
+                        <div class="flex items-center">
+                        <h2 class="text-xl font-semibold text-gray-900">Workstations / Servers</h2>
+                            <span class="section-status empty" id="workstations-status">Empty</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                        <button type="button" id="add-workstation" class="btn btn-secondary btn-sm">➕ Assign Workstation</button>
+                            <button type="button" class="collapse-toggle" aria-label="Toggle section">➖</button>
+                    </div>
+                    </div>
+                    <div class="card-body collapsible-content" id="workstations-content">
+                        <div id="workstations-container" class="space-y-4">
+                            <!-- Workstations will be dynamically added here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Power Supplies Section (Cabinets only) -->
+                <div class="card mb-6 cabinet-only-section">
                     <div class="card-header collapsible-header" data-section="power-supplies">
                         <div class="flex items-center">
                         <h2 class="text-xl font-semibold text-gray-900">Power Supplies</h2>
@@ -182,8 +212,8 @@
                     </div>
                 </div>
 
-                <!-- Distribution Blocks Section -->
-                <div class="card mb-6">
+                <!-- Distribution Blocks Section (Cabinets only) -->
+                <div class="card mb-6 cabinet-only-section">
                     <div class="card-header collapsible-header" data-section="distribution-blocks">
                         <div class="flex items-center">
                         <h2 class="text-xl font-semibold text-gray-900">Distribution Blocks/Diodes</h2>
@@ -205,8 +235,8 @@
                     </div>
                 </div>
 
-                <!-- Inspection Items Section -->
-                <div class="card mb-6">
+                <!-- Inspection Items Section (Cabinets only) -->
+                <div class="card mb-6 cabinet-only-section">
                     <div class="card-header collapsible-header" data-section="inspection-items">
                         <div class="flex items-center">
                         <h2 class="text-xl font-semibold text-gray-900">Inspection Items</h2>
@@ -399,17 +429,69 @@
         </div>
     </div>
 
+    <!-- Smart Switch Selection Modal -->
+    <div id="switch-modal" class="modal">
+        <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h3>Select Smart Switch</h3>
+                <button type="button" class="close-modal" onclick="closeSwitchModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="switch-list" class="space-y-2" style="max-height: 400px; overflow-y: auto;">
+                    <!-- Switches will be populated here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" onclick="closeSwitchModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Workstation Selection Modal -->
+    <div id="workstation-modal" class="modal">
+        <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h3>Select Workstation/Server</h3>
+                <button type="button" class="close-modal" onclick="closeWorkstationModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-4">
+                    <input type="text" id="workstation-search" placeholder="Search workstations..." 
+                           class="form-input" onkeyup="filterWorkstations()">
+                </div>
+                
+                <div class="mb-4">
+                    <div class="flex gap-2">
+                        <button type="button" class="btn btn-outline btn-sm" onclick="showWorkstationCategory('all')">All</button>
+                        <button type="button" class="btn btn-outline btn-sm" onclick="showWorkstationCategory('available')">Available</button>
+                        <button type="button" class="btn btn-outline btn-sm" onclick="showWorkstationCategory('used')">Used</button>
+                    </div>
+                </div>
+                
+                <div id="workstation-list" class="space-y-2" style="max-height: 400px; overflow-y: auto;">
+                    <!-- Workstations will be populated here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" onclick="closeWorkstationModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="selectWorkstation()" disabled id="select-workstation-btn">Select</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentSessionId = null;
         let currentCabinetId = null;
         let cabinetData = null;
         let currentCustomerId = null;
         let availableControllers = [];
+        let availableSwitches = [];
         let powerSupplyCounter = 0;
         let distributionBlockCounter = 0;
         let diodeCounter = 0;
         let networkEquipmentCounter = 0;
         let controllerCounter = 0;
+        let smartSwitchCounter = 0;
         let isSessionCompleted = false;
 
         // Initialize cabinet page
@@ -509,7 +591,7 @@
             // Navigation
             document.getElementById('back-to-session-btn').addEventListener('click', () => {
                 console.log('DEBUG: Back to session clicked');
-                window.location.href = `session.html?id=${currentSessionId}`;
+                window.location.href = `/pages/session.html?id=${currentSessionId}`;
             });
             
             // Save actions
@@ -519,11 +601,11 @@
             // Footer buttons
             document.getElementById('footer-save-btn').addEventListener('click', saveCabinet);
             document.getElementById('footer-back-to-session-btn').addEventListener('click', () => {
-                window.location.href = `session.html?id=${currentSessionId}`;
+                window.location.href = `/pages/session.html?id=${currentSessionId}`;
             });
             document.getElementById('footer-back-to-customer-btn').addEventListener('click', () => {
                 if (currentCustomerId) {
-                    window.location.href = `customer-detail.html?customer=${currentCustomerId}`;
+                    window.location.href = `/pages/customer-detail.html?customer=${currentCustomerId}`;
                 } else {
                     showMessage('Customer information not available', 'error');
                 }
@@ -535,6 +617,7 @@
             document.getElementById('add-diode').addEventListener('click', addDiode);
             document.getElementById('add-network-equipment').addEventListener('click', addNetworkEquipment);
             document.getElementById('add-controller').addEventListener('click', addController);
+            document.getElementById('add-workstation').addEventListener('click', addWorkstation);
             
             // Expand/Collapse all buttons
             document.getElementById('expand-all-btn').addEventListener('click', expandAllSections);
@@ -623,6 +706,9 @@
             // Controllers
             updateControllersStatus();
             
+            // Workstations (for racks)
+            updateWorkstationsStatus();
+            
             // Power Supplies
             updatePowerSuppliesStatus();
             
@@ -640,7 +726,7 @@
         }
 
         function updateCabinetInfoStatus() {
-            const location = document.getElementById('cabinet-location').value;
+            const location = document.getElementById('cabinet-name').value;
             const date = document.getElementById('cabinet-date').value;
             const status = document.getElementById('cabinet-info-status');
             
@@ -663,6 +749,20 @@
             
             if (count > 0) {
                 status.textContent = `${count} Controller${count > 1 ? 's' : ''}`;
+                status.className = 'section-status complete';
+            } else {
+                status.textContent = 'Empty';
+                status.className = 'section-status empty';
+            }
+        }
+
+        function updateWorkstationsStatus() {
+            const container = document.getElementById('workstations-container');
+            const status = document.getElementById('workstations-status');
+            const count = container.children.length;
+            
+            if (count > 0) {
+                status.textContent = `${count} Workstation${count > 1 ? 's' : ''}`;
                 status.className = 'section-status complete';
             } else {
                 status.textContent = 'Empty';
@@ -787,21 +887,32 @@
                     if (customerProfileLink && sessionData.customer_name) {
                         customerProfileLink.style.display = 'block';
                         customerProfileLink.textContent = `${sessionData.customer_name} Profile`;
-                        customerProfileLink.href = `/customer-detail.html?customer=${currentCustomerId}`;
+                        customerProfileLink.href = `/pages/customer-detail.html?customer=${currentCustomerId}`;
                     }
+                    
+                    // Load and populate cabinet locations
+                    await loadAndPopulateLocations();
                     
                     // Load available controllers for this customer
                     await loadAvailableControllers();
+                    
+                    // Load available workstations for this customer
+                    await loadWorkstationsWithStatus();
                 }
                 
-                // Update page title and info
+                // Update page title and info based on cabinet type
+                const cabinetType = cabinetData.cabinet_type || 'cabinet';
+                const displayType = cabinetType === 'rack' ? 'Rack' : 'Cabinet';
                 document.getElementById('cabinet-title').textContent = 
-                    `Cabinet: ${cabinetData.cabinet_location}`;
+                    `${displayType}: ${cabinetData.cabinet_name}`;
                 document.getElementById('cabinet-info').textContent = 
                     `Date: ${cabinetData.cabinet_date ? new Date(cabinetData.cabinet_date).toLocaleDateString() : 'Not set'}`;
                 
                 // Update navigation
-                document.getElementById('nav-cabinet-name').textContent = cabinetData.cabinet_location;
+                document.getElementById('nav-cabinet-name').textContent = cabinetData.cabinet_name;
+                
+                // Toggle sections based on cabinet type
+                toggleSectionsByCabinetType(cabinetType);
                 
                 // Populate form with existing data
                 populateForm();
@@ -809,8 +920,36 @@
             } catch (error) {
                 showMessage('Error loading cabinet', 'error');
                 setTimeout(() => {
-                    window.location.href = `session.html?id=${currentSessionId}`;
+                    window.location.href = `/pages/session.html?id=${currentSessionId}`;
                 }, 2000);
+            }
+        }
+
+        async function loadAndPopulateLocations() {
+            try {
+                const response = await fetch(`/api/sessions/${currentSessionId}/locations`);
+                if (response.ok) {
+                    const locations = await response.json();
+                    const dropdown = document.getElementById('cabinet-location-select');
+                    
+                    // Clear existing options except the first "Unassigned" option
+                    dropdown.innerHTML = '<option value="">Unassigned</option>';
+                    
+                    // Add location options
+                    locations.forEach(location => {
+                        const option = document.createElement('option');
+                        option.value = location.id;
+                        option.textContent = location.location_name;
+                        dropdown.appendChild(option);
+                    });
+                    
+                    // Set current location if cabinet has one
+                    if (cabinetData && cabinetData.location_id) {
+                        dropdown.value = cabinetData.location_id;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading locations:', error);
             }
         }
 
@@ -834,7 +973,7 @@
 
         function populateForm() {
             // Basic info
-            document.getElementById('cabinet-location').value = cabinetData.cabinet_location || '';
+            document.getElementById('cabinet-name').value = cabinetData.cabinet_name || '';
             document.getElementById('cabinet-date').value = cabinetData.cabinet_date || '';
             
             // Power supplies
@@ -882,6 +1021,13 @@
             if (cabinetData.controllers) {
                 cabinetData.controllers.forEach(controller => {
                     addController(controller);
+                });
+            }
+            
+            // Workstations (for racks)
+            if (cabinetData.workstations) {
+                cabinetData.workstations.forEach(workstation => {
+                    addWorkstation(workstation);
                 });
             }
             
@@ -1018,53 +1164,149 @@
             networkEquipmentCounter++;
             const container = document.getElementById('network-equipment-container');
             
+            // Find the selected switch data if it exists
+            let selectedSwitch = null;
+            if (data.node_id) {
+                selectedSwitch = availableSwitches.find(s => s.id == data.node_id);
+                if (!selectedSwitch) {
+                    selectedSwitch = {
+                        id: data.node_id,
+                        node_name: data.node_name || 'Assigned Switch',
+                        node_type: data.node_type || 'Smart Network Devices',
+                        model: data.model || 'Unknown',
+                        serial: data.serial || 'N/A'
+                    };
+                }
+            }
+            
             const equipmentDiv = document.createElement('div');
             equipmentDiv.className = 'component-card border border-gray-200 rounded-lg p-4 bg-gray-50';
             equipmentDiv.innerHTML = `
                 <div class="flex justify-between items-center mb-4">
                     <h4 class="text-lg font-medium text-gray-900">Network Equipment ${networkEquipmentCounter}</h4>
-                    <button type="button" class="btn btn-danger btn-sm" onclick="removeComponent(this)">🗑️ Remove</button>
+                    <button type="button" class="btn btn-danger btn-sm" onclick="removeNetworkEquipment(this, ${networkEquipmentCounter})">🗑️ Remove</button>
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                
+                <!-- Source Type Selection -->
+                <div class="form-group mb-4">
+                    <label class="form-label">Source</label>
+                    <select name="network_equipment[${networkEquipmentCounter}][source_type]" class="form-select" onchange="toggleNetworkEquipmentSource(${networkEquipmentCounter}, this.value)">
+                        <option value="manual" ${!data.node_id ? 'selected' : ''}>Manual Entry</option>
+                        <option value="smart_switch" ${data.node_id ? 'selected' : ''}>Assign Smart Switch</option>
+                    </select>
+                </div>
+                
+                <!-- Smart Switch Assignment -->
+                <div id="network-smart-switch-${networkEquipmentCounter}" class="smart-switch-section" style="display: ${data.node_id ? 'block' : 'none'}">
                     <div class="form-group">
-                        <label class="form-label">Equipment Type</label>
-                        <select name="network_equipment[${networkEquipmentCounter}][equipment_type]" class="form-select">
-                            <option value="switch" ${data.equipment_type === 'switch' ? 'selected' : ''}>Switch</option>
-                            <option value="hub" ${data.equipment_type === 'hub' ? 'selected' : ''}>Hub</option>
-                            <option value="router" ${data.equipment_type === 'router' ? 'selected' : ''}>Router</option>
-                            <option value="fiber" ${data.equipment_type === 'fiber' ? 'selected' : ''}>Fiber</option>
-                        </select>
+                        <label class="form-label">Smart Switch</label>
+                        <div class="flex gap-2">
+                            <button type="button" class="btn btn-outline flex-1" onclick="openNetworkSwitchModal(${networkEquipmentCounter})" id="network-switch-btn-${networkEquipmentCounter}">
+                                ${selectedSwitch ? selectedSwitch.node_name : 'Select Smart Switch'}
+                            </button>
+                            ${selectedSwitch ? `<button type="button" class="btn btn-outline btn-sm" onclick="clearNetworkSwitch(${networkEquipmentCounter})">Clear</button>` : ''}
+                        </div>
+                        <input type="hidden" name="network_equipment[${networkEquipmentCounter}][node_id]" value="${data.node_id || ''}" id="network-switch-node-id-${networkEquipmentCounter}">
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">Model Number</label>
-                        <select name="network_equipment[${networkEquipmentCounter}][model_number]" class="form-select" onchange="handleModelSelection(this)">
-                            <option value="">Select Model</option>
-                            <option value="Fp20" ${data.model_number === 'Fp20' ? 'selected' : ''}>Fp20</option>
-                            <option value="Fp40" ${data.model_number === 'Fp40' ? 'selected' : ''}>Fp40</option>
-                            <option value="Rm100" ${data.model_number === 'Rm100' ? 'selected' : ''}>Rm100</option>
-                            <option value="Rm200" ${data.model_number === 'Rm200' ? 'selected' : ''}>Rm200</option>
-                            <option value="Entron" ${data.model_number === 'Entron' ? 'selected' : ''}>Entron</option>
-                            <option value="Bradley" ${data.model_number === 'Bradley' ? 'selected' : ''}>Bradley</option>
-                            <option value="6019" ${data.model_number === '6019' ? 'selected' : ''}>6019</option>
-                            <option value="custom">Other (Custom)</option>
-                        </select>
-                        <input type="text" name="network_equipment[${networkEquipmentCounter}][model_number_custom]" 
-                               value="${!['Fp20', 'Fp40', 'Rm100', 'Rm200', 'Entron', 'Bradley', '6019'].includes(data.model_number) && data.model_number ? data.model_number : ''}" 
-                               class="form-input mt-2" placeholder="Enter custom model" style="display: ${!['Fp20', 'Fp40', 'Rm100', 'Rm200', 'Entron', 'Bradley', '6019'].includes(data.model_number) && data.model_number ? 'block' : 'none'}">
+                    <div id="network-switch-info-${networkEquipmentCounter}" class="mt-3 p-3 bg-blue-50 rounded border" style="display: ${data.node_id ? 'block' : 'none'}">
+                        <div class="text-sm text-gray-700">
+                            <div><strong>Type:</strong> <span class="switch-type">${selectedSwitch?.node_type || ''}</span></div>
+                            <div><strong>Model:</strong> <span class="switch-model">${selectedSwitch?.model || ''}</span></div>
+                            <div><strong>Serial:</strong> <span class="switch-serial">${selectedSwitch?.serial || ''}</span></div>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">Status</label>
-                        <select name="network_equipment[${networkEquipmentCounter}][status]" class="form-select">
-                            <option value="pass" ${data.status === 'pass' ? 'selected' : ''}>PASS</option>
-                            <option value="fail" ${data.status === 'fail' ? 'selected' : ''}>FAIL</option>
-                            <option value="na" ${data.status === 'na' ? 'selected' : ''}>N/A</option>
-                        </select>
+                </div>
+                
+                <!-- Manual Entry Fields -->
+                <div id="network-manual-${networkEquipmentCounter}" class="manual-entry-section" style="display: ${!data.node_id ? 'block' : 'none'}">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="form-group">
+                            <label class="form-label">Equipment Type</label>
+                            <select name="network_equipment[${networkEquipmentCounter}][equipment_type]" class="form-select">
+                                <option value="switch" ${data.equipment_type === 'switch' ? 'selected' : ''}>Switch</option>
+                                <option value="hub" ${data.equipment_type === 'hub' ? 'selected' : ''}>Hub</option>
+                                <option value="router" ${data.equipment_type === 'router' ? 'selected' : ''}>Router</option>
+                                <option value="fiber" ${data.equipment_type === 'fiber' ? 'selected' : ''}>Fiber</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Model Number</label>
+                            <select name="network_equipment[${networkEquipmentCounter}][model_number]" class="form-select" onchange="handleModelSelection(this)">
+                                <option value="">Select Model</option>
+                                <option value="FP20" ${data.model_number === 'FP20' ? 'selected' : ''}>FP20</option>
+                                <option value="FP40" ${data.model_number === 'FP40' ? 'selected' : ''}>FP40</option>
+                                <option value="RM100" ${data.model_number === 'RM100' ? 'selected' : ''}>RM100</option>
+                                <option value="RM200" ${data.model_number === 'RM200' ? 'selected' : ''}>RM200</option>
+                                <option value="ENTRON" ${data.model_number === 'ENTRON' ? 'selected' : ''}>ENTRON</option>
+                                <option value="BRADLEY" ${data.model_number === 'BRADLEY' ? 'selected' : ''}>BRADLEY</option>
+                                <option value="6019" ${data.model_number === '6019' ? 'selected' : ''}>6019</option>
+                                <option value="custom">Other (Custom)</option>
+                            </select>
+                            <input type="text" name="network_equipment[${networkEquipmentCounter}][model_number_custom]" 
+                                   value="${!['FP20', 'FP40', 'RM100', 'RM200', 'ENTRON', 'BRADLEY', '6019'].includes(data.model_number) && data.model_number ? data.model_number : ''}" 
+                                   class="form-input mt-2" placeholder="Enter custom model" style="display: ${!['FP20', 'FP40', 'RM100', 'RM200', 'ENTRON', 'BRADLEY', '6019'].includes(data.model_number) && data.model_number ? 'block' : 'none'}">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Status</label>
+                            <select name="network_equipment[${networkEquipmentCounter}][status]" class="form-select">
+                                <option value="pass" ${data.status === 'pass' ? 'selected' : ''}>PASS</option>
+                                <option value="fail" ${data.status === 'fail' ? 'selected' : ''}>FAIL</option>
+                                <option value="na" ${data.status === 'na' ? 'selected' : ''}>N/A</option>
+                            </select>
+                        </div>
                     </div>
+                </div>
+                
+                <!-- Common Status Field (shown for both) -->
+                <div class="form-group mt-4">
+                    <label class="form-label">Status</label>
+                    <select name="network_equipment[${networkEquipmentCounter}][status]" class="form-select">
+                        <option value="pass" ${data.status === 'pass' || !data.status ? 'selected' : ''}>PASS</option>
+                        <option value="fail" ${data.status === 'fail' ? 'selected' : ''}>FAIL</option>
+                        <option value="na" ${data.status === 'na' ? 'selected' : ''}>N/A</option>
+                    </select>
                 </div>
             `;
             
             container.appendChild(equipmentDiv);
             updateSectionStatusAfterChange();
+        }
+
+        function toggleNetworkEquipmentSource(counter, sourceType) {
+            const smartSwitchSection = document.getElementById(`network-smart-switch-${counter}`);
+            const manualSection = document.getElementById(`network-manual-${counter}`);
+            
+            if (sourceType === 'smart_switch') {
+                smartSwitchSection.style.display = 'block';
+                manualSection.style.display = 'none';
+            } else {
+                smartSwitchSection.style.display = 'none';
+                manualSection.style.display = 'block';
+            }
+        }
+
+        async function removeNetworkEquipment(button, counter) {
+            const component = button.closest('.component-card');
+            if (component) {
+                // Check if a smart switch was assigned and unassign it
+                const hiddenInput = document.getElementById(`network-switch-node-id-${counter}`);
+                const nodeId = hiddenInput ? hiddenInput.value : null;
+                
+                if (nodeId) {
+                    try {
+                        await fetch(`/api/nodes/${nodeId}/unassign`, {
+                            method: 'POST'
+                        });
+                        console.log('DEBUG: Smart switch unassigned:', nodeId);
+                    } catch (error) {
+                        console.error('DEBUG: Error unassigning smart switch:', error);
+                    }
+                }
+                
+                component.remove();
+                updateSectionStatusAfterChange();
+                renumberComponents();
+            }
         }
 
         function addController(data = {}) {
@@ -1156,6 +1398,330 @@
                 // Refresh available controllers for the modal
                 await loadControllersWithStatus();
             }
+        }
+
+        async function loadAvailableSwitches() {
+            try {
+                const url = currentSessionId ? 
+                    `/api/customers/${currentCustomerId}/available-switches?sessionId=${currentSessionId}` :
+                    `/api/customers/${currentCustomerId}/available-switches`;
+                const response = await fetch(url);
+                if (response.ok) {
+                    availableSwitches = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading available switches:', error);
+            }
+        }
+
+        // Toggle sections based on cabinet type
+        function toggleSectionsByCabinetType(cabinetType) {
+            const cabinetOnlySections = document.querySelectorAll('.cabinet-only-section');
+            const rackOnlySections = document.querySelectorAll('.rack-only-section');
+            
+            if (cabinetType === 'rack') {
+                cabinetOnlySections.forEach(section => section.style.display = 'none');
+                rackOnlySections.forEach(section => section.style.display = 'block');
+            } else {
+                cabinetOnlySections.forEach(section => section.style.display = 'block');
+                rackOnlySections.forEach(section => section.style.display = 'none');
+            }
+        }
+
+        // Workstation variables
+        let workstationCounter = 0;
+        let workstationModalData = [];
+        let currentWorkstationFilter = 'all';
+        let selectedWorkstationId = null;
+
+        async function loadWorkstationsWithStatus() {
+            if (!currentCustomerId) return;
+            
+            try {
+                const url = currentSessionId ? 
+                    `/api/customers/${currentCustomerId}/nodes?sessionId=${currentSessionId}` :
+                    `/api/customers/${currentCustomerId}/nodes`;
+                const response = await fetch(url);
+                if (response.ok) {
+                    const allNodes = await response.json();
+                    workstationModalData = allNodes.filter(node => {
+                        const nodeType = (node.node_type || '').toLowerCase();
+                        return nodeType.includes('operator') || nodeType.includes('application') || 
+                               nodeType.includes('professional') || nodeType === 'not available' || 
+                               nodeType === 'unclassified';
+                    }).map(node => {
+                        // Determine usage status based on assignment
+                        let usage_status = 'available';
+                        let cabinet_name = null;
+                        let session_name = null;
+                        
+                        if (node.assigned_cabinet_id) {
+                            // Node is assigned to a cabinet
+                            if (node.assigned_cabinet_id === currentCabinetId) {
+                                // Assigned to current cabinet
+                                usage_status = 'used_in_session';
+                            } else {
+                                // Assigned to another cabinet
+                                usage_status = 'used_elsewhere';
+                                cabinet_name = node.cabinet_name || 'Another Cabinet';
+                                session_name = node.session_name || 'Another Session';
+                            }
+                        }
+                        
+                        return {
+                            ...node,
+                            usage_status,
+                            cabinet_name,
+                            session_name
+                        };
+                    });
+                    console.log('DEBUG: Loaded workstations with status:', workstationModalData);
+                }
+            } catch (error) {
+                console.error('Error loading workstations:', error);
+            }
+        }
+
+        async function loadAvailableWorkstations() {
+            await loadWorkstationsWithStatus();
+        }
+
+        function addWorkstation(data = {}) {
+            workstationCounter++;
+            const container = document.getElementById('workstations-container');
+            let selectedWorkstation = null;
+            if (data.node_id) {
+                selectedWorkstation = workstationModalData.find(w => w.id == data.node_id) || {
+                    id: data.node_id, node_name: data.node_name || 'Assigned Workstation',
+                    node_type: data.node_type || 'Workstation', model: data.model || 'Not available', serial: data.serial || 'Not available'
+                };
+            }
+            
+            const workstationDiv = document.createElement('div');
+            workstationDiv.className = 'component-card border border-gray-200 rounded-lg p-4 bg-gray-50';
+            workstationDiv.innerHTML = `
+                <div class="flex justify-between items-center mb-4">
+                    <h4 class="text-lg font-medium text-gray-900">Workstation ${workstationCounter}</h4>
+                    <button type="button" class="btn btn-danger btn-sm" onclick="removeWorkstation(this, ${workstationCounter})">🗑️ Remove</button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-group">
+                        <label class="form-label">Workstation/Server</label>
+                        <div class="flex gap-2">
+                            <button type="button" class="btn btn-outline flex-1" onclick="openWorkstationModal(${workstationCounter})" id="workstation-btn-${workstationCounter}">
+                                ${selectedWorkstation ? selectedWorkstation.node_name : 'Select Workstation'}
+                            </button>
+                            ${selectedWorkstation ? `<button type="button" class="btn btn-outline btn-sm" onclick="clearWorkstation(${workstationCounter})">Clear</button>` : ''}
+                        </div>
+                        <input type="hidden" name="workstations[${workstationCounter}][node_id]" value="${data.node_id || ''}" id="workstation-node-id-${workstationCounter}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Status</label>
+                        <select name="workstations[${workstationCounter}][status]" class="form-select">
+                            <option value="pass" ${data.status === 'pass' || !data.status ? 'selected' : ''}>PASS</option>
+                            <option value="fail" ${data.status === 'fail' ? 'selected' : ''}>FAIL</option>
+                            <option value="na" ${data.status === 'na' ? 'selected' : ''}>N/A</option>
+                        </select>
+                    </div>
+                    <div class="form-group md:col-span-2">
+                        <label class="form-label">Notes</label>
+                        <textarea name="workstations[${workstationCounter}][notes]" class="form-input" rows="2">${data.notes || ''}</textarea>
+                    </div>
+                </div>
+                <div id="workstation-info-${workstationCounter}" class="mt-3 p-3 bg-blue-50 rounded border" style="display: ${data.node_id ? 'block' : 'none'}">
+                    <div class="text-sm text-gray-700">
+                        <div><strong>Type:</strong> <span class="workstation-type">${selectedWorkstation?.node_type || ''}</span></div>
+                        <div><strong>Model:</strong> <span class="workstation-model">${selectedWorkstation?.model || ''}</span></div>
+                        <div><strong>Serial:</strong> <span class="workstation-serial">${selectedWorkstation?.serial || ''}</span></div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(workstationDiv);
+            updateSectionStatusAfterChange();
+        }
+
+        async function removeWorkstation(button, counter) {
+            const component = button.closest('.component-card');
+            if (component) {
+                const hiddenInput = document.getElementById(`workstation-node-id-${counter}`);
+                if (hiddenInput?.value) {
+                    try {
+                        await fetch(`/api/nodes/${hiddenInput.value}/unassign`, { method: 'POST' });
+                    } catch (error) {
+                        console.error('Error unassigning workstation:', error);
+                    }
+                }
+                component.remove();
+                updateSectionStatusAfterChange();
+            }
+        }
+
+        let currentWorkstationSlot = null;
+
+        // Open workstation selection modal
+        function openWorkstationModal(workstationSlot) {
+            currentWorkstationSlot = workstationSlot;
+            selectedWorkstationId = null;
+            
+            // Load fresh workstation data
+            loadWorkstationsWithStatus().then(() => {
+                populateWorkstationModal();
+                document.getElementById('workstation-modal').style.display = 'block';
+            });
+        }
+
+        // Close workstation selection modal
+        function closeWorkstationModal() {
+            document.getElementById('workstation-modal').style.display = 'none';
+            currentWorkstationSlot = null;
+            selectedWorkstationId = null;
+        }
+
+        // Populate workstation modal with data
+        function populateWorkstationModal() {
+            const list = document.getElementById('workstation-list');
+            list.innerHTML = '';
+            
+            // Filter workstations based on current filter
+            let filteredWorkstations = workstationModalData;
+            if (currentWorkstationFilter === 'available') {
+                filteredWorkstations = workstationModalData.filter(w => w.usage_status === 'available');
+            } else if (currentWorkstationFilter === 'used') {
+                filteredWorkstations = workstationModalData.filter(w => w.usage_status !== 'available');
+            }
+            
+            // Apply search filter
+            const searchTerm = (document.getElementById('workstation-search')?.value || '').toLowerCase();
+            if (searchTerm) {
+                filteredWorkstations = filteredWorkstations.filter(w => 
+                    w.node_name.toLowerCase().includes(searchTerm) ||
+                    (w.node_type && w.node_type.toLowerCase().includes(searchTerm)) ||
+                    (w.model && w.model.toLowerCase().includes(searchTerm)) ||
+                    (w.serial && w.serial.toLowerCase().includes(searchTerm))
+                );
+            }
+            
+            // Create workstation items
+            filteredWorkstations.forEach(workstation => {
+                const item = document.createElement('div');
+                item.className = 'p-3 border rounded cursor-pointer hover:bg-gray-50';
+                item.onclick = () => selectWorkstationInModal(workstation.id);
+                
+                let statusBadge = '';
+                let statusClass = '';
+                if (workstation.usage_status === 'available') {
+                    statusBadge = '<span class="badge badge-success">Available</span>';
+                    statusClass = '';
+                } else if (workstation.usage_status === 'used_in_session') {
+                    statusBadge = '<span class="badge badge-warning">Used in Session</span>';
+                    statusClass = 'opacity-60';
+                } else if (workstation.usage_status === 'used_elsewhere') {
+                    statusBadge = `<span class="badge badge-info">Used in ${workstation.session_name || 'Other Session'}</span>`;
+                    statusClass = 'opacity-60';
+                }
+                
+                item.innerHTML = `
+                    <div class="flex justify-between items-start ${statusClass}">
+                        <div class="flex-1">
+                            <div class="font-medium">${workstation.node_name}</div>
+                            <div class="text-sm text-gray-600">
+                                Type: ${workstation.node_type || 'Workstation'} | 
+                                Model: ${workstation.model || 'Not available'} | 
+                                Serial: ${workstation.serial || 'Not available'}
+                            </div>
+                            ${workstation.cabinet_name ? `<div class="text-sm text-gray-500">Currently in: ${workstation.cabinet_name}</div>` : ''}
+                        </div>
+                        <div class="ml-4">
+                            ${statusBadge}
+                        </div>
+                    </div>
+                `;
+                
+                list.appendChild(item);
+            });
+            
+            if (filteredWorkstations.length === 0) {
+                list.innerHTML = '<div class="text-center text-gray-500 py-8">No workstations found</div>';
+            }
+        }
+
+        // Select workstation in modal
+        function selectWorkstationInModal(workstationId) {
+            selectedWorkstationId = workstationId;
+            
+            // Update visual selection
+            document.querySelectorAll('#workstation-list > div').forEach(item => {
+                item.classList.remove('bg-blue-50', 'border-blue-300');
+            });
+            
+            event.currentTarget.classList.add('bg-blue-50', 'border-blue-300');
+            
+            // Enable select button
+            document.getElementById('select-workstation-btn').disabled = false;
+        }
+
+        // Confirm workstation selection
+        function selectWorkstation() {
+            if (!selectedWorkstationId || !currentWorkstationSlot) return;
+            
+            const workstation = workstationModalData.find(w => w.id === selectedWorkstationId);
+            if (!workstation) return;
+            
+            // Update the button text and hidden input
+            const button = document.getElementById(`workstation-btn-${currentWorkstationSlot}`);
+            const hiddenInput = document.getElementById(`workstation-node-id-${currentWorkstationSlot}`);
+            const infoDiv = document.getElementById(`workstation-info-${currentWorkstationSlot}`);
+            
+            button.textContent = workstation.node_name;
+            hiddenInput.value = selectedWorkstationId;
+            
+            // Update info display
+            if (infoDiv) {
+                infoDiv.style.display = 'block';
+                infoDiv.querySelector('.workstation-type').textContent = workstation.node_type || 'Workstation';
+                infoDiv.querySelector('.workstation-model').textContent = workstation.model || 'Not available';
+                infoDiv.querySelector('.workstation-serial').textContent = workstation.serial || 'Not available';
+            }
+            
+            // Add clear button if not exists
+            if (!button.nextElementSibling || !button.nextElementSibling.textContent.includes('Clear')) {
+                const clearBtn = document.createElement('button');
+                clearBtn.type = 'button';
+                clearBtn.className = 'btn btn-outline btn-sm';
+                clearBtn.textContent = 'Clear';
+                clearBtn.onclick = () => clearWorkstation(currentWorkstationSlot);
+                button.parentNode.appendChild(clearBtn);
+            }
+            
+            // Auto save
+            clearTimeout(window.cabinetAutoSaveTimeout);
+            window.cabinetAutoSaveTimeout = setTimeout(() => saveCabinet(), 1000);
+            
+            closeWorkstationModal();
+        }
+
+        // Show workstation category filter
+        function showWorkstationCategory(category) {
+            currentWorkstationFilter = category;
+            populateWorkstationModal();
+        }
+
+        // Filter workstations by search
+        function filterWorkstations() {
+            populateWorkstationModal();
+        }
+
+        function clearWorkstation(workstationSlot) {
+            const button = document.getElementById(`workstation-btn-${workstationSlot}`);
+            const hiddenInput = document.getElementById(`workstation-node-id-${workstationSlot}`);
+            const infoDiv = document.getElementById(`workstation-info-${workstationSlot}`);
+            button.textContent = 'Select Workstation';
+            hiddenInput.value = '';
+            infoDiv.style.display = 'none';
+            const clearBtn = button.nextElementSibling;
+            if (clearBtn && clearBtn.textContent.includes('Clear')) clearBtn.remove();
+            clearTimeout(window.cabinetAutoSaveTimeout);
+            window.cabinetAutoSaveTimeout = setTimeout(() => saveCabinet(), 1000);
         }
 
         function removeComponent(button) {
@@ -1309,7 +1875,7 @@
             }
             
             // Convert arrays to clean format
-            ['power_supplies', 'distribution_blocks', 'diodes', 'network_equipment', 'controllers'].forEach(arrayName => {
+            ['power_supplies', 'distribution_blocks', 'diodes', 'network_equipment', 'controllers', 'workstations'].forEach(arrayName => {
                 if (data[arrayName]) {
                     data[arrayName] = data[arrayName].filter(item => item !== null);
                 }
@@ -1389,8 +1955,38 @@
                         showMessage('Cabinet data saved successfully', 'success');
                     }
                     
-                    // Refresh available controllers after successful save
+                    // Assign workstations if any (for racks)
+                    console.log('DEBUG: Workstations to assign:', data.workstations);
+                    if (data.workstations && data.workstations.length > 0) {
+                        console.log('DEBUG: Processing workstation assignments after successful save');
+                        
+                        for (const workstation of data.workstations) {
+                            if (workstation.node_id) {
+                                console.log('DEBUG: Assigning workstation:', workstation.node_id, 'to cabinet:', currentCabinetId);
+                                try {
+                                    const assignResponse = await fetch(`/api/nodes/${workstation.node_id}/assign`, {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                        },
+                                        body: JSON.stringify({ cabinet_id: currentCabinetId })
+                                    });
+                                    
+                                    if (!assignResponse.ok) {
+                                        console.error('DEBUG: Workstation assignment failed');
+                                    } else {
+                                        console.log('DEBUG: Workstation assignment successful');
+                                    }
+                                } catch (error) {
+                                    console.error('DEBUG: Error assigning workstation:', error);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Refresh available controllers and workstations after successful save
                     await loadAvailableControllers();
+                    await loadWorkstationsWithStatus();
                 } else {
                     if (typeof playErrorSound === 'function') {
                         playErrorSound();
@@ -1420,7 +2016,7 @@
                     const a = document.createElement('a');
                     a.style.display = 'none';
                     a.href = url;
-                    a.download = `cabinet-pm-${cabinetData.cabinet_location}-${new Date().toISOString().split('T')[0]}.pdf`;
+                    a.download = `cabinet-pm-${cabinetData.cabinet_name}-${new Date().toISOString().split('T')[0]}.pdf`;
                     document.body.appendChild(a);
                     a.click();
                     window.URL.revokeObjectURL(url);
@@ -1758,7 +2354,7 @@
                                 Serial: ${controller.serial || 'No Serial'} | 
                                 Firmware: ${controller.firmware || 'Unknown'}
                             </div>
-                            ${controller.cabinet_location ? `<div class="text-sm text-gray-500">Currently in: ${controller.cabinet_location}</div>` : ''}
+                            ${controller.cabinet_name ? `<div class="text-sm text-gray-500">Currently in: ${controller.cabinet_name}</div>` : ''}
                         </div>
                         <div class="ml-4">
                             ${statusBadge}
@@ -1854,6 +2450,130 @@
             }, 1000);
         }
 
+        // ===== NETWORK SWITCH MODAL FUNCTIONS =====
+        let currentNetworkSwitchSlot = null;
+        let selectedNetworkSwitchId = null;
+
+        // Open network switch selection modal
+        function openNetworkSwitchModal(networkSlot) {
+            currentNetworkSwitchSlot = networkSlot;
+            selectedNetworkSwitchId = null;
+            
+            // Load fresh switch data
+            loadAvailableSwitches().then(() => {
+                populateNetworkSwitchModal();
+                document.getElementById('switch-modal').style.display = 'block';
+            });
+        }
+
+        // Close network switch selection modal
+        function closeNetworkSwitchModal() {
+            document.getElementById('switch-modal').style.display = 'none';
+            currentNetworkSwitchSlot = null;
+            selectedNetworkSwitchId = null;
+        }
+
+        // Populate network switch modal with available switches
+        function populateNetworkSwitchModal() {
+            const switchList = document.getElementById('switch-list');
+            switchList.innerHTML = '';
+            
+            if (!availableSwitches || availableSwitches.length === 0) {
+                switchList.innerHTML = '<p class="text-gray-500 p-4">No smart switches available. Import nodes from the customer page.</p>';
+                return;
+            }
+            
+            availableSwitches.forEach(switchNode => {
+                const switchCard = document.createElement('div');
+                switchCard.className = 'controller-card';
+                switchCard.onclick = () => selectNetworkSwitch(switchNode.id);
+                
+                switchCard.innerHTML = `
+                    <div class="controller-info">
+                        <div class="controller-name">${switchNode.node_name}</div>
+                        <div class="controller-details">
+                            <div><strong>Type:</strong> ${switchNode.node_type || 'Switch'}</div>
+                            <div><strong>Model:</strong> ${switchNode.model || 'N/A'}</div>
+                            <div><strong>Serial:</strong> ${switchNode.serial || 'N/A'}</div>
+                            <div><strong>Firmware:</strong> ${switchNode.firmware || 'N/A'}</div>
+                        </div>
+                    </div>
+                `;
+                
+                switchList.appendChild(switchCard);
+            });
+        }
+
+        // Select a network switch from the modal
+        function selectNetworkSwitch(switchId) {
+            selectedNetworkSwitchId = switchId;
+            const switchNode = availableSwitches.find(s => s.id === switchId);
+            if (!switchNode) return;
+            
+            const button = document.getElementById(`network-switch-btn-${currentNetworkSwitchSlot}`);
+            const hiddenInput = document.getElementById(`network-switch-node-id-${currentNetworkSwitchSlot}`);
+            const infoDiv = document.getElementById(`network-switch-info-${currentNetworkSwitchSlot}`);
+            
+            // Update button text
+            button.textContent = switchNode.node_name;
+            
+            // Update hidden input
+            hiddenInput.value = switchId;
+            
+            // Show info div with details
+            infoDiv.style.display = 'block';
+            infoDiv.querySelector('.switch-type').textContent = switchNode.node_type || 'Switch';
+            infoDiv.querySelector('.switch-model').textContent = switchNode.model || 'N/A';
+            infoDiv.querySelector('.switch-serial').textContent = switchNode.serial || 'N/A';
+            
+            // Add clear button if it doesn't exist
+            if (!button.nextElementSibling || !button.nextElementSibling.textContent.includes('Clear')) {
+                const clearBtn = document.createElement('button');
+                clearBtn.type = 'button';
+                clearBtn.className = 'btn btn-outline btn-sm';
+                clearBtn.textContent = 'Clear';
+                clearBtn.onclick = () => clearNetworkSwitch(currentNetworkSwitchSlot);
+                button.parentNode.appendChild(clearBtn);
+            }
+            
+            // Auto-save after selection
+            clearTimeout(window.cabinetAutoSaveTimeout);
+            window.cabinetAutoSaveTimeout = setTimeout(() => {
+                saveCabinet();
+            }, 1000);
+            
+            closeNetworkSwitchModal();
+        }
+
+        // Clear network switch selection
+        function clearNetworkSwitch(networkSlot) {
+            const button = document.getElementById(`network-switch-btn-${networkSlot}`);
+            const hiddenInput = document.getElementById(`network-switch-node-id-${networkSlot}`);
+            const infoDiv = document.getElementById(`network-switch-info-${networkSlot}`);
+            
+            // Clear the selection
+            button.textContent = 'Select Smart Switch';
+            hiddenInput.value = '';
+            infoDiv.style.display = 'none';
+            
+            // Remove clear button
+            const clearBtn = button.nextElementSibling;
+            if (clearBtn && clearBtn.textContent.includes('Clear')) {
+                clearBtn.remove();
+            }
+            
+            // Auto-save after clearing
+            clearTimeout(window.cabinetAutoSaveTimeout);
+            window.cabinetAutoSaveTimeout = setTimeout(() => {
+                saveCabinet();
+            }, 1000);
+        }
+
+        // Alias for modal close
+        function closeSwitchModal() {
+            closeNetworkSwitchModal();
+        }
+
         // Filter controllers in modal
         function filterControllers() {
             populateControllerModal();
@@ -1912,7 +2632,7 @@
                     c.node_type.toLowerCase().includes(searchTerm) ||
                     (c.model && c.model.toLowerCase().includes(searchTerm)) ||
                     (c.serial && c.serial.toLowerCase().includes(searchTerm)) ||
-                    (c.cabinet_location && c.cabinet_location.toLowerCase().includes(searchTerm))
+                    (c.cabinet_name && c.cabinet_name.toLowerCase().includes(searchTerm))
                 );
             }
             
@@ -1947,7 +2667,7 @@
         function createControllerManagementItem(controller) {
             const isUsed = controller.assigned_cabinet_id;
             const statusBadge = isUsed ? 
-                `<span class="badge badge-warning">Used in ${controller.cabinet_location || 'Unknown Location'}</span>` :
+                `<span class="badge badge-warning">Used in ${controller.cabinet_name || 'Unknown Location'}</span>` :
                 `<span class="badge badge-success">Available</span>`;
             
             const enhancedType = getEnhancedControllerType(controller);
@@ -1964,7 +2684,7 @@
                             </div>
                             ${isUsed ? `
                                 <div class="text-sm text-gray-500">
-                                    Used in: ${controller.cabinet_location} (${controller.session_name || 'Unknown Session'})
+                                    Used in: ${controller.cabinet_name} (${controller.session_name || 'Unknown Session'})
                                     ${controller.assigned_at ? `| Assigned: ${new Date(controller.assigned_at).toLocaleDateString()}` : ''}
                                 </div>
                             ` : ''}

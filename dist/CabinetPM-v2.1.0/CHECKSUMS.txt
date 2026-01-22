@@ -1,0 +1,8 @@
+Cabinet PM Tablet v2.1.0
+Build Date: 2025-12-11
+
+SHA256: d6128758ee9f72b7297105410f42d9242a10161ed7830ca9b2746c19a253f21d
+MD5: aa1dc0e165427871e4cfef44fb5b3ead
+Size: 80.03 MB
+
+Verify the integrity of your download by comparing these checksums.

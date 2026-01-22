@@ -11,7 +11,12 @@ function initializeDatabase() {
       username TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       email TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      uuid TEXT,
+      synced INTEGER DEFAULT 0,
+      device_id TEXT,
+      deleted INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )`, (err) => {
         if (err) {
           console.error('❌ Error creating users table:', err);
@@ -20,12 +25,23 @@ function initializeDatabase() {
         }
       });
 
+      // Add sync columns to existing users table
+      db.run(`ALTER TABLE users ADD COLUMN uuid TEXT`, (err) => {});
+      db.run(`ALTER TABLE users ADD COLUMN synced INTEGER DEFAULT 0`, (err) => {});
+      db.run(`ALTER TABLE users ADD COLUMN device_id TEXT`, (err) => {});
+      db.run(`ALTER TABLE users ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {});
+      db.run(`ALTER TABLE users ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`, (err) => {});
+
     // Customers table
       db.run(`CREATE TABLE IF NOT EXISTS customers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       location TEXT,
       contact_info TEXT,
+      uuid TEXT,
+      synced INTEGER DEFAULT 0,
+      device_id TEXT,
+      deleted INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )`, (err) => {
@@ -35,6 +51,12 @@ function initializeDatabase() {
           console.log('✅ Created (or found) customers table');
         }
       });
+
+      // Add sync columns to existing customers table
+      db.run(`ALTER TABLE customers ADD COLUMN uuid TEXT`, (err) => {});
+      db.run(`ALTER TABLE customers ADD COLUMN synced INTEGER DEFAULT 0`, (err) => {});
+      db.run(`ALTER TABLE customers ADD COLUMN device_id TEXT`, (err) => {});
+      db.run(`ALTER TABLE customers ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {});
 
     // Sessions table
       db.run(`CREATE TABLE IF NOT EXISTS sessions (
@@ -46,6 +68,8 @@ function initializeDatabase() {
       status TEXT DEFAULT 'active',
       uuid TEXT,
       synced INTEGER DEFAULT 0,
+      device_id TEXT,
+      deleted INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       completed_at DATETIME,
@@ -53,10 +77,16 @@ function initializeDatabase() {
       FOREIGN KEY (user_id) REFERENCES users(id)
     )`);
 
+    // Add sync columns to sessions table if they don't exist (for existing databases)
+    addColumnIfNotExists(db, 'sessions', 'uuid', 'TEXT');
+    addColumnIfNotExists(db, 'sessions', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists(db, 'sessions', 'device_id', 'TEXT');
+    addColumnIfNotExists(db, 'sessions', 'deleted', 'INTEGER DEFAULT 0');
+    
     // Add completed_at column if it doesn't exist (for existing databases)
-      db.run(`ALTER TABLE sessions ADD COLUMN completed_at DATETIME`, (err) => {
+    db.run(`ALTER TABLE sessions ADD COLUMN completed_at DATETIME`, (err) => {
       // Column already exists, ignore error
-      });
+    });
 
       // Add uuid column if it doesn't exist (for existing databases)
       db.run(`ALTER TABLE sessions ADD COLUMN uuid TEXT`, (err) => {
@@ -73,6 +103,11 @@ function initializeDatabase() {
       // Column already exists, ignore error
       });
 
+      // Add device_id column if it doesn't exist
+      db.run(`ALTER TABLE sessions ADD COLUMN device_id TEXT`, (err) => {
+      // Column already exists, ignore error
+      });
+
       // Add session_type column if it doesn't exist (for existing databases)
       db.run(`ALTER TABLE sessions ADD COLUMN session_type TEXT DEFAULT 'pm'`, (err) => {
       // Column already exists, ignore error
@@ -82,7 +117,8 @@ function initializeDatabase() {
       db.run(`CREATE TABLE IF NOT EXISTS cabinets (
       id TEXT PRIMARY KEY,
       pm_session_id TEXT NOT NULL,
-      cabinet_location TEXT NOT NULL,
+      cabinet_name TEXT NOT NULL,
+      cabinet_location TEXT,
       cabinet_date DATE,
       status TEXT DEFAULT 'active',
       power_supplies TEXT DEFAULT '[]',
@@ -91,15 +127,20 @@ function initializeDatabase() {
       network_equipment TEXT DEFAULT '[]',
       controllers TEXT DEFAULT '[]',
       inspection_data TEXT DEFAULT '{}',
+      uuid TEXT,
+      synced INTEGER DEFAULT 0,
+      device_id TEXT,
+      deleted INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (pm_session_id) REFERENCES sessions(id)
     )`);
 
-    // Add deleted column to cabinets table (for soft delete sync)
-    db.run(`ALTER TABLE cabinets ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {
-      // Column already exists, ignore error
-    });
+    // Add sync columns to cabinets table
+    db.run(`ALTER TABLE cabinets ADD COLUMN uuid TEXT`, (err) => {});
+    db.run(`ALTER TABLE cabinets ADD COLUMN synced INTEGER DEFAULT 0`, (err) => {});
+    db.run(`ALTER TABLE cabinets ADD COLUMN device_id TEXT`, (err) => {});
+    db.run(`ALTER TABLE cabinets ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {});
 
     // Nodes table for customer equipment inventory
       db.run(`CREATE TABLE IF NOT EXISTS nodes (
@@ -126,6 +167,12 @@ function initializeDatabase() {
       FOREIGN KEY (assigned_cabinet_id) REFERENCES cabinets(id),
       UNIQUE(customer_id, node_name)
     )`);
+
+    // Add sync columns to existing nodes table
+    db.run(`ALTER TABLE nodes ADD COLUMN uuid TEXT`, (err) => {});
+    db.run(`ALTER TABLE nodes ADD COLUMN synced INTEGER DEFAULT 0`, (err) => {});
+    db.run(`ALTER TABLE nodes ADD COLUMN device_id TEXT`, (err) => {});
+    db.run(`ALTER TABLE nodes ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {});
 
     // Session node maintenance tracking table
       db.run(`CREATE TABLE IF NOT EXISTS session_node_maintenance (
@@ -189,6 +236,10 @@ function initializeDatabase() {
       node_id INTEGER NOT NULL,
       completed BOOLEAN DEFAULT FALSE,
       notes TEXT,
+      uuid TEXT,
+      synced INTEGER DEFAULT 0,
+      device_id TEXT,
+      deleted INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (session_id) REFERENCES sessions(id),
@@ -196,10 +247,11 @@ function initializeDatabase() {
       UNIQUE(session_id, node_id)
     )`);
 
-    // Add deleted column to session_node_tracker table (for soft delete sync)
-    db.run(`ALTER TABLE session_node_tracker ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {
-      // Column already exists, ignore error
-    });
+    // Add sync columns to session_node_tracker table
+    db.run(`ALTER TABLE session_node_tracker ADD COLUMN uuid TEXT`, (err) => {});
+    db.run(`ALTER TABLE session_node_tracker ADD COLUMN synced INTEGER DEFAULT 0`, (err) => {});
+    db.run(`ALTER TABLE session_node_tracker ADD COLUMN device_id TEXT`, (err) => {});
+    db.run(`ALTER TABLE session_node_tracker ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {});
 
     // Session node snapshots table - stores node data at completion time
       db.run(`CREATE TABLE IF NOT EXISTS session_node_snapshots (
@@ -295,16 +347,21 @@ function initializeDatabase() {
       description TEXT,
       is_collapsed BOOLEAN DEFAULT 0,
       sort_order INTEGER DEFAULT 0,
+      uuid TEXT,
+      synced INTEGER DEFAULT 0,
+      device_id TEXT,
+      deleted INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (session_id) REFERENCES sessions(id),
       UNIQUE(session_id, location_name)
     )`);
 
-    // Add deleted column to cabinet_locations table (for soft delete sync)
-    db.run(`ALTER TABLE cabinet_locations ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {
-      // Column already exists, ignore error
-    });
+    // Add sync columns to cabinet_locations table
+    db.run(`ALTER TABLE cabinet_locations ADD COLUMN uuid TEXT`, (err) => {});
+    db.run(`ALTER TABLE cabinet_locations ADD COLUMN synced INTEGER DEFAULT 0`, (err) => {});
+    db.run(`ALTER TABLE cabinet_locations ADD COLUMN device_id TEXT`, (err) => {});
+    db.run(`ALTER TABLE cabinet_locations ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {});
 
     // Add location_id column to cabinets table (check if exists first)
     db.run(`PRAGMA table_info(cabinets)`, (err, rows) => {
@@ -368,17 +425,10 @@ function initializeDatabase() {
     });
 
     // Add sync columns to session_pm_notes table if they don't exist
-    db.run(`ALTER TABLE session_pm_notes ADD COLUMN uuid TEXT`, (err) => {
-      // Column already exists, ignore error
-    });
-    
-    db.run(`ALTER TABLE session_pm_notes ADD COLUMN synced INTEGER DEFAULT 0`, (err) => {
-      // Column already exists, ignore error
-    });
-    
-    db.run(`ALTER TABLE session_pm_notes ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {
-      // Column already exists, ignore error
-    });
+    db.run(`ALTER TABLE session_pm_notes ADD COLUMN uuid TEXT`, (err) => {});
+    db.run(`ALTER TABLE session_pm_notes ADD COLUMN synced INTEGER DEFAULT 0`, (err) => {});
+    db.run(`ALTER TABLE session_pm_notes ADD COLUMN device_id TEXT`, (err) => {});
+    db.run(`ALTER TABLE session_pm_notes ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {});
 
     // I&I Documents table (multiple documents per session)
     db.run(`CREATE TABLE IF NOT EXISTS session_ii_documents (
@@ -408,7 +458,8 @@ function initializeDatabase() {
     // I&I Equipment Necessary table
     db.run(`CREATE TABLE IF NOT EXISTS session_ii_equipment (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      document_id TEXT NOT NULL,
+      session_id TEXT,
+      document_id TEXT,
       clamp_on_rms_ammeter BOOLEAN DEFAULT FALSE,
       digit_dvm BOOLEAN DEFAULT FALSE,
       fluke_1630_earth_ground BOOLEAN DEFAULT FALSE,
@@ -416,6 +467,7 @@ function initializeDatabase() {
       notes TEXT,
       uuid TEXT,
       synced INTEGER DEFAULT 0,
+      device_id TEXT,
       deleted INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -429,10 +481,15 @@ function initializeDatabase() {
       }
     });
 
+    // Add sync columns to existing session_ii_equipment table
+    db.run(`ALTER TABLE session_ii_equipment ADD COLUMN session_id TEXT`, (err) => {});
+    db.run(`ALTER TABLE session_ii_equipment ADD COLUMN device_id TEXT`, (err) => {});
+
     // I&I Checklist Items table
     db.run(`CREATE TABLE IF NOT EXISTS session_ii_checklist (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      document_id TEXT NOT NULL,
+      session_id TEXT,
+      document_id TEXT,
       section_name TEXT NOT NULL,
       item_name TEXT NOT NULL,
       answer TEXT, -- Pass/Fail/N.A.
@@ -449,6 +506,7 @@ function initializeDatabase() {
       measurement_frequency TEXT,
       uuid TEXT,
       synced INTEGER DEFAULT 0,
+      device_id TEXT,
       deleted INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -461,10 +519,15 @@ function initializeDatabase() {
       }
     });
 
+    // Add sync columns to existing session_ii_checklist table
+    db.run(`ALTER TABLE session_ii_checklist ADD COLUMN session_id TEXT`, (err) => {});
+    db.run(`ALTER TABLE session_ii_checklist ADD COLUMN device_id TEXT`, (err) => {});
+
     // I&I Equipment Used table
     db.run(`CREATE TABLE IF NOT EXISTS session_ii_equipment_used (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      document_id TEXT NOT NULL,
+      session_id TEXT,
+      document_id TEXT,
       manufacturer TEXT,
       type TEXT,
       serial_number TEXT,
@@ -472,6 +535,7 @@ function initializeDatabase() {
       used_in_section TEXT,
       uuid TEXT,
       synced INTEGER DEFAULT 0,
+      device_id TEXT,
       deleted INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -484,37 +548,134 @@ function initializeDatabase() {
       }
     });
 
+    // Add sync columns to existing session_ii_equipment_used table
+    db.run(`ALTER TABLE session_ii_equipment_used ADD COLUMN session_id TEXT`, (err) => {});
+    db.run(`ALTER TABLE session_ii_equipment_used ADD COLUMN device_id TEXT`, (err) => {});
+
+    // Create sync_metadata table for tracking sync state
+    db.run(`CREATE TABLE IF NOT EXISTS sync_metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`, (err) => {
+      if (err) {
+        console.error('❌ Error creating sync_metadata table:', err);
+      } else {
+        console.log('✅ Created (or found) sync_metadata table');
+      }
+    });
+
     // Database migrations - add columns if they don't exist
     const addColumnIfNotExists = (tableName, columnName, columnType) => {
-      console.log(`🔍 DEBUG: Checking if column ${columnName} exists in table ${tableName}`);
       db.all(`PRAGMA table_info(${tableName})`, (err, columns) => {
         if (err) {
-          console.error(`❌ DEBUG: Error getting table info for ${tableName}:`, err);
+          console.error(`❌ Error getting table info for ${tableName}:`, err);
           return;
         }
         if (!columns) {
-          console.error(`❌ DEBUG: No column info returned for table ${tableName}`);
+          console.error(`❌ No column info returned for table ${tableName}`);
           return;
         }
         
-        console.log(`🔍 DEBUG: Table ${tableName} has columns:`, columns.map(col => col.name).join(', '));
         const columnExists = columns.some(col => col.name === columnName);
         
         if (!columnExists) {
-          console.log(`⚠️  DEBUG: Column ${columnName} does NOT exist in ${tableName}, adding it...`);
           db.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnType}`, (alterErr) => {
-            if (alterErr) {
-              console.error(`❌ DEBUG: Error adding column ${columnName} to ${tableName}:`, alterErr);
+            if (alterErr && !alterErr.message.includes('duplicate column')) {
+              console.error(`❌ Error adding column ${columnName} to ${tableName}:`, alterErr);
             } else {
-              console.log(`✅ DEBUG: Successfully added column ${columnName} to ${tableName}`);
+              console.log(`✅ Added ${columnName} column to ${tableName}`);
             }
           });
-        } else {
-          console.log(`✅ DEBUG: Column ${columnName} already exists in ${tableName}`);
         }
       });
     };
 
+    // ============================================================
+    // CRITICAL: Add sync columns to ALL tables (for existing databases)
+    // ============================================================
+    console.log('🔧 Running database migrations...');
+    
+    // Users table
+    addColumnIfNotExists('users', 'uuid', 'TEXT');
+    addColumnIfNotExists('users', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('users', 'device_id', 'TEXT');
+    addColumnIfNotExists('users', 'deleted', 'INTEGER DEFAULT 0');
+    
+    // Customers table
+    addColumnIfNotExists('customers', 'uuid', 'TEXT');
+    addColumnIfNotExists('customers', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('customers', 'device_id', 'TEXT');
+    addColumnIfNotExists('customers', 'deleted', 'INTEGER DEFAULT 0');
+    
+    // Sessions table
+    addColumnIfNotExists('sessions', 'uuid', 'TEXT');
+    addColumnIfNotExists('sessions', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('sessions', 'device_id', 'TEXT');
+    addColumnIfNotExists('sessions', 'deleted', 'INTEGER DEFAULT 0');
+    
+    // Cabinets table
+    addColumnIfNotExists('cabinets', 'uuid', 'TEXT');
+    addColumnIfNotExists('cabinets', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('cabinets', 'device_id', 'TEXT');
+    addColumnIfNotExists('cabinets', 'deleted', 'INTEGER DEFAULT 0');
+    
+    // Nodes table
+    addColumnIfNotExists('nodes', 'uuid', 'TEXT');
+    addColumnIfNotExists('nodes', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('nodes', 'device_id', 'TEXT');
+    addColumnIfNotExists('nodes', 'deleted', 'INTEGER DEFAULT 0');
+    
+    // Session node maintenance table
+    addColumnIfNotExists('session_node_maintenance', 'uuid', 'TEXT');
+    addColumnIfNotExists('session_node_maintenance', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('session_node_maintenance', 'device_id', 'TEXT');
+    addColumnIfNotExists('session_node_maintenance', 'deleted', 'INTEGER DEFAULT 0');
+    
+    // Session node tracker table
+    addColumnIfNotExists('session_node_tracker', 'uuid', 'TEXT');
+    addColumnIfNotExists('session_node_tracker', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('session_node_tracker', 'device_id', 'TEXT');
+    addColumnIfNotExists('session_node_tracker', 'deleted', 'INTEGER DEFAULT 0');
+    
+    // Cabinet locations table
+    addColumnIfNotExists('cabinet_locations', 'uuid', 'TEXT');
+    addColumnIfNotExists('cabinet_locations', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('cabinet_locations', 'device_id', 'TEXT');
+    addColumnIfNotExists('cabinet_locations', 'deleted', 'INTEGER DEFAULT 0');
+    
+    // Session PM notes table
+    addColumnIfNotExists('session_pm_notes', 'uuid', 'TEXT');
+    addColumnIfNotExists('session_pm_notes', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('session_pm_notes', 'device_id', 'TEXT');
+    addColumnIfNotExists('session_pm_notes', 'deleted', 'INTEGER DEFAULT 0');
+    
+    // Session II documents table
+    addColumnIfNotExists('session_ii_documents', 'uuid', 'TEXT');
+    addColumnIfNotExists('session_ii_documents', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('session_ii_documents', 'device_id', 'TEXT');
+    addColumnIfNotExists('session_ii_documents', 'deleted', 'INTEGER DEFAULT 0');
+    
+    // Session II equipment table
+    addColumnIfNotExists('session_ii_equipment', 'uuid', 'TEXT');
+    addColumnIfNotExists('session_ii_equipment', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('session_ii_equipment', 'device_id', 'TEXT');
+    addColumnIfNotExists('session_ii_equipment', 'deleted', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('session_ii_equipment', 'document_id', 'TEXT');
+    
+    // Session II checklist table
+    addColumnIfNotExists('session_ii_checklist', 'uuid', 'TEXT');
+    addColumnIfNotExists('session_ii_checklist', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('session_ii_checklist', 'device_id', 'TEXT');
+    addColumnIfNotExists('session_ii_checklist', 'deleted', 'INTEGER DEFAULT 0');
+    
+    // Session II equipment used table
+    addColumnIfNotExists('session_ii_equipment_used', 'uuid', 'TEXT');
+    addColumnIfNotExists('session_ii_equipment_used', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('session_ii_equipment_used', 'device_id', 'TEXT');
+    addColumnIfNotExists('session_ii_equipment_used', 'deleted', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('session_ii_equipment_used', 'document_id', 'TEXT');
+    
     // Add new measurement columns to existing session_ii_checklist table
     addColumnIfNotExists('session_ii_checklist', 'measurement_ohms', 'TEXT');
     addColumnIfNotExists('session_ii_checklist', 'measurement_ac_ma', 'TEXT');
@@ -529,18 +690,54 @@ function initializeDatabase() {
     addColumnIfNotExists('sessions', 'ii_date_performed', 'DATE');
     addColumnIfNotExists('sessions', 'ii_customer_name', 'TEXT');
     
-    // Add document_id column to equipment tables (migration from session_id to document_id)
-    addColumnIfNotExists('session_ii_equipment', 'document_id', 'TEXT');
-    addColumnIfNotExists('session_ii_equipment_used', 'document_id', 'TEXT');
+    // Migrate cabinet_location to cabinet_name
+    db.all(`PRAGMA table_info(cabinets)`, (err, columns) => {
+      if (!err && columns) {
+        const hasCabinetLocation = columns.some(col => col.name === 'cabinet_location');
+        const hasCabinetName = columns.some(col => col.name === 'cabinet_name');
+        
+        if (hasCabinetLocation && !hasCabinetName) {
+          console.log('🔄 Migrating cabinet_location to cabinet_name...');
+          // Add new column
+          db.run(`ALTER TABLE cabinets ADD COLUMN cabinet_name TEXT`, (err) => {
+            if (!err) {
+              // Copy data from old column to new
+              db.run(`UPDATE cabinets SET cabinet_name = cabinet_location WHERE cabinet_name IS NULL`, (err) => {
+                if (!err) {
+                  console.log('✅ Successfully migrated cabinet_location to cabinet_name');
+                } else {
+                  console.error('Error copying cabinet_location data:', err);
+                }
+              });
+            } else if (!err.message.includes('duplicate column name')) {
+              console.error('Error adding cabinet_name column:', err);
+            }
+          });
+        } else if (!hasCabinetLocation && hasCabinetName) {
+          console.log('✓ Cabinet table already using cabinet_name column');
+        } else if (hasCabinetLocation && hasCabinetName) {
+          // Both columns exist, ensure data is synced
+          db.run(`UPDATE cabinets SET cabinet_name = cabinet_location WHERE cabinet_name IS NULL OR cabinet_name = ''`, () => {
+            console.log('✓ Synced cabinet_location to cabinet_name');
+          });
+        }
+      }
+    });
+    
+    // Add cabinet_type column for cabinet/rack differentiation
+    addColumnIfNotExists('cabinets', 'cabinet_type', 'TEXT DEFAULT "cabinet"');
+    
+    // Add workstations column for racks
+    addColumnIfNotExists('cabinets', 'workstations', 'TEXT DEFAULT "[]"');
 
     console.log('✅ Database tables initialized successfully');
     
     // Debug: Check cabinet data after initialization
-    db.all('SELECT id, cabinet_location, power_supplies, distribution_blocks, diodes, network_equipment, controllers FROM cabinets', (err, cabinets) => {
+    db.all('SELECT id, COALESCE(cabinet_name, cabinet_location) as name, power_supplies, distribution_blocks, diodes, network_equipment, controllers FROM cabinets', (err, cabinets) => {
       if (!err) {
         console.log(`🔍 DEBUG: Found ${cabinets.length} cabinets in database after initialization`);
         cabinets.forEach(cabinet => {
-          console.log(`📦 Cabinet: ${cabinet.cabinet_location} (ID: ${cabinet.id})`);
+          console.log(`📦 Cabinet: ${cabinet.name} (ID: ${cabinet.id})`);
           console.log(`   Power Supplies: ${cabinet.power_supplies ? cabinet.power_supplies.length : 0} chars`);
           console.log(`   Distribution Blocks: ${cabinet.distribution_blocks ? cabinet.distribution_blocks.length : 0} chars`);
           console.log(`   Diodes: ${cabinet.diodes ? cabinet.diodes.length : 0} chars`);

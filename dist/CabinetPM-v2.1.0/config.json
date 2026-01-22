@@ -1,0 +1,10 @@
+{
+  "version": "2.1.0",
+  "mongodbUri": "mongodb://172.16.10.124:27017/cabinet_pm_db",
+  "port": 3000,
+  "autoUpdate": {
+    "enabled": true,
+    "checkOnStartup": true,
+    "updateUrl": "https://raw.githubusercontent.com/YOUR-USERNAME/cabinet-pm/main/version.json"
+  }
+}

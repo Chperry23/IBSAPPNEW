@@ -61,6 +61,20 @@
             opacity: 1;
         }
         
+        /* Green highlighting for completed nodes */
+        .node-completed {
+            background-color: #d1fae5 !important; /* Light green */
+            transition: background-color 0.3s ease;
+        }
+        
+        .node-completed:hover {
+            background-color: #a7f3d0 !important; /* Slightly darker green on hover */
+        }
+        
+        .node-completed td {
+            border-color: #6ee7b7 !important; /* Green border */
+        }
+        
         /* Controller type badges */
         .badge-controller {
             background-color: #3b82f6;
@@ -676,13 +690,10 @@
                         🏗️ Cabinets
                     </button>
                     <button class="tab-button" data-tab="nodes">
-                        🖥️ Nodes Maintenance
-                    </button>
-                    <button class="tab-button" data-tab="node-tracker">
-                        📋 Node List Tracker
+                        🖥️ Diagnostics
                     </button>
                     <button class="tab-button" data-tab="diagnostics">
-                        🔧 Diagnostics
+                        🔧 I/O Errors
                     </button>
                     <button class="tab-button" data-tab="pm-notes">
                         📝 PM Notes
@@ -694,9 +705,10 @@
             <div id="cabinets-tab" class="tab-content active">
                 <div class="mb-8">
                     <div class="flex justify-between items-center mb-6">
-                        <h2 class="text-2xl font-bold text-gray-900">Cabinets</h2>
+                        <h2 class="text-2xl font-bold text-gray-900">Cabinets & Racks</h2>
                         <div class="flex gap-3">
-                            <button id="add-cabinet-btn" class="btn btn-primary">Add Cabinet</button>
+                            <button id="add-cabinet-btn" class="btn btn-primary">📦 Add Cabinet</button>
+                            <button id="add-rack-btn" class="btn btn-primary">🗄️ Add Rack</button>
                             <button id="cabinet-assignment-btn" class="btn btn-info">
                                 📦 Cabinet Assignment
                             </button>
@@ -789,6 +801,7 @@
                                             <th class="checkbox-cell text-xs font-medium text-gray-900">Redundancy</th>
                                             <th class="checkbox-cell text-xs font-medium text-gray-900">Cold Restart</th>
                                             <th class="checkbox-cell text-xs font-medium text-gray-900">Errors</th>
+                                            <th class="checkbox-cell text-xs font-medium text-green-700">✓ Done</th>
                                         </tr>
                                     </thead>
                                     <tbody id="controllers-table-body">
@@ -822,6 +835,7 @@
                                             <th class="px-3 py-2 text-center text-xs font-medium text-gray-900">OS Update</th>
                                             <th class="px-3 py-2 text-center text-xs font-medium text-gray-900">McAfee</th>
                                             <th class="px-3 py-2 text-center text-xs font-medium text-gray-900">HDD Replaced</th>
+                                            <th class="px-3 py-2 text-center text-xs font-medium text-green-700">✓ Done</th>
                                         </tr>
                                     </thead>
                                     <tbody id="computers-table-body">
@@ -849,6 +863,7 @@
                                             <th class="px-3 py-2 text-left text-xs font-medium text-gray-900">Type</th>
                                             <th class="px-3 py-2 text-left text-xs font-medium text-gray-900">Firmware</th>
                                             <th class="px-3 py-2 text-center text-xs font-medium text-gray-900">Firmware Updated</th>
+                                            <th class="px-3 py-2 text-center text-xs font-medium text-green-700">✓ Done</th>
                                         </tr>
                                     </thead>
                                     <tbody id="switches-table-body">
@@ -869,37 +884,6 @@
                 </div>
             </div>
 
-            <!-- Node List Tracker Tab Content -->
-            <div id="node-tracker-tab" class="tab-content">
-                <div class="mb-8">
-                    <div class="flex justify-between items-center mb-6">
-                        <h2 class="text-2xl font-bold text-gray-900">Node List Tracker</h2>
-                        <div class="flex gap-3">
-                            <button id="clear-tracker-btn" class="btn btn-secondary">Clear All</button>
-                            <button id="save-tracker-btn" class="btn btn-primary">Save Progress</button>
-                        </div>
-                    </div>
-                    
-                    <!-- Node Tracker Content -->
-                    <div class="card">
-                        <div class="card-body">
-                            <div class="mb-4">
-                                <p class="text-sm text-gray-600 mb-4">
-                                    Use this tracker to keep track of nodes you've worked on during this session. 
-                                    Simply check off nodes as you complete work on them.
-                                </p>
-                            </div>
-                            
-                            <!-- Node Tracker Tables -->
-                            <div id="node-tracker-content">
-                                <div class="text-center text-gray-500 py-8">
-                                    <p>Loading node list...</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </main>
     </div>
 
@@ -912,10 +896,11 @@
             </div>
             <div class="modal-body">
                 <form id="cabinet-form">
+                    <input type="hidden" name="cabinet_type" value="cabinet">
                     <div class="form-group">
-                        <label for="cabinet-location" class="form-label">Cabinet Location *</label>
-                        <input type="text" id="cabinet-location" name="cabinet_location" required
-                               placeholder="e.g., Building A - Control Room 1" class="form-input">
+                        <label for="cabinet-name" class="form-label">Cabinet Name *</label>
+                        <input type="text" id="cabinet-name" name="cabinet_name" required
+                               placeholder="e.g., CAB-001" class="form-input">
                     </div>
                     <div class="form-group">
                         <label for="cabinet-date" class="form-label">Date</label>
@@ -933,6 +918,41 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="PM.UI.closeModal('cabinet-modal')">Cancel</button>
                 <button type="submit" form="cabinet-form" class="btn btn-primary">Add Cabinet</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Rack Modal -->
+    <div id="rack-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add New Rack</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="rack-form">
+                    <input type="hidden" name="cabinet_type" value="rack">
+                    <div class="form-group">
+                        <label for="rack-name" class="form-label">Rack Name *</label>
+                        <input type="text" id="rack-name" name="cabinet_name" required
+                               placeholder="e.g., RACK-001" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label for="rack-date" class="form-label">Date</label>
+                        <input type="date" id="rack-date" name="cabinet_date" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label for="rack-location-assignment" class="form-label">Assign to Location (Optional)</label>
+                        <select id="rack-location-assignment" name="location_id" class="form-select">
+                            <option value="">No Location</option>
+                            <!-- Locations will be populated here -->
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="PM.UI.closeModal('rack-modal')">Cancel</button>
+                <button type="submit" form="rack-form" class="btn btn-primary">Add Rack</button>
             </div>
         </div>
     </div>
@@ -2268,6 +2288,31 @@ Examples:
         let nodeFilterMode = 'include';
         let pmNotesData = null;
 
+        // ========================================
+        // HELPER FUNCTIONS
+        // ========================================
+        function updateCabinetModalLabels() {
+            const typeSelect = document.getElementById('cabinet-type');
+            const nameLabel = document.getElementById('cabinet-name-label');
+            const nameInput = document.getElementById('cabinet-name');
+            const submitBtn = document.getElementById('cabinet-submit-btn');
+            const modalTitle = document.getElementById('cabinet-modal-title');
+            
+            const type = typeSelect.value;
+            
+            if (type === 'rack') {
+                nameLabel.textContent = 'Rack';
+                nameInput.placeholder = 'e.g., RACK-001';
+                submitBtn.textContent = 'Add Rack';
+                modalTitle.textContent = 'Add New Rack';
+            } else {
+                nameLabel.textContent = 'Cabinet';
+                nameInput.placeholder = 'e.g., CAB-001';
+                submitBtn.textContent = 'Add Cabinet';
+                modalTitle.textContent = 'Add New Cabinet';
+            }
+        }
+        
         // ========================================
         // SESSION INITIALIZATION
         // ========================================

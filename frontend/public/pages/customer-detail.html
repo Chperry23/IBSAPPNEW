@@ -502,6 +502,32 @@
                     </div>
                 </div>
 
+                <!-- Unclassified/Other Equipment Section -->
+                <div id="unclassified-section" class="card mb-4" style="display:none;">
+                    <div class="card-header" style="background-color: #fef3c7;">
+                        <h4 class="card-title">⚠️ Unclassified / Other Equipment</h4>
+                        <p class="text-sm text-gray-600 mt-1">These devices couldn't be automatically categorized. Please assign the correct type below.</p>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="overflow-visible relative z-10">
+                            <table class="w-full table-compact">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left text-sm font-medium text-gray-900">Node Name</th>
+                                        <th class="px-3 py-2 text-left text-sm font-medium text-gray-900">Current Type</th>
+                                        <th class="px-3 py-2 text-left text-sm font-medium text-gray-900">Model</th>
+                                        <th class="px-3 py-2 text-left text-sm font-medium text-gray-900">Assign Correct Type</th>
+                                        <th class="px-3 py-2 text-center text-sm font-medium text-gray-900">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="unclassified-nodes-table-body">
+                                    <!-- Unclassified nodes will be loaded here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
                 <div id="no-equipment-found" class="text-center py-8 hidden">
                     <div class="text-4xl mb-2">📋</div>
                     <p class="text-gray-600">No equipment found.</p>
@@ -649,7 +675,7 @@
                     
                     <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
                         <h4 class="font-medium text-blue-900 mb-2">Required CSV Format:</h4>
-                        <code class="text-sm text-blue-800">cabinet_location,cabinet_date</code>
+                        <code class="text-sm text-blue-800">cabinet_name,cabinet_date</code>
                         <p class="text-xs text-blue-700 mt-2">
                             <strong>Example:</strong><br>
                             Cabinet A-101,2024-01-15<br>
@@ -1071,8 +1097,8 @@
         function viewSession(sessionId) {
             console.log('DEBUG: viewSession function called with sessionId:', sessionId);
             console.log('DEBUG: currentCustomer:', currentCustomer);
-            console.log('DEBUG: Navigating to:', `/session.html?id=${sessionId}&customer=${currentCustomer.id}&customerName=${encodeURIComponent(currentCustomer.name)}`);
-            window.location.href = `/session.html?id=${sessionId}&customer=${currentCustomer.id}&customerName=${encodeURIComponent(currentCustomer.name)}`;
+            console.log('DEBUG: Navigating to:', `/pages/session.html?id=${sessionId}&customer=${currentCustomer.id}&customerName=${encodeURIComponent(currentCustomer.name)}`);
+            window.location.href = `/pages/session.html?id=${sessionId}&customer=${currentCustomer.id}&customerName=${encodeURIComponent(currentCustomer.name)}`;
         }
 
         async function completeSession(sessionId, sessionName) {
@@ -1748,12 +1774,14 @@
             try {
                 startImportProgress();
                 
+                // Use merge mode by default - updates existing nodes by name, adds new ones
+                // This preserves node IDs and relationships with existing sessions
                 const response = await fetch(`/api/customers/${currentCustomer.id}/nodes/import`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ nodes: parsedNodes, replace: true })
+                    body: JSON.stringify({ nodes: parsedNodes, replace: false, merge: true })
                 });
 
                 const result = await response.json();
@@ -1762,8 +1790,11 @@
 
                 if (result.success) {
                     closeModal('import-nodes-modal');
+                    const addedMsg = result.imported > 0 ? `${result.imported} added` : '';
+                    const updatedMsg = result.updated > 0 ? `${result.updated} updated` : '';
+                    const separator = addedMsg && updatedMsg ? ', ' : '';
                     showMessage(
-                        `Successfully replaced all nodes with ${result.imported} new nodes for ${currentCustomer.name}`, 
+                        `Successfully imported nodes for ${currentCustomer.name}: ${addedMsg}${separator}${updatedMsg}. Closed PMs are not affected.`, 
                         'success'
                     );
                     
@@ -1923,11 +1954,10 @@
             // Filter out partners and separate by type
             const filteredNodes = nodes.filter(node => !node.node_name.includes('-partner'));
             
-            // Controllers: Include regular controllers + EIOC devices
+            // Controllers: ONLY based on node_type from CSV import
             const controllers = filteredNodes.filter(node => 
                 node.node_type === 'Controller' || 
-                node.node_type === 'DeltaV EIOC' ||
-                ['CP2-EIOC', 'CP3-EIOC', 'CP4-EIOC', 'UTIL-EIOC'].includes(node.node_name)
+                node.node_type === 'DeltaV EIOC'
             );
             
             // CIOC: CHARM I/O Cards
@@ -1940,29 +1970,52 @@
                 node.node_type === 'SIS'
             );
             
-            // Switches: Smart Network Devices and similar
+            // Switches: Based on node_type or description
             const switches = filteredNodes.filter(node => 
                 node.node_type === 'Smart Network Devices' ||
-                node.description === 'Smart Network Devices' ||
-                node.node_name.includes('_DC_OP_') ||
-                node.node_name.includes('_DC_SR_') ||
-                node.node_name.includes('_CAB_')
+                node.description === 'Smart Network Devices'
             );
             
-            // Workstations: Everything else except controllers, CIOC, SIS, switches, and excluded types
-            const workstations = filteredNodes.filter(node => 
+            // Workstations: Everything that has a workstation-like type
+            // Includes: Local Operator, Local Application, Local ProfessionalPlus, Not available, Unclassified
+            const workstations = filteredNodes.filter(node => {
+                const nodeType = node.node_type || '';
+                
+                // Explicitly workstation types
+                if (nodeType.includes('Operator') || 
+                    nodeType.includes('Application') || 
+                    nodeType.includes('Professional') ||
+                    nodeType === 'Not available' ||
+                    nodeType === 'Unclassified') {
+                    return true;
+                }
+                
+                // Everything else that's not in other categories
+                return !controllers.includes(node) &&
+                    !ciocDevices.includes(node) &&
+                    !sisDevices.includes(node) &&
+                    !switches.includes(node) &&
+                    !['Power Supply', 'Wireless Gateway'].includes(nodeType);
+            });
+            
+            // Find unclassified nodes (nodes that truly don't fit any category)
+            // Power Supply and Wireless Gateway are excluded from all categories
+            const unclassified = filteredNodes.filter(node => 
                 !controllers.includes(node) &&
                 !ciocDevices.includes(node) &&
                 !sisDevices.includes(node) &&
                 !switches.includes(node) &&
-                !['Power Supply', 'Wireless Gateway'].includes(node.node_type)
+                !workstations.includes(node) &&
+                node.node_type !== 'Power Supply' &&
+                node.node_type !== 'Wireless Gateway'
             );
-            
+
             renderControllersTable(controllers);
             renderCIOCTable(ciocDevices);
             renderSISTable(sisDevices);
             renderWorkstationsTable(workstations);
             renderSwitchesTable(switches);
+            renderUnclassifiedTable(unclassified);
             
             // Show/hide no data message
             const noDataDiv = document.getElementById('no-equipment-found');
@@ -2137,6 +2190,82 @@
                 `;
                 tbody.appendChild(row);
             });
+        }
+
+        function renderUnclassifiedTable(unclassified) {
+            const section = document.getElementById('unclassified-section');
+            const tbody = document.getElementById('unclassified-nodes-table-body');
+            tbody.innerHTML = '';
+            
+            if (unclassified.length === 0) {
+                section.style.display = 'none';
+                return;
+            }
+            
+            section.style.display = 'block';
+            
+            unclassified.forEach(node => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-3 py-2 font-medium text-sm">${node.node_name}</td>
+                    <td class="px-3 py-2 text-sm">${node.node_type || 'Unknown'}</td>
+                    <td class="px-3 py-2 text-sm">${node.model || 'N/A'}</td>
+                    <td class="px-3 py-2">
+                        <select class="form-select text-sm" id="node-type-${node.id}" style="min-width: 180px;">
+                            <option value="">-- Select Type --</option>
+                            <option value="Controller">Controller</option>
+                            <option value="CIOC">CIOC</option>
+                            <option value="SIS">SIS (Safety System)</option>
+                            <option value="Smart Network Devices">Network Switch</option>
+                            <option value="Local Operator">Workstation/Computer</option>
+                            <option value="Local Application">Application Station</option>
+                            <option value="Wireless Gateway">Wireless Gateway</option>
+                            <option value="Power Supply">Power Supply</option>
+                        </select>
+                    </td>
+                    <td class="px-3 py-2 text-center">
+                        <button class="btn btn-sm btn-primary" onclick="updateNodeType(${node.id})">
+                            Update
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        async function updateNodeType(nodeId) {
+            const selectElement = document.getElementById(`node-type-${nodeId}`);
+            const newType = selectElement.value;
+            
+            if (!newType) {
+                showMessage('Please select a node type', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/nodes/${nodeId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ node_type: newType })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage('Node type updated successfully!', 'success');
+                    // Reload nodes to reflect changes
+                    await loadCustomerDetail(currentCustomer.id);
+                    // Re-open the modal with updated data
+                    viewCustomerNodes();
+                } else {
+                    showMessage(result.error || 'Error updating node type', 'error');
+                }
+            } catch (error) {
+                showMessage('Network error updating node type', 'error');
+                console.error('Update node type error:', error);
+            }
         }
 
         // === UTILITY FUNCTIONS ===
@@ -2317,13 +2446,13 @@
                 const header = lines[0].toLowerCase().split(',').map(h => h.trim());
                 
                 // Validate required columns
-                const requiredColumns = ['cabinet_location'];
+                const requiredColumns = ['cabinet_name'];
                 const missingColumns = requiredColumns.filter(col => !header.includes(col));
                 
                 if (missingColumns.length > 0) {
                     return { 
                         success: false, 
-                        error: `Missing required columns: ${missingColumns.join(', ')}. Expected: cabinet_location,cabinet_date` 
+                        error: `Missing required columns: ${missingColumns.join(', ')}. Expected: cabinet_name,cabinet_date` 
                     };
                 }
 
@@ -2343,9 +2472,9 @@
                         cabinet[col] = values[index] || '';
                     });
 
-                    if (cabinet.cabinet_location) { // Only add if location is provided
+                    if (cabinet.cabinet_name) { // Only add if location is provided
                         cabinets.push({
-                            cabinet_location: cabinet.cabinet_location,
+                            cabinet_name: cabinet.cabinet_name,
                             cabinet_date: cabinet.cabinet_date || new Date().toISOString().split('T')[0]
                         });
                     }

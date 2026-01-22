@@ -178,28 +178,49 @@
                 // Generate cabinet summary info
                 const cabinetSummary = PM.Cabinets.generateCabinetSummary(cabinet);
                 
+                // Generate stats based on cabinet type
+                let statsHTML = '';
+                if (cabinetSummary.cabinetType === 'rack') {
+                    // Rack stats
+                    statsHTML = `
+                        <div class="stat-item">
+                            <span class="stat-icon">💻</span>
+                            <span class="stat-text">${cabinetSummary.workstations} Workstations</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-icon">🔌</span>
+                            <span class="stat-text">${cabinetSummary.networkEquipment} Network</span>
+                        </div>
+                    `;
+                } else {
+                    // Cabinet stats
+                    statsHTML = `
+                        <div class="stat-item">
+                            <span class="stat-icon">🎛️</span>
+                            <span class="stat-text">${cabinetSummary.controllers} Controllers</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-icon">⚡</span>
+                            <span class="stat-text">${cabinetSummary.powerSupplies} Power Supplies</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-icon">🔌</span>
+                            <span class="stat-text">${cabinetSummary.networkEquipment} Network</span>
+                        </div>
+                    `;
+                }
+                
                 cabinetCard.innerHTML = `
                     <div class="cabinet-card-content">
                         <div class="cabinet-card-header">
-                            <h4 class="cabinet-name">${cabinet.cabinet_location}</h4>
+                            <h4 class="cabinet-name">${cabinet.cabinet_name}</h4>
                             <button onclick="event.stopPropagation(); PM.Cabinets.deleteCabinet('${cabinet.id}')" class="action-btn delete-btn" title="Delete cabinet">🗑️</button>
                         </div>
                         <div class="cabinet-card-body">
                             <div class="cabinet-info">
                                 ${cabinetSummary.hasFlags ? `<div class="cabinet-alerts">${cabinetSummary.flags.join(' ')}</div>` : ''}
                                 <div class="cabinet-stats">
-                                    <div class="stat-item">
-                                        <span class="stat-icon">🎛️</span>
-                                        <span class="stat-text">${cabinetSummary.controllers} Controllers</span>
-                                    </div>
-                                    <div class="stat-item">
-                                        <span class="stat-icon">⚡</span>
-                                        <span class="stat-text">${cabinetSummary.powerSupplies} Power Supplies</span>
-                                    </div>
-                                    <div class="stat-item">
-                                        <span class="stat-icon">🔌</span>
-                                        <span class="stat-text">${cabinetSummary.networkEquipment} Network</span>
-                                    </div>
+                                    ${statsHTML}
                                 </div>
                                 <div class="cabinet-inspection">
                                     <div class="inspection-status ${cabinetSummary.inspectionStatus}">
@@ -251,6 +272,21 @@
     // Update Location Dropdown in Add Cabinet Modal
     PM.Cabinets.updateLocationDropdown = function() {
         const dropdown = document.getElementById('cabinet-location-assignment');
+        dropdown.innerHTML = '<option value="">No Location</option>';
+        
+        if (sessionData.locations) {
+            sessionData.locations.forEach(location => {
+                const option = document.createElement('option');
+                option.value = location.id;
+                option.textContent = location.location_name;
+                dropdown.appendChild(option);
+            });
+        }
+    }
+
+    // Update Location Dropdown in Add Rack Modal
+    PM.Cabinets.updateRackLocationDropdown = function() {
+        const dropdown = document.getElementById('rack-location-assignment');
         dropdown.innerHTML = '<option value="">No Location</option>';
         
         if (sessionData.locations) {
@@ -329,6 +365,78 @@
             }
         } catch (error) {
             logger.error('Network error adding cabinet', error);
+            PM.UI.showMessage('Network error. Please try again.', 'error');
+            PM.UI.playErrorSound();
+        }
+    }
+
+    // Add Rack - Create new rack
+    PM.Cabinets.addRack = async function(e) {
+        e.preventDefault();
+        logger.info('Add rack form submitted');
+        
+        if (isSessionCompleted) {
+            logger.warn('Cannot add rack - session is completed');
+            PM.UI.showMessage('Cannot add rack - PM session is completed', 'error');
+            return;
+        }
+        
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData);
+        data.pm_session_id = currentSessionId;
+        data.cabinet_type = 'rack'; // Ensure it's always rack
+        
+        // Handle location assignment
+        if (data.location_id === '') {
+            delete data.location_id;
+        }
+        
+        logger.debug('Rack data to submit', data);
+        logger.debug('Current session ID', currentSessionId);
+
+        try {
+            logger.api('POST', '/api/cabinets', data);
+            
+            const response = await fetch('/api/cabinets', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+
+            logger.debug('Response status', response.status);
+            
+            // Check if response is OK
+            if (!response.ok) {
+                const errorText = await response.text();
+                logger.error(`HTTP ${response.status}: ${response.statusText}`, errorText);
+                PM.UI.playErrorSound();
+                PM.UI.showMessage(`Server error: ${response.statusText}`, 'error');
+                return;
+            }
+
+            const result = await response.json();
+            logger.debug('Add rack response', result);
+
+            if (result.success) {
+                logger.success('Rack added successfully', { id: result.cabinet.id });
+                PM.UI.closeModal('rack-modal');
+                
+                // Reload session to get updated racks
+                logger.info('Reloading session data');
+                await PM.Session.load();
+                
+                PM.UI.playSuccessSound();
+                PM.UI.showMessage('Rack added successfully', 'success');
+                e.target.reset();
+            } else {
+                logger.error('Failed to add rack', result.error);
+                PM.UI.playErrorSound();
+                PM.UI.showMessage(result.error || 'Error adding rack', 'error');
+            }
+        } catch (error) {
+            logger.error('Network error adding rack', error);
             PM.UI.showMessage('Network error. Please try again.', 'error');
             PM.UI.playErrorSound();
         }
@@ -588,9 +696,13 @@
     PM.Cabinets.generateCabinetSummary = function(cabinet) {
         console.log('DEBUG: Generating summary for cabinet:', cabinet);
         
+        const cabinetType = cabinet.cabinet_type || 'cabinet';
+        
         const summary = {
+            cabinetType: cabinetType,
             controllers: 0,
             powerSupplies: 0,
+            workstations: 0,
             networkEquipment: 0,
             flags: [],
             hasFlags: false,
@@ -606,6 +718,10 @@
 
         if (cabinet.power_supplies && Array.isArray(cabinet.power_supplies)) {
             summary.powerSupplies = cabinet.power_supplies.length;
+        }
+
+        if (cabinet.workstations && Array.isArray(cabinet.workstations)) {
+            summary.workstations = cabinet.workstations.length;
         }
 
         if (cabinet.network_equipment && Array.isArray(cabinet.network_equipment)) {
@@ -776,7 +892,7 @@
                 cabinetItem.addEventListener('dragend', PM.Cabinets.handleAssignmentDragEnd);
                 
                 cabinetItem.innerHTML = `
-                    <div class="assignment-item-name">${cabinet.cabinet_location}</div>
+                    <div class="assignment-item-name">${cabinet.cabinet_name}</div>
                     <div class="assignment-item-details">
                         Date: ${cabinet.cabinet_date ? new Date(cabinet.cabinet_date).toLocaleDateString() : 'No date'}
                     </div>
@@ -807,7 +923,7 @@
                     <h5>${location.location_name}</h5>
                     <div class="location-cabinets">
                         ${assignedCabinets.map(cabinet => 
-                            `<span class="location-cabinet-tag">${cabinet.cabinet_location}</span>`
+                            `<span class="location-cabinet-tag">${cabinet.cabinet_name}</span>`
                         ).join('')}
                         ${assignedCabinets.length === 0 ? '<span class="text-gray-500 text-sm">No cabinets assigned</span>' : ''}
                     </div>

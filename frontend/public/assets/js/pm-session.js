@@ -54,7 +54,24 @@
             console.log('DEBUG: Opening add cabinet modal');
             // Set today's date as default
             document.getElementById('cabinet-date').value = new Date().toISOString().split('T')[0];
+            // Update location dropdown with available locations
+            PM.Cabinets.updateLocationDropdown();
             PM.UI.openModal('cabinet-modal');
+        });
+        
+        // Add rack
+        document.getElementById('add-rack-btn').addEventListener('click', () => {
+            console.log('DEBUG: Opening add rack modal');
+            // Set today's date as default
+            document.getElementById('rack-date').value = new Date().toISOString().split('T')[0];
+            // Update location dropdown with available locations (same locations for racks)
+            PM.Cabinets.updateRackLocationDropdown();
+            PM.UI.openModal('rack-modal');
+        });
+        
+        // Cabinet assignment button
+        document.getElementById('cabinet-assignment-btn').addEventListener('click', () => {
+            PM.Cabinets.openAssignmentModal();
         });
 
         // Tab switching
@@ -69,16 +86,15 @@
         document.getElementById('save-nodes-btn').addEventListener('click', PM.Nodes.saveNodesProgress);
         document.getElementById('clear-all-nodes-btn').addEventListener('click', PM.Nodes.clearAllNodes);
         
-        // Node tracker functionality
-        document.getElementById('save-tracker-btn').addEventListener('click', PM.Nodes.saveNodeTracker);
-        document.getElementById('clear-tracker-btn').addEventListener('click', PM.Nodes.clearNodeTracker);
-        
         // Diagnostics functionality
         document.getElementById('save-diagnostics-btn').addEventListener('click', PM.Diagnostics.saveDiagnostics);
         document.getElementById('error-form').addEventListener('submit', PM.Diagnostics.saveChannelError);
         
         // Cabinet form submission
         document.getElementById('cabinet-form').addEventListener('submit', PM.Cabinets.addCabinet);
+        
+        // Rack form submission
+        document.getElementById('rack-form').addEventListener('submit', PM.Cabinets.addRack);
         
         // Location form submission
         document.getElementById('location-form').addEventListener('submit', PM.Cabinets.addLocation);
@@ -267,11 +283,16 @@
             input.onchange = null;
         });
         
-        // Disable add cabinet button specifically
+        // Disable add cabinet and rack buttons specifically
         const addCabinetBtn = document.getElementById('add-cabinet-btn');
         if (addCabinetBtn) {
             addCabinetBtn.disabled = true;
             addCabinetBtn.style.display = 'none';
+        }
+        const addRackBtn = document.getElementById('add-rack-btn');
+        if (addRackBtn) {
+            addRackBtn.disabled = true;
+            addRackBtn.style.display = 'none';
         }
     }
 
@@ -304,8 +325,6 @@
         // Load data for the active tab
         if (tabName === 'nodes') {
             PM.Nodes.loadNodes();
-        } else if (tabName === 'node-tracker') {
-            PM.Nodes.loadNodeTracker();
         } else if (tabName === 'diagnostics') {
             PM.Diagnostics.loadDiagnostics();
         }

@@ -278,7 +278,7 @@ function initializeDatabase() {
       db.run(`CREATE TABLE IF NOT EXISTS cabinets (
       id TEXT PRIMARY KEY,
       pm_session_id TEXT NOT NULL,
-      cabinet_location TEXT NOT NULL,
+      cabinet_name TEXT NOT NULL,
       cabinet_date DATE,
       status TEXT DEFAULT 'active',
       power_supplies TEXT DEFAULT '[]',
@@ -363,6 +363,9 @@ function initializeDatabase() {
     db.run(`ALTER TABLE session_node_maintenance ADD COLUMN firmware_updated_checked BOOLEAN DEFAULT FALSE`, (err) => {
       // Column already exists, ignore error
     });
+    db.run(`ALTER TABLE session_node_maintenance ADD COLUMN completed BOOLEAN DEFAULT FALSE`, (err) => {
+      // Column already exists, ignore error
+    });
 
     // Add sync columns to session_node_maintenance table
     db.run(`ALTER TABLE session_node_maintenance ADD COLUMN uuid TEXT`, (err) => {
@@ -415,7 +418,7 @@ function initializeDatabase() {
       os_service_pack TEXT,
       bios_version TEXT,
       oem_type_description TEXT,
-      assigned_cabinet_location TEXT,
+      assigned_cabinet_name TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (session_id) REFERENCES sessions(id),
       UNIQUE(session_id, original_node_id)
@@ -484,7 +487,7 @@ function initializeDatabase() {
       });
 
     // Cabinet Locations table
-    db.run(`CREATE TABLE IF NOT EXISTS cabinet_locations (
+    db.run(`CREATE TABLE IF NOT EXISTS cabinet_names (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
       location_name TEXT NOT NULL,
@@ -497,8 +500,8 @@ function initializeDatabase() {
       UNIQUE(session_id, location_name)
     )`);
 
-    // Add deleted column to cabinet_locations table (for soft delete sync)
-    db.run(`ALTER TABLE cabinet_locations ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {
+    // Add deleted column to cabinet_names table (for soft delete sync)
+    db.run(`ALTER TABLE cabinet_names ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {
       // Column already exists, ignore error
     });
 
@@ -732,11 +735,11 @@ function initializeDatabase() {
     console.log('✅ Database tables initialized successfully');
     
     // Debug: Check cabinet data after initialization
-    db.all('SELECT id, cabinet_location, power_supplies, distribution_blocks, diodes, network_equipment, controllers FROM cabinets', (err, cabinets) => {
+    db.all('SELECT id, cabinet_name, power_supplies, distribution_blocks, diodes, network_equipment, controllers FROM cabinets', (err, cabinets) => {
       if (!err) {
         console.log(`🔍 DEBUG: Found ${cabinets.length} cabinets in database after initialization`);
         cabinets.forEach(cabinet => {
-          console.log(`📦 Cabinet: ${cabinet.cabinet_location} (ID: ${cabinet.id})`);
+          console.log(`📦 Cabinet: ${cabinet.cabinet_name} (ID: ${cabinet.id})`);
           console.log(`   Power Supplies: ${cabinet.power_supplies ? cabinet.power_supplies.length : 0} chars`);
           console.log(`   Distribution Blocks: ${cabinet.distribution_blocks ? cabinet.distribution_blocks.length : 0} chars`);
           console.log(`   Diodes: ${cabinet.diodes ? cabinet.diodes.length : 0} chars`);
@@ -1230,14 +1233,14 @@ app.get('/api/sessions/:sessionId', requireAuth, async (req, res) => {
     const sessionCabinets = await db.prepare(`
       SELECT c.*, cl.location_name, cl.id as location_id
       FROM cabinets c
-      LEFT JOIN cabinet_locations cl ON c.location_id = cl.id
+      LEFT JOIN cabinet_names cl ON c.location_id = cl.id
       WHERE c.pm_session_id = ? 
       ORDER BY cl.sort_order, cl.location_name, c.created_at
     `).all([sessionId]);
     
     // Get all locations for this session
     const locations = await db.prepare(`
-      SELECT * FROM cabinet_locations 
+      SELECT * FROM cabinet_names 
       WHERE session_id = ? 
       ORDER BY sort_order, location_name
     `).all([sessionId]);
@@ -1250,6 +1253,7 @@ app.get('/api/sessions/:sessionId', requireAuth, async (req, res) => {
       diodes: JSON.parse(cabinet.diodes || '[]'),
       network_equipment: JSON.parse(cabinet.network_equipment || '[]'),
       controllers: JSON.parse(cabinet.controllers || '[]'),
+      workstations: JSON.parse(cabinet.workstations || '[]'),
       inspection: JSON.parse(cabinet.inspection_data || '{}')
     }));
     
@@ -1280,7 +1284,7 @@ app.put('/api/sessions/:sessionId/complete', requireAuth, async (req, res) => {
     
     // Create snapshots of all nodes for this customer at completion time
     const nodes = await db.prepare(`
-      SELECT n.*, c.cabinet_location as assigned_cabinet_location
+      SELECT n.*, c.cabinet_name as assigned_cabinet_name
       FROM nodes n
       LEFT JOIN cabinets c ON n.assigned_cabinet_id = c.id
       WHERE n.customer_id = ?
@@ -1294,7 +1298,7 @@ app.put('/api/sessions/:sessionId/complete', requireAuth, async (req, res) => {
           INSERT OR REPLACE INTO session_node_snapshots (
             session_id, original_node_id, node_name, node_type, model, description, 
             serial, firmware, version, status, redundant, os_name, os_service_pack,
-            bios_version, oem_type_description, assigned_cabinet_location
+            bios_version, oem_type_description, assigned_cabinet_name
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run([
           sessionId,
@@ -1312,7 +1316,7 @@ app.put('/api/sessions/:sessionId/complete', requireAuth, async (req, res) => {
           node.os_service_pack,
           node.bios_version,
           node.oem_type_description,
-          node.assigned_cabinet_location
+          node.assigned_cabinet_name
         ]);
       } catch (snapshotError) {
         console.error('Error creating node snapshot:', snapshotError);
@@ -1320,8 +1324,8 @@ app.put('/api/sessions/:sessionId/complete', requireAuth, async (req, res) => {
       }
     }
     
-    // Mark the session as completed
-    const result = await db.prepare('UPDATE sessions SET status = ?, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(['completed', sessionId]);
+    // Mark the session as completed and mark as unsynced so it syncs to other devices
+    const result = await db.prepare('UPDATE sessions SET status = ?, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP, synced = 0 WHERE id = ?').run(['completed', sessionId]);
     
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Session not found' });
@@ -1374,7 +1378,7 @@ app.post('/api/sessions/:sessionId/duplicate', requireAuth, async (req, res) => 
     for (const sourceCabinet of sourceCabinets) {
       const newCabinetId = uuidv4();
       
-      console.log('📦 Duplicating cabinet:', sourceCabinet.cabinet_location);
+      console.log('📦 Duplicating cabinet:', sourceCabinet.cabinet_name);
       console.log('📦 Source cabinet ID:', sourceCabinet.id);
       console.log('📦 New cabinet ID:', newCabinetId);
       console.log('📦 Source controllers JSON:', sourceCabinet.controllers);
@@ -1406,14 +1410,14 @@ app.post('/api/sessions/:sessionId/duplicate', requireAuth, async (req, res) => 
       // Create new cabinet
       await db.prepare(`
         INSERT INTO cabinets (
-          id, pm_session_id, cabinet_location, cabinet_date, status,
+          id, pm_session_id, cabinet_name, cabinet_date, status,
           power_supplies, distribution_blocks, diodes, network_equipment, 
           inspection_data, controllers, location_id, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `).run([
         newCabinetId,
         newSessionId,
-        sourceCabinet.cabinet_location,
+        sourceCabinet.cabinet_name,
         sourceCabinet.cabinet_date,
         'active', // Reset status to active
         JSON.stringify(powerSupplies),
@@ -1509,7 +1513,8 @@ app.post('/api/sessions/:sessionId/duplicate', requireAuth, async (req, res) => 
 app.post('/api/cabinets', requireAuth, async (req, res) => {
   const { 
     pm_session_id, 
-    cabinet_location, 
+    cabinet_name,
+    cabinet_type = 'cabinet', // Default to 'cabinet' if not provided
     cabinet_date,
     power_supplies = [],
     distribution_blocks = [],
@@ -1543,13 +1548,15 @@ app.post('/api/cabinets', requireAuth, async (req, res) => {
     }
     
     await db.prepare(`
-      INSERT INTO cabinets (id, pm_session_id, cabinet_location, cabinet_date, status, 
+      INSERT INTO cabinets (id, pm_session_id, cabinet_name, cabinet_type, cabinet_location, cabinet_date, status, 
                            power_supplies, distribution_blocks, diodes, network_equipment, inspection_data)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run([
       cabinetId,
       pm_session_id,
-      cabinet_location,
+      cabinet_name,
+      cabinet_type,
+      cabinet_name, // Also set cabinet_location for backward compatibility
       cabinet_date,
       'active',
       JSON.stringify(power_supplies || []),
@@ -1562,7 +1569,8 @@ app.post('/api/cabinets', requireAuth, async (req, res) => {
     const cabinet = {
       id: cabinetId,
       pm_session_id,
-      cabinet_location,
+      cabinet_name,
+      cabinet_type,
       cabinet_date,
       status: 'active',
       created_at: new Date().toISOString(),
@@ -1622,6 +1630,7 @@ app.get('/api/cabinets/:cabinetId', requireAuth, async (req, res) => {
       diodes: JSON.parse(cabinet.diodes || '[]'),
       network_equipment: JSON.parse(cabinet.network_equipment || '[]'),
       controllers: controllers,
+      workstations: JSON.parse(cabinet.workstations || '[]'),
       inspection: JSON.parse(cabinet.inspection_data || '{}')
     };
     
@@ -1660,12 +1669,14 @@ app.put('/api/cabinets/:cabinetId', requireAuth, async (req, res) => {
     
     const result = await db.prepare(`
       UPDATE cabinets SET 
-        cabinet_location = ?, cabinet_date = ?, status = ?,
+        cabinet_name = ?, cabinet_type = ?, cabinet_location = ?, cabinet_date = ?, status = ?,
         power_supplies = ?, distribution_blocks = ?, diodes = ?,
-        network_equipment = ?, controllers = ?, inspection_data = ?, updated_at = CURRENT_TIMESTAMP
+        network_equipment = ?, controllers = ?, workstations = ?, inspection_data = ?, location_id = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run([
-      updateData.cabinet_location,
+      updateData.cabinet_name,
+      updateData.cabinet_type || 'cabinet',
+      updateData.cabinet_name, // Keep both columns in sync
       updateData.cabinet_date,
       updateData.status || 'active',
       JSON.stringify(updateData.power_supplies || []),
@@ -1673,7 +1684,9 @@ app.put('/api/cabinets/:cabinetId', requireAuth, async (req, res) => {
       JSON.stringify(updateData.diodes || []),
       JSON.stringify(updateData.network_equipment || []),
       JSON.stringify(updateData.controllers || []),
+      JSON.stringify(updateData.workstations || []),
       JSON.stringify(updateData.inspection || {}),
+      updateData.location_id || null,
       cabinetId
     ]);
     
@@ -1819,7 +1832,7 @@ app.get('/api/sessions/:sessionId/locations', requireAuth, async (req, res) => {
   
   try {
     const locations = await db.prepare(`
-      SELECT * FROM cabinet_locations 
+      SELECT * FROM cabinet_names 
       WHERE session_id = ? 
       ORDER BY sort_order, location_name
     `).all([sessionId]);
@@ -1852,7 +1865,7 @@ app.post('/api/sessions/:sessionId/locations', requireAuth, async (req, res) => 
     }
     
     await db.prepare(`
-      INSERT INTO cabinet_locations (id, session_id, location_name, description, sort_order)
+      INSERT INTO cabinet_names (id, session_id, location_name, description, sort_order)
       VALUES (?, ?, ?, ?, ?)
     `).run([
       locationId,
@@ -1890,7 +1903,7 @@ app.put('/api/locations/:locationId', requireAuth, async (req, res) => {
   
   try {
     const result = await db.prepare(`
-      UPDATE cabinet_locations SET 
+      UPDATE cabinet_names SET 
         location_name = ?, description = ?, is_collapsed = ?, sort_order = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run([
@@ -1921,7 +1934,7 @@ app.delete('/api/locations/:locationId', requireAuth, async (req, res) => {
     await db.prepare('UPDATE cabinets SET location_id = NULL WHERE location_id = ?').run([locationId]);
     
     // Delete the location
-    const result = await db.prepare('DELETE FROM cabinet_locations WHERE id = ?').run([locationId]);
+    const result = await db.prepare('DELETE FROM cabinet_names WHERE id = ?').run([locationId]);
     
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Location not found' });
@@ -1982,27 +1995,27 @@ app.post('/api/cabinets/bulk-import', requireAuth, async (req, res) => {
     let imported = 0;
     
     for (const cabinet of cabinets) {
-      if (!cabinet.cabinet_location || !cabinet.cabinet_location.trim()) {
+      if (!cabinet.cabinet_name || !cabinet.cabinet_name.trim()) {
         continue; // Skip cabinets without locations
       }
       
       // Check if cabinet already exists in this session
       const existing = await db.prepare(`
         SELECT id FROM cabinets 
-        WHERE pm_session_id = ? AND cabinet_location = ?
-      `).get([session_id, cabinet.cabinet_location.trim()]);
+        WHERE pm_session_id = ? AND cabinet_name = ?
+      `).get([session_id, cabinet.cabinet_name.trim()]);
       
       if (!existing) {
         await db.prepare(`
           INSERT INTO cabinets (
-            id, pm_session_id, cabinet_location, cabinet_date, status,
+            id, pm_session_id, cabinet_name, cabinet_date, status,
             power_supplies, distribution_blocks, diodes, network_equipment, 
             controllers, inspection_data, created_at, updated_at
           ) VALUES (?, ?, ?, ?, 'active', '[]', '[]', '[]', '[]', '[]', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `).run([
           require('crypto').randomUUID(),
           session_id,
-          cabinet.cabinet_location.trim(),
+          cabinet.cabinet_name.trim(),
           cabinet.cabinet_date || new Date().toISOString().split('T')[0]
         ]);
         imported++;
@@ -2113,7 +2126,7 @@ app.post('/api/cabinets/:cabinetId/pdf', requireAuth, async (req, res) => {
     
     // Send PDF
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="cabinet-pm-${cabinet.cabinet_location.replace(/[^a-zA-Z0-9]/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="cabinet-pm-${cabinet.cabinet_name.replace(/[^a-zA-Z0-9]/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf"`);
     res.send(pdfBuffer);
     
   } catch (error) {
@@ -2395,7 +2408,7 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
   });
   
   cabinets.forEach((cabinet, cabinetIndex) => {
-    const cabinetName = cabinet.cabinet_location || `Cabinet ${cabinetIndex + 1}`;
+    const cabinetName = cabinet.cabinet_name || `Cabinet ${cabinetIndex + 1}`;
     
     // Check power supplies
     if (cabinet.power_supplies) {
@@ -5496,13 +5509,13 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
     </div>
     
     <div class="cabinet-title">
-      Cabinet ${cabinetNumber}: ${cabinet.cabinet_location}
+      Cabinet ${cabinetNumber}: ${cabinet.cabinet_name}
     </div>
     
     <div class="info-section">
       <div class="info-row">
         <span class="info-label">Cabinet Location:</span>
-        <span class="info-value">${cabinet.cabinet_location}</span>
+        <span class="info-value">${cabinet.cabinet_name}</span>
       </div>
       <div class="info-row">
         <span class="info-label">Date:</span>
@@ -5854,7 +5867,7 @@ function generatePDFHtml(data) {
       <div class="info-section">
         <div class="info-row">
           <span class="info-label">Cabinet Location:</span>
-          <span class="info-value">${cabinet.cabinet_location}</span>
+          <span class="info-value">${cabinet.cabinet_name}</span>
         </div>
         <div class="info-row">
           <span class="info-label">Date:</span>
@@ -6943,7 +6956,7 @@ app.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => {
             sns.os_service_pack,
             sns.bios_version,
             sns.oem_type_description,
-            sns.assigned_cabinet_location
+            sns.assigned_cabinet_name
           FROM session_node_snapshots sns
           WHERE sns.session_id = ?
           ORDER BY sns.node_type, sns.node_name
@@ -6955,7 +6968,7 @@ app.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => {
     
     // Return current nodes for active sessions or when no sessionId provided
     const nodes = await db.prepare(`
-      SELECT n.*, c.cabinet_location as assigned_cabinet_location
+      SELECT n.*, c.cabinet_name as assigned_cabinet_name
       FROM nodes n
       LEFT JOIN cabinets c ON n.assigned_cabinet_id = c.id
       WHERE n.customer_id = ?
@@ -6983,7 +6996,7 @@ app.get('/api/customers/:customerId/controller-usage', requireAuth, async (req, 
         n.serial,
         n.assigned_cabinet_id,
         n.assigned_at,
-        c.cabinet_location,
+        c.cabinet_name,
         s.session_name,
         s.id as session_id
       FROM nodes n
@@ -7025,7 +7038,7 @@ app.get('/api/customers/:customerId/available-controllers', requireAuth, async (
             WHEN n.assigned_cabinet_id IS NOT NULL THEN 'used_elsewhere'
             ELSE 'available'
           END as usage_status,
-          c.cabinet_location,
+          c.cabinet_name,
           s.session_name
                  FROM nodes n
          LEFT JOIN cabinets c ON n.assigned_cabinet_id = c.id
@@ -7057,7 +7070,7 @@ app.get('/api/customers/:customerId/available-controllers', requireAuth, async (
             WHEN assigned_cabinet_id IS NOT NULL THEN 'used_elsewhere'
             ELSE 'available'
           END as usage_status,
-          NULL as cabinet_location,
+          NULL as cabinet_name,
           NULL as session_name
         FROM nodes 
       WHERE customer_id = ? 
@@ -7079,7 +7092,7 @@ app.get('/api/customers/:customerId/available-controllers', requireAuth, async (
 // Bulk import nodes from CSV
 app.post('/api/customers/:customerId/nodes/import', requireAuth, async (req, res) => {
   const customerId = req.params.customerId;
-  const { nodes, replace = false } = req.body;
+  const { nodes, replace = false, merge = true } = req.body;
   
   if (!Array.isArray(nodes) || nodes.length === 0) {
     return res.status(400).json({ error: 'No nodes provided' });
@@ -7087,6 +7100,7 @@ app.post('/api/customers/:customerId/nodes/import', requireAuth, async (req, res
   
   try {
     let importedCount = 0;
+    let updatedCount = 0;
     let errors = [];
     
     // If replace is true, delete all existing nodes for this customer first
@@ -7120,32 +7134,102 @@ app.post('/api/customers/:customerId/nodes/import', requireAuth, async (req, res
       await db.prepare('DELETE FROM nodes WHERE customer_id = ?').run([customerId]);
     }
     
-    // Insert new nodes
+    // Process nodes: merge (upsert) if merge=true, otherwise just insert
     for (const node of nodes) {
       try {
-        await db.prepare(`
-          INSERT INTO nodes (
-            customer_id, node_name, node_type, model, description, serial, 
-            firmware, version, status, redundant, os_name, os_service_pack,
-            bios_version, oem_type_description
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run([
-          customerId,
-          node.node_name,
-          node.node_type,
-          node.model || null,
-          node.description || null,
-          node.serial || null,
-          node.firmware || null,
-          node.version || null,
-          node.status || null,
-          node.redundant || null,
-          node.os_name || null,
-          node.os_service_pack || null,
-          node.bios_version || null,
-          node.oem_type_description || null
-        ]);
-        importedCount++;
+        if (merge && !replace) {
+          // Check if node exists by matching node_name and customer_id
+          const existingNode = await db.prepare(`
+            SELECT id FROM nodes 
+            WHERE customer_id = ? AND node_name = ?
+          `).get([customerId, node.node_name]);
+          
+          if (existingNode) {
+            // Update existing node - preserves ID and relationships
+            await db.prepare(`
+              UPDATE nodes SET 
+                node_type = ?,
+                model = ?,
+                description = ?,
+                serial = ?,
+                firmware = ?,
+                version = ?,
+                status = ?,
+                redundant = ?,
+                os_name = ?,
+                os_service_pack = ?,
+                bios_version = ?,
+                oem_type_description = ?,
+                updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?
+            `).run([
+              node.node_type,
+              node.model || null,
+              node.description || null,
+              node.serial || null,
+              node.firmware || null,
+              node.version || null,
+              node.status || null,
+              node.redundant || null,
+              node.os_name || null,
+              node.os_service_pack || null,
+              node.bios_version || null,
+              node.oem_type_description || null,
+              existingNode.id
+            ]);
+            updatedCount++;
+          } else {
+            // Insert new node
+            await db.prepare(`
+              INSERT INTO nodes (
+                customer_id, node_name, node_type, model, description, serial, 
+                firmware, version, status, redundant, os_name, os_service_pack,
+                bios_version, oem_type_description
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run([
+              customerId,
+              node.node_name,
+              node.node_type,
+              node.model || null,
+              node.description || null,
+              node.serial || null,
+              node.firmware || null,
+              node.version || null,
+              node.status || null,
+              node.redundant || null,
+              node.os_name || null,
+              node.os_service_pack || null,
+              node.bios_version || null,
+              node.oem_type_description || null
+            ]);
+            importedCount++;
+          }
+        } else {
+          // Just insert (original behavior)
+          await db.prepare(`
+            INSERT INTO nodes (
+              customer_id, node_name, node_type, model, description, serial, 
+              firmware, version, status, redundant, os_name, os_service_pack,
+              bios_version, oem_type_description
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run([
+            customerId,
+            node.node_name,
+            node.node_type,
+            node.model || null,
+            node.description || null,
+            node.serial || null,
+            node.firmware || null,
+            node.version || null,
+            node.status || null,
+            node.redundant || null,
+            node.os_name || null,
+            node.os_service_pack || null,
+            node.bios_version || null,
+            node.oem_type_description || null
+          ]);
+          importedCount++;
+        }
       } catch (nodeError) {
         errors.push(`${node.node_name}: ${nodeError.message}`);
       }
@@ -7154,8 +7238,10 @@ app.post('/api/customers/:customerId/nodes/import', requireAuth, async (req, res
     res.json({ 
       success: true, 
       imported: importedCount, 
+      updated: updatedCount,
       total: nodes.length,
       replaced: replace,
+      merged: merge,
       errors: errors.length > 0 ? errors : null
     });
   } catch (error) {
@@ -7280,6 +7366,34 @@ app.post('/api/nodes/:nodeId/unassign', requireAuth, async (req, res) => {
   }
 });
 
+// Update node type
+app.put('/api/nodes/:nodeId', requireAuth, async (req, res) => {
+  const nodeId = req.params.nodeId;
+  const { node_type } = req.body;
+  
+  if (!node_type) {
+    return res.status(400).json({ error: 'Node type is required' });
+  }
+  
+  try {
+    const result = await db.prepare(`
+      UPDATE nodes SET 
+        node_type = ?, 
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run([node_type, nodeId]);
+    
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Update node error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 // Delete node
 app.delete('/api/nodes/:nodeId', requireAuth, async (req, res) => {
   const nodeId = req.params.nodeId;
@@ -7308,7 +7422,7 @@ app.get('/api/sessions/:sessionId/node-maintenance', requireAuth, async (req, re
     const maintenanceData = await db.prepare(`
       SELECT node_id, dv_checked, os_checked, macafee_checked, 
              free_time, redundancy_checked, cold_restart_checked, no_errors_checked,
-             hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked
+             hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked, completed
       FROM session_node_maintenance 
       WHERE session_id = ?
     `).all([sessionId]);
@@ -7328,7 +7442,8 @@ app.get('/api/sessions/:sessionId/node-maintenance', requireAuth, async (req, re
         performance_type: item.performance_type || 'free_time',
         performance_value: item.performance_value || null,
         hf_updated: Boolean(item.hf_updated),
-        firmware_updated_checked: Boolean(item.firmware_updated_checked)
+        firmware_updated_checked: Boolean(item.firmware_updated_checked),
+        completed: Boolean(item.completed)
       };
     });
     
@@ -7364,7 +7479,8 @@ app.post('/api/sessions/:sessionId/node-maintenance', requireAuth, async (req, r
       const hasData = maintenance.dv_checked || maintenance.os_checked || maintenance.macafee_checked ||
                      maintenance.redundancy_checked || maintenance.cold_restart_checked || 
                      maintenance.no_errors_checked || maintenance.hdd_replaced || maintenance.hf_updated ||
-                     maintenance.firmware_updated_checked || (maintenance.free_time && maintenance.free_time.trim()) ||
+                     maintenance.firmware_updated_checked || maintenance.completed ||
+                     (maintenance.free_time && maintenance.free_time.trim()) ||
                      maintenance.performance_value;
       
       if (hasData) {
@@ -7372,8 +7488,8 @@ app.post('/api/sessions/:sessionId/node-maintenance', requireAuth, async (req, r
           INSERT INTO session_node_maintenance (
             session_id, node_id, dv_checked, os_checked, macafee_checked,
             free_time, redundancy_checked, cold_restart_checked, no_errors_checked,
-            hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked, completed
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run([
           sessionId,
           parseInt(nodeId),
@@ -7388,7 +7504,8 @@ app.post('/api/sessions/:sessionId/node-maintenance', requireAuth, async (req, r
           maintenance.performance_type || 'free_time',
           maintenance.performance_value || null,
           maintenance.hf_updated ? 1 : 0,
-          maintenance.firmware_updated_checked ? 1 : 0
+          maintenance.firmware_updated_checked ? 1 : 0,
+          maintenance.completed ? 1 : 0
         ]);
         insertedCount++;
       }
@@ -7438,8 +7555,19 @@ async function startServer() {
     await initializeDatabase();
     console.log('✅ Database is ready');
     
-    // Temporarily disable sync endpoints to fix core functionality first
-    console.log('⚠️  Sync endpoints temporarily disabled for testing');
+    // Add Enhanced Merge Replication endpoints BEFORE starting server
+    console.log('🔧 Loading Enhanced Merge Replication endpoints...');
+    try {
+      const mongoConnectionString = process.env.MONGODB_URI || 'mongodb://172.16.10.124:27017/cabinet_pm_db';
+      const setupEnhancedMergeSyncEndpoints = require('./backend/services/enhanced-merge-sync-endpoints');
+      
+      setupEnhancedMergeSyncEndpoints(app, db, mongoConnectionString);
+      console.log('✅ Enhanced Merge Replication endpoints added to app');
+      console.log(`   MongoDB: ${mongoConnectionString}`);
+    } catch (error) {
+      console.log('❌ Enhanced Merge Replication endpoints not available:', error.message);
+      console.log('❌ Error stack:', error.stack);
+    }
     
     // Start listening only after everything is initialized
     try {
@@ -7480,66 +7608,16 @@ async function startServer() {
   }
 }
 
-// Add sync endpoints
-console.log('🔧 Loading sync endpoints...');
-try {
-  const syncEndpointsPath = path.join(__dirname, 'simple-sync-endpoints.js');
-  console.log('📁 Sync endpoints path:', syncEndpointsPath);
-  console.log('📁 File exists:', require('fs').existsSync(syncEndpointsPath));
-  
-  const addSyncEndpoints = require(syncEndpointsPath);
-  console.log('✅ Sync endpoints module loaded successfully');
-  
-  addSyncEndpoints(app, db);
-  console.log('✅ Sync endpoints added to app');
-} catch (error) {
-  console.log('❌ Sync endpoints not available:', error.message);
-  console.log('❌ Error stack:', error.stack);
-}
+// Old sync endpoints code (now moved inside startServer function above)
 
 // Legacy sync endpoints disabled - using distributed sync only
+// OLD SYNC SYSTEMS REMOVED - Using Enhanced Merge Sync only
+// All old sync endpoints (mongo-sync, clean-sync, distributed-sync) have been deleted
+// Only enhanced-merge-sync-endpoints is now active (loaded above)
+
 /*
-// Add MongoDB Cloud Sync endpoints
-console.log('🔧 Loading MongoDB sync endpoints (legacy)...');
-try {
-  const mongoSyncEndpointsPath = path.join(__dirname, 'mongo-sync-endpoints.js');
-  console.log('📁 MongoDB sync endpoints path:', mongoSyncEndpointsPath);
-  console.log('📁 File exists:', require('fs').existsSync(mongoSyncEndpointsPath));
-  
-  const addMongoSyncEndpoints = require(mongoSyncEndpointsPath);
-  console.log('✅ MongoDB sync endpoints module loaded successfully');
-  
-  addMongoSyncEndpoints(app, db);
-  console.log('✅ MongoDB sync endpoints added to app');
-} catch (error) {
-  console.log('❌ MongoDB sync endpoints not available:', error.message);
-  console.log('❌ Error stack:', error.stack);
-}
-
-// Add Clean Sync endpoints (new schema-based approach)
-console.log('🔧 Loading clean sync endpoints with proper schemas...');
-try {
-  const addCleanSyncEndpoints = require('./clean-sync-endpoints');
-  addCleanSyncEndpoints(app, db);
-  console.log('✅ Clean sync endpoints added to app');
-} catch (error) {
-  console.log('❌ Clean sync endpoints not available:', error.message);
-  console.log('❌ Error:', error.stack);
-}
-*/
-
-// Add Distributed Sync endpoints (multi-client offline-first)
-console.log('🔧 Loading distributed sync endpoints for multi-client offline sync...');
-try {
-  const addDistributedSyncEndpoints = require('./distributed-sync-endpoints');
-  addDistributedSyncEndpoints(app, db);
-  console.log('✅ Distributed sync endpoints added to app');
-} catch (error) {
-  console.log('❌ Distributed sync endpoints not available:', error.message);
-  console.log('❌ Error:', error.stack);
-  
-  // Fallback: Add basic MongoDB sync endpoints directly
-  console.log('🔧 Adding fallback MongoDB sync endpoints...');
+  // Fallback code removed - not needed with Enhanced Merge Sync
+  // Keeping as reference only
   
   try {
     const mongoConnectionString = 'mongodb://172.16.10.124:27017/cabinet_pm_db';
@@ -7721,7 +7799,7 @@ try {
     console.error('❌ Error in fallback sync endpoints:', fallbackError);
     console.log('⚠️ Continuing without sync functionality');
   }
-}
+*/
 
 // Start the server
 startServer();

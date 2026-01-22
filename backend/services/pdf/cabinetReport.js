@@ -520,13 +520,13 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
     </div>
     
     <div class="cabinet-title">
-      Cabinet ${cabinetNumber}: ${cabinet.cabinet_location}
+      Cabinet ${cabinetNumber}: ${cabinet.cabinet_name}
     </div>
     
     <div class="info-section">
       <div class="info-row">
         <span class="info-label">Cabinet Location:</span>
-        <span class="info-value">${cabinet.cabinet_location}</span>
+        <span class="info-value">${cabinet.cabinet_name}</span>
       </div>
       <div class="info-row">
         <span class="info-label">Date:</span>
@@ -742,7 +742,7 @@ function generatePDFHtml(data) {
       <div class="info-section">
         <div class="info-row">
           <span class="info-label">Cabinet Location:</span>
-          <span class="info-value">${cabinet.cabinet_location}</span>
+          <span class="info-value">${cabinet.cabinet_name}</span>
         </div>
         <div class="info-row">
           <span class="info-label">Date:</span>

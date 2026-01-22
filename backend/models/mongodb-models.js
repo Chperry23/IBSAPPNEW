@@ -9,11 +9,20 @@ const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password_hash: { type: String, required: true },
   email: { type: String },
-  created_at: { type: Date, default: Date.now }
+  uuid: { type: String, index: true }, // Global unique ID for merge replication
+  synced: { type: Number, default: 0 },
+  device_id: { type: String, index: true }, // Device that created/last modified
+  deleted: { type: Number, default: 0, index: true }, // Soft delete flag
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now }
 }, { 
   collection: 'users',
   versionKey: false // Remove __v field
 });
+
+// Add compound index for efficient sync queries
+userSchema.index({ updated_at: 1, deleted: 1 });
+userSchema.index({ uuid: 1 }, { unique: true, sparse: true });
 
 // Customers Schema
 const customerSchema = new mongoose.Schema({
@@ -21,12 +30,19 @@ const customerSchema = new mongoose.Schema({
   name: { type: String, required: true },
   location: { type: String },
   contact_info: { type: String },
+  uuid: { type: String, index: true },
+  synced: { type: Number, default: 0 },
+  device_id: { type: String, index: true },
+  deleted: { type: Number, default: 0, index: true },
   created_at: { type: Date, default: Date.now },
   updated_at: { type: Date, default: Date.now }
 }, { 
   collection: 'customers',
   versionKey: false
 });
+
+customerSchema.index({ updated_at: 1, deleted: 1 });
+customerSchema.index({ uuid: 1 }, { unique: true, sparse: true });
 
 // Sessions Schema
 const sessionSchema = new mongoose.Schema({
@@ -54,11 +70,16 @@ const sessionSchema = new mongoose.Schema({
   versionKey: false
 });
 
+sessionSchema.index({ updated_at: 1, deleted: 1 });
+sessionSchema.index({ uuid: 1 }, { unique: true, sparse: true });
+sessionSchema.index({ customer_id: 1 });
+
 // Cabinets Schema
 const cabinetSchema = new mongoose.Schema({
   _id: { type: String, required: true }, // Maps to SQLite id (TEXT PRIMARY KEY)
   pm_session_id: { type: String, required: true },
-  cabinet_location: { type: String, required: true },
+  cabinet_name: { type: String, required: true },
+  cabinet_location: { type: String }, // For backward compatibility
   power_supplies: { type: String }, // JSON string
   distribution_blocks: { type: String }, // JSON string
   diodes: { type: String }, // JSON string
@@ -75,6 +96,10 @@ const cabinetSchema = new mongoose.Schema({
   collection: 'cabinets',
   versionKey: false
 });
+
+cabinetSchema.index({ updated_at: 1, deleted: 1 });
+cabinetSchema.index({ uuid: 1 }, { unique: true, sparse: true });
+cabinetSchema.index({ pm_session_id: 1 });
 
 // Nodes Schema
 const nodeSchema = new mongoose.Schema({
@@ -95,6 +120,10 @@ const nodeSchema = new mongoose.Schema({
   collection: 'nodes',
   versionKey: false
 });
+
+nodeSchema.index({ updated_at: 1, deleted: 1 });
+nodeSchema.index({ uuid: 1 }, { unique: true, sparse: true });
+nodeSchema.index({ customer_id: 1 });
 
 // Session Node Maintenance Schema
 const sessionNodeMaintenanceSchema = new mongoose.Schema({
@@ -124,6 +153,10 @@ const sessionNodeMaintenanceSchema = new mongoose.Schema({
   versionKey: false
 });
 
+sessionNodeMaintenanceSchema.index({ updated_at: 1, deleted: 1 });
+sessionNodeMaintenanceSchema.index({ uuid: 1 }, { unique: true, sparse: true });
+sessionNodeMaintenanceSchema.index({ session_id: 1, node_id: 1 });
+
 // Session Node Tracker Schema
 const sessionNodeTrackerSchema = new mongoose.Schema({
   _id: { type: Number, required: true }, // Maps to SQLite id (INTEGER PRIMARY KEY)
@@ -140,6 +173,10 @@ const sessionNodeTrackerSchema = new mongoose.Schema({
   collection: 'session_node_tracker',
   versionKey: false
 });
+
+sessionNodeTrackerSchema.index({ updated_at: 1, deleted: 1 });
+sessionNodeTrackerSchema.index({ uuid: 1 }, { unique: true, sparse: true });
+sessionNodeTrackerSchema.index({ session_id: 1 });
 
 // Cabinet Locations Schema
 const cabinetLocationSchema = new mongoose.Schema({
@@ -160,6 +197,10 @@ const cabinetLocationSchema = new mongoose.Schema({
   versionKey: false
 });
 
+cabinetLocationSchema.index({ updated_at: 1, deleted: 1 });
+cabinetLocationSchema.index({ uuid: 1 }, { unique: true, sparse: true });
+cabinetLocationSchema.index({ session_id: 1 });
+
 // Session PM Notes Schema
 const sessionPMNotesSchema = new mongoose.Schema({
   _id: { type: Number, required: true }, // Maps to SQLite id (INTEGER PRIMARY KEY)
@@ -178,6 +219,10 @@ const sessionPMNotesSchema = new mongoose.Schema({
   collection: 'session_pm_notes',
   versionKey: false
 });
+
+sessionPMNotesSchema.index({ updated_at: 1, deleted: 1 });
+sessionPMNotesSchema.index({ uuid: 1 }, { unique: true, sparse: true });
+sessionPMNotesSchema.index({ session_id: 1 });
 
 // I&I Documents Schema
 const sessionIIDocumentSchema = new mongoose.Schema({
@@ -201,6 +246,10 @@ const sessionIIDocumentSchema = new mongoose.Schema({
   versionKey: false
 });
 
+sessionIIDocumentSchema.index({ updated_at: 1, deleted: 1 });
+sessionIIDocumentSchema.index({ uuid: 1 }, { unique: true, sparse: true });
+sessionIIDocumentSchema.index({ session_id: 1 });
+
 // I&I Equipment Schema
 const sessionIIEquipmentSchema = new mongoose.Schema({
   _id: { type: Number, required: true }, // Maps to SQLite id (INTEGER PRIMARY KEY)
@@ -221,6 +270,10 @@ const sessionIIEquipmentSchema = new mongoose.Schema({
   collection: 'session_ii_equipment',
   versionKey: false
 });
+
+sessionIIEquipmentSchema.index({ updated_at: 1, deleted: 1 });
+sessionIIEquipmentSchema.index({ uuid: 1 }, { unique: true, sparse: true });
+sessionIIEquipmentSchema.index({ document_id: 1 });
 
 // I&I Checklist Schema
 const sessionIIChecklistSchema = new mongoose.Schema({
@@ -249,6 +302,10 @@ const sessionIIChecklistSchema = new mongoose.Schema({
   versionKey: false
 });
 
+sessionIIChecklistSchema.index({ updated_at: 1, deleted: 1 });
+sessionIIChecklistSchema.index({ uuid: 1 }, { unique: true, sparse: true });
+sessionIIChecklistSchema.index({ document_id: 1 });
+
 // I&I Equipment Used Schema
 const sessionIIEquipmentUsedSchema = new mongoose.Schema({
   _id: { type: Number, required: true }, // Maps to SQLite id (INTEGER PRIMARY KEY)
@@ -269,6 +326,10 @@ const sessionIIEquipmentUsedSchema = new mongoose.Schema({
   collection: 'session_ii_equipment_used',
   versionKey: false
 });
+
+sessionIIEquipmentUsedSchema.index({ updated_at: 1, deleted: 1 });
+sessionIIEquipmentUsedSchema.index({ uuid: 1 }, { unique: true, sparse: true });
+sessionIIEquipmentUsedSchema.index({ document_id: 1 });
 
 // Export all models
 module.exports = {

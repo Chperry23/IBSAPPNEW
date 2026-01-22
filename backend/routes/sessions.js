@@ -165,14 +165,14 @@ router.get('/:sessionId', requireAuth, async (req, res) => {
     const sessionCabinets = await db.prepare(`
       SELECT c.*, cl.location_name, cl.id as location_id
       FROM cabinets c
-      LEFT JOIN cabinet_locations cl ON c.location_id = cl.id
+      LEFT JOIN cabinet_names cl ON c.location_id = cl.id
       WHERE c.pm_session_id = ? 
       ORDER BY cl.sort_order, cl.location_name, c.created_at
     `).all([sessionId]);
     
     // Get all locations for this session
     const locations = await db.prepare(`
-      SELECT * FROM cabinet_locations 
+      SELECT * FROM cabinet_names 
       WHERE session_id = ? 
       ORDER BY sort_order, location_name
     `).all([sessionId]);
@@ -215,7 +215,7 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
     
     // Create snapshots of all nodes for this customer at completion time
     const nodes = await db.prepare(`
-      SELECT n.*, c.cabinet_location as assigned_cabinet_location
+      SELECT n.*, c.cabinet_name as assigned_cabinet_name
       FROM nodes n
       LEFT JOIN cabinets c ON n.assigned_cabinet_id = c.id
       WHERE n.customer_id = ?
@@ -229,7 +229,7 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
           INSERT OR REPLACE INTO session_node_snapshots (
             session_id, original_node_id, node_name, node_type, model, description, 
             serial, firmware, version, status, redundant, os_name, os_service_pack,
-            bios_version, oem_type_description, assigned_cabinet_location
+            bios_version, oem_type_description, assigned_cabinet_name
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run([
           sessionId,
@@ -247,7 +247,7 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
           node.os_service_pack,
           node.bios_version,
           node.oem_type_description,
-          node.assigned_cabinet_location
+          node.assigned_cabinet_name
         ]);
       } catch (snapshotError) {
         console.error('Error creating node snapshot:', snapshotError);
@@ -255,8 +255,8 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
       }
     }
     
-    // Mark the session as completed
-    const result = await db.prepare('UPDATE sessions SET status = ?, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(['completed', sessionId]);
+    // Mark the session as completed and mark as unsynced so it syncs to other devices
+    const result = await db.prepare('UPDATE sessions SET status = ?, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP, synced = 0 WHERE id = ?').run(['completed', sessionId]);
     
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Session not found' });
@@ -309,7 +309,7 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
     for (const sourceCabinet of sourceCabinets) {
       const newCabinetId = uuidv4();
       
-      console.log('📦 Duplicating cabinet:', sourceCabinet.cabinet_location);
+      console.log('📦 Duplicating cabinet:', sourceCabinet.cabinet_name);
       console.log('📦 Source cabinet ID:', sourceCabinet.id);
       console.log('📦 New cabinet ID:', newCabinetId);
       console.log('📦 Source controllers JSON:', sourceCabinet.controllers);
@@ -341,14 +341,14 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
       // Create new cabinet
       await db.prepare(`
         INSERT INTO cabinets (
-          id, pm_session_id, cabinet_location, cabinet_date, status,
+          id, pm_session_id, cabinet_name, cabinet_date, status,
           power_supplies, distribution_blocks, diodes, network_equipment, 
           inspection_data, controllers, location_id, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `).run([
         newCabinetId,
         newSessionId,
-        sourceCabinet.cabinet_location,
+        sourceCabinet.cabinet_name,
         sourceCabinet.cabinet_date,
         'active', // Reset status to active
         JSON.stringify(powerSupplies),

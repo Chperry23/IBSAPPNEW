@@ -20,7 +20,7 @@ router.post('/', requireAuth, async (req, res) => {
   
   const { 
     pm_session_id, 
-    cabinet_location, 
+    cabinet_name, 
     cabinet_date,
     power_supplies = [],
     distribution_blocks = [],
@@ -36,8 +36,8 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(400).json({ success: false, error: 'Session ID is required' });
   }
   
-  if (!cabinet_location || !cabinet_location.trim()) {
-    logger.error('Missing cabinet_location');
+  if (!cabinet_name || !cabinet_name.trim()) {
+    logger.error('Missing cabinet_name');
     return res.status(400).json({ success: false, error: 'Cabinet location is required' });
   }
   
@@ -84,24 +84,25 @@ router.post('/', requireAuth, async (req, res) => {
     }
     
     logger.debug('Inserting cabinet into database', { 
-      cabinet_location, 
+      cabinet_name, 
       cabinet_date,
       location_id: location_id || 'none'
     });
     
     const insertSQL = location_id 
-      ? `INSERT INTO cabinets (id, pm_session_id, cabinet_location, cabinet_date, status, 
+      ? `INSERT INTO cabinets (id, pm_session_id, cabinet_name, cabinet_location, cabinet_date, status, 
                            power_supplies, distribution_blocks, diodes, network_equipment, inspection_data, location_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
-      : `INSERT INTO cabinets (id, pm_session_id, cabinet_location, cabinet_date, status, 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+      : `INSERT INTO cabinets (id, pm_session_id, cabinet_name, cabinet_location, cabinet_date, status, 
                            power_supplies, distribution_blocks, diodes, network_equipment, inspection_data, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`;
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`;
     
     const params = location_id 
       ? [
           cabinetId,
           pm_session_id,
-          cabinet_location.trim(),
+          cabinet_name.trim(),
+          cabinet_name.trim(), // Also set cabinet_location for backward compatibility
           cabinet_date,
           'active',
           JSON.stringify(power_supplies || []),
@@ -114,7 +115,8 @@ router.post('/', requireAuth, async (req, res) => {
       : [
           cabinetId,
           pm_session_id,
-          cabinet_location.trim(),
+          cabinet_name.trim(),
+          cabinet_name.trim(), // Also set cabinet_location for backward compatibility
           cabinet_date,
           'active',
           JSON.stringify(power_supplies || []),
@@ -126,12 +128,12 @@ router.post('/', requireAuth, async (req, res) => {
     
     await db.prepare(insertSQL).run(params);
     
-    logger.success('Cabinet created successfully', { cabinetId, cabinet_location });
+    logger.success('Cabinet created successfully', { cabinetId, cabinet_name });
     
     const cabinet = {
       id: cabinetId,
       pm_session_id,
-      cabinet_location: cabinet_location.trim(),
+      cabinet_name: cabinet_name.trim(),
       cabinet_date,
       status: 'active',
       created_at: new Date().toISOString(),
@@ -230,12 +232,13 @@ router.put('/:cabinetId', requireAuth, async (req, res) => {
     
     const result = await db.prepare(`
       UPDATE cabinets SET 
-        cabinet_location = ?, cabinet_date = ?, status = ?,
+        cabinet_name = ?, cabinet_location = ?, cabinet_date = ?, status = ?,
         power_supplies = ?, distribution_blocks = ?, diodes = ?,
-        network_equipment = ?, controllers = ?, inspection_data = ?, updated_at = CURRENT_TIMESTAMP
+        network_equipment = ?, controllers = ?, inspection_data = ?, location_id = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run([
-      updateData.cabinet_location,
+      updateData.cabinet_name,
+      updateData.cabinet_name, // Keep both columns in sync
       updateData.cabinet_date,
       updateData.status || 'active',
       JSON.stringify(updateData.power_supplies || []),
@@ -244,6 +247,7 @@ router.put('/:cabinetId', requireAuth, async (req, res) => {
       JSON.stringify(updateData.network_equipment || []),
       JSON.stringify(updateData.controllers || []),
       JSON.stringify(updateData.inspection || {}),
+      updateData.location_id || null,
       cabinetId
     ]);
     
@@ -356,27 +360,27 @@ router.post('/bulk-import', requireAuth, async (req, res) => {
     let imported = 0;
     
     for (const cabinet of cabinets) {
-      if (!cabinet.cabinet_location || !cabinet.cabinet_location.trim()) {
+      if (!cabinet.cabinet_name || !cabinet.cabinet_name.trim()) {
         continue; // Skip cabinets without locations
       }
       
       // Check if cabinet already exists in this session
       const existing = await db.prepare(`
         SELECT id FROM cabinets 
-        WHERE pm_session_id = ? AND cabinet_location = ?
-      `).get([session_id, cabinet.cabinet_location.trim()]);
+        WHERE pm_session_id = ? AND cabinet_name = ?
+      `).get([session_id, cabinet.cabinet_name.trim()]);
       
       if (!existing) {
         await db.prepare(`
           INSERT INTO cabinets (
-            id, pm_session_id, cabinet_location, cabinet_date, status,
+            id, pm_session_id, cabinet_name, cabinet_date, status,
             power_supplies, distribution_blocks, diodes, network_equipment, 
             controllers, inspection_data, created_at, updated_at
           ) VALUES (?, ?, ?, ?, 'active', '[]', '[]', '[]', '[]', '[]', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `).run([
           uuidv4(),
           session_id,
-          cabinet.cabinet_location.trim(),
+          cabinet.cabinet_name.trim(),
           cabinet.cabinet_date || new Date().toISOString().split('T')[0]
         ]);
         imported++;
