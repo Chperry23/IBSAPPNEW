@@ -30,7 +30,7 @@ DisableProgramGroupPage=yes
 ; Output
 OutputDir=dist\installers
 OutputBaseFilename=CabinetPM-Setup-v{#MyAppVersion}
-SetupIconFile=frontend\public\favicon.ico
+; SetupIconFile=frontend-react\public\eci-logo.png
 Compression=lzma2/max
 SolidCompression=yes
 

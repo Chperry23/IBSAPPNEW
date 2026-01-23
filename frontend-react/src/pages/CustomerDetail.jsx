@@ -69,17 +69,23 @@ export default function CustomerDetail() {
       customer_id: id,
     };
 
+    console.log('Creating session with data:', data);
+
     try {
       const result = await api.createSession(data);
+      console.log('Session creation result:', result);
       if (result.success) {
+        soundSystem.playSuccess();
         setShowNewSessionModal(false);
         loadCustomerData();
-        showMessage('Session created successfully', 'success');
+        showMessage(`${data.session_type?.toUpperCase() || 'Session'} created successfully`, 'success');
         e.target.reset();
       } else {
+        soundSystem.playError();
         showMessage(result.error || 'Error creating session', 'error');
       }
     } catch (error) {
+      soundSystem.playError();
       showMessage('Error creating session', 'error');
     }
   };
@@ -196,6 +202,23 @@ export default function CustomerDetail() {
                 <div className="text-gray-200 text-sm">{customer.contact_info}</div>
               </div>
             )}
+            {(customer.system_username || customer.system_password) && (
+              <div className="pt-3 border-t border-gray-700">
+                <div className="text-xs text-gray-500 uppercase mb-2">🔐 System Credentials</div>
+                {customer.system_username && (
+                  <div className="mb-2">
+                    <div className="text-xs text-gray-400">Username</div>
+                    <div className="text-gray-200 font-mono text-sm">{customer.system_username}</div>
+                  </div>
+                )}
+                {customer.system_password && (
+                  <div>
+                    <div className="text-xs text-gray-400">Password</div>
+                    <div className="text-gray-200 font-mono text-sm">{'•'.repeat(8)}</div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -243,8 +266,11 @@ export default function CustomerDetail() {
               👁️ View Nodes
             </button>
             <button
-              onClick={() => showMessage('I&I Session creation coming soon', 'info')}
-              className="btn btn-secondary w-full"
+              onClick={() => {
+                // Set the modal to I&I type
+                setShowNewSessionModal(true);
+              }}
+              className="btn btn-warning w-full text-lg font-bold border-2 border-yellow-400"
             >
               🔧 New I&I Session
             </button>
@@ -312,7 +338,7 @@ export default function CustomerDetail() {
                     )}
                     <td>{session.cabinet_count || 0} cabinets</td>
                     <td>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-wrap">
                         <Link
                           to={`/session/${session.id}`}
                           className="text-blue-400 hover:text-blue-300 font-medium"
@@ -327,6 +353,34 @@ export default function CustomerDetail() {
                           className="text-gray-400 hover:text-gray-300 font-medium"
                         >
                           Edit
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Duplicate "${session.session_name}"?`)) return;
+                            try {
+                              const newSessionData = {
+                                customer_id: session.customer_id,
+                                session_name: `${session.session_name} (Copy)`,
+                                session_type: session.session_type || 'pm',
+                              };
+                              const result = await api.createSession(newSessionData);
+                              if (result.success) {
+                                soundSystem.playSuccess();
+                                loadCustomerData();
+                                showMessage('Session duplicated successfully', 'success');
+                              } else {
+                                soundSystem.playError();
+                                showMessage('Error duplicating session', 'error');
+                              }
+                            } catch (error) {
+                              soundSystem.playError();
+                              showMessage('Error duplicating session', 'error');
+                            }
+                          }}
+                          className="text-yellow-400 hover:text-yellow-300 font-bold text-lg"
+                          title="Duplicate Session"
+                        >
+                          📋
                         </button>
                         {activeTab === 'active' && (
                           <button
@@ -441,6 +495,35 @@ export default function CustomerDetail() {
                     className="form-textarea"
                   ></textarea>
                 </div>
+
+                {/* System Credentials Section */}
+                <div className="pt-4 border-t border-gray-600">
+                  <h4 className="text-gray-300 font-medium mb-3">🔐 System Login Credentials</h4>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="form-label">System Username</label>
+                      <input
+                        type="text"
+                        name="system_username"
+                        defaultValue={customer.system_username}
+                        className="form-input"
+                        placeholder="e.g., admin, operator"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">Username for accessing customer's DeltaV system</p>
+                    </div>
+                    <div>
+                      <label className="form-label">System Password</label>
+                      <input
+                        type="password"
+                        name="system_password"
+                        defaultValue={customer.system_password}
+                        className="form-input"
+                        placeholder="Enter system password"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">Password for accessing customer's DeltaV system</p>
+                    </div>
+                  </div>
+                </div>
               </div>
               <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
                 <button
@@ -464,7 +547,7 @@ export default function CustomerDetail() {
         <div className="modal-backdrop">
           <div className="bg-gray-800 rounded-lg shadow-2xl max-w-md w-full mx-4 border border-gray-700">
             <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-100">New PM Session</h3>
+              <h3 className="text-lg font-semibold text-gray-100">Create New Session</h3>
               <button
                 onClick={() => setShowNewSessionModal(false)}
                 className="text-gray-400 hover:text-gray-200 text-2xl"
@@ -474,6 +557,18 @@ export default function CustomerDetail() {
             </div>
             <form onSubmit={handleCreateSession}>
               <div className="px-6 py-4 space-y-4">
+                <div>
+                  <label className="form-label">Session Type *</label>
+                  <select
+                    name="session_type"
+                    required
+                    defaultValue="pm"
+                    className="form-select"
+                  >
+                    <option value="pm">PM - Preventive Maintenance</option>
+                    <option value="ii">I&I - Installation & Integration</option>
+                  </select>
+                </div>
                 <div>
                   <label className="form-label">Session Date *</label>
                   <input
@@ -485,13 +580,13 @@ export default function CustomerDetail() {
                   />
                 </div>
                 <div>
-                  <label className="form-label">Session Name (Auto-generated)</label>
+                  <label className="form-label">Session Name *</label>
                   <input
                     type="text"
                     name="session_name"
-                    value={`PM-${new Date().getMonth() + 1}/${new Date().getDate()}/${new Date().getFullYear()}`}
-                    readOnly
-                    className="form-input bg-gray-700/50"
+                    required
+                    placeholder="e.g., PM-1/22/2026 or I&I-Building A"
+                    className="form-input"
                   />
                 </div>
               </div>

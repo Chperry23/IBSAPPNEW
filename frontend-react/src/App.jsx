@@ -5,6 +5,8 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Sessions from './pages/Sessions';
 import SessionDetailFull from './pages/SessionDetailFull';
+import IISession from './pages/IISession';
+import IIDocumentDetail from './pages/IIDocumentDetail';
 import Customers from './pages/Customers';
 import CustomerDetail from './pages/CustomerDetail';
 import CabinetInspectionFull from './pages/CabinetInspectionFull';
@@ -42,6 +44,22 @@ function App() {
             element={
               <ProtectedRoute>
                 <SessionDetailFull />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ii-session/:id"
+            element={
+              <ProtectedRoute>
+                <IISession />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ii-document/:id"
+            element={
+              <ProtectedRoute>
+                <IIDocumentDetail />
               </ProtectedRoute>
             }
           />

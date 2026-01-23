@@ -30,6 +30,8 @@ const customerSchema = new mongoose.Schema({
   name: { type: String, required: true },
   location: { type: String },
   contact_info: { type: String },
+  system_username: { type: String }, // System login credentials
+  system_password: { type: String }, // System login credentials (encrypted)
   uuid: { type: String, index: true },
   synced: { type: Number, default: 0 },
   device_id: { type: String, index: true },
@@ -79,13 +81,24 @@ const cabinetSchema = new mongoose.Schema({
   _id: { type: String, required: true }, // Maps to SQLite id (TEXT PRIMARY KEY)
   pm_session_id: { type: String, required: true },
   cabinet_name: { type: String, required: true },
+  cabinet_type: { type: String, default: 'cabinet' }, // 'cabinet' or 'rack'
   cabinet_location: { type: String }, // For backward compatibility
+  location_id: { type: String }, // Reference to cabinet_locations
+  cabinet_date: { type: Date },
+  status: { type: String, default: 'active' },
   power_supplies: { type: String }, // JSON string
   distribution_blocks: { type: String }, // JSON string
   diodes: { type: String }, // JSON string
   network_equipment: { type: String }, // JSON string
-  controllers: { type: String }, // JSON string
+  controllers: { type: String }, // JSON string - for cabinets
+  workstations: { type: String }, // JSON string - for racks
   inspection_data: { type: String }, // JSON string
+  comments: { type: String },
+  // Rack-specific equipment flags
+  rack_has_ups: { type: Number, default: 0 },
+  rack_has_hmi: { type: Number, default: 0 },
+  rack_has_kvm: { type: Number, default: 0 },
+  rack_has_monitor: { type: Number, default: 0 },
   uuid: { type: String },
   synced: { type: Number, default: 0 },
   device_id: { type: String },
@@ -331,6 +344,30 @@ sessionIIEquipmentUsedSchema.index({ updated_at: 1, deleted: 1 });
 sessionIIEquipmentUsedSchema.index({ uuid: 1 }, { unique: true, sparse: true });
 sessionIIEquipmentUsedSchema.index({ document_id: 1 });
 
+// CSV Import History Schema
+const csvImportHistorySchema = new mongoose.Schema({
+  _id: { type: String, required: true }, // Maps to SQLite id (TEXT PRIMARY KEY - UUID)
+  customer_id: { type: Number, required: true },
+  file_name: { type: String, required: true },
+  import_date: { type: Date, default: Date.now },
+  nodes_imported: { type: Number, default: 0 },
+  imported_by: { type: String },
+  uuid: { type: String },
+  synced: { type: Number, default: 0 },
+  device_id: { type: String },
+  deleted: { type: Number, default: 0 },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now }
+}, { 
+  collection: 'csv_import_history',
+  versionKey: false
+});
+
+csvImportHistorySchema.index({ updated_at: 1, deleted: 1 });
+csvImportHistorySchema.index({ uuid: 1 }, { unique: true, sparse: true });
+csvImportHistorySchema.index({ customer_id: 1 });
+csvImportHistorySchema.index({ import_date: -1 });
+
 // Export all models
 module.exports = {
   User: mongoose.model('User', userSchema),
@@ -345,5 +382,6 @@ module.exports = {
   SessionIIDocument: mongoose.model('SessionIIDocument', sessionIIDocumentSchema),
   SessionIIEquipment: mongoose.model('SessionIIEquipment', sessionIIEquipmentSchema),
   SessionIIChecklist: mongoose.model('SessionIIChecklist', sessionIIChecklistSchema),
-  SessionIIEquipmentUsed: mongoose.model('SessionIIEquipmentUsed', sessionIIEquipmentUsedSchema)
+  SessionIIEquipmentUsed: mongoose.model('SessionIIEquipmentUsed', sessionIIEquipmentUsedSchema),
+  CSVImportHistory: mongoose.model('CSVImportHistory', csvImportHistorySchema)
 };

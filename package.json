@@ -14,11 +14,12 @@
     "start": "node server-tablet.js",
     "dev": "node server-tablet.js",
     "dev:frontend": "cd frontend-react && npm run dev",
+    "build": "npm run build:frontend && npm run build:exe && npm run build:full",
     "build:frontend": "cd frontend-react && npm run build",
-    "build": "pkg server-tablet.js --targets node16-win-x64 --output cabinet-pm-tablet.exe",
-    "build-win": "pkg server-tablet.js --targets node16-win-x64 --output cabinet-pm-tablet.exe",
-    "build-linux": "pkg server-tablet.js --targets node16-linux-x64 --output cabinet-pm-tablet-linux",
-    "build-mac": "pkg server-tablet.js --targets node16-macos-x64 --output cabinet-pm-tablet-mac"
+    "build:exe": "node build-exe.js",
+    "build:package": "node create-deployment-package.js",
+    "build:full": "node create-full-package.js",
+    "deploy": "npm run build:frontend && npm run build:exe && npm run build:full"
   },
   "dependencies": {
     "archiver": "^6.0.1",
@@ -38,14 +39,15 @@
   },
   "pkg": {
     "assets": [
-      "frontend/public/**/*",
       "frontend-react/dist/**/*",
-      "data/**/*",
-      "node_modules/sqlite3/lib/binding/napi-v6-win32-x64/node_sqlite3.node",
-      "backend/**/*"
+      "backend/**/*",
+      "node_modules/sqlite3/**/*"
+    ],
+    "scripts": [
+      "backend/**/*.js"
     ],
     "targets": [
-      "node16-win-x64"
+      "node18-win-x64"
     ],
     "outputPath": "dist"
   }

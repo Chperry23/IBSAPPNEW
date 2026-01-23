@@ -185,13 +185,127 @@ class ApiService {
     });
   }
 
-  // PDF Generation
-  async generateSessionPDF(sessionId) {
-    return this.request(`/api/sessions/${sessionId}/pdf`, { method: 'POST' });
+  // PDF Generation (returns blob, not JSON)
+  async generateSessionPDF(sessionId, options = {}) {
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/export-pdfs`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(options),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `PM-Session-Report-${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      return { success: true };
+    } catch (error) {
+      console.error('PDF Generation Error:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   async generateCabinetPDF(cabinetId) {
-    return this.request(`/api/cabinets/${cabinetId}/pdf`, { method: 'POST' });
+    try {
+      const response = await fetch(`/api/cabinets/${cabinetId}/pdf`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `Cabinet-PM-Report-${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      return { success: true };
+    } catch (error) {
+      console.error('PDF Generation Error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // I&I Document PDF Generation
+  async generateIIDocumentPDF(documentId) {
+    try {
+      const response = await fetch(`/api/ii-documents/${documentId}/export-pdf`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `II-Document-${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      return { success: true };
+    } catch (error) {
+      console.error('PDF Generation Error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Export all I&I documents in a session as combined PDF
+  async generateAllIIPDFs(sessionId) {
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/export-all-ii-pdfs`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate combined PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `ECI-II-Report-${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      return { success: true };
+    } catch (error) {
+      console.error('PDF Generation Error:', error);
+      return { success: false, error: error.message };
+    }
   }
 }
 

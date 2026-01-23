@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import api from '../services/api';
@@ -13,15 +13,27 @@ export default function CabinetInspectionFull() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
+  const autoSaveTimeoutRef = useRef(null);
   
   // Available nodes for assignment
   const [availableControllers, setAvailableControllers] = useState([]);
   const [availableWorkstations, setAvailableWorkstations] = useState([]);
   const [availableSwitches, setAvailableSwitches] = useState([]);
   const [locations, setLocations] = useState([]);
+  const [customSwitchModels, setCustomSwitchModels] = useState([]);
 
-  // Collapsed sections state
-  const [collapsed, setCollapsed] = useState({});
+  // Collapsed sections state - initialize with all sections
+  const [collapsed, setCollapsed] = useState({
+    info: false,
+    power_supplies: false,
+    controllers: false,
+    workstations: false,
+    distribution: false,
+    network: false,
+    rack_equipment: false,
+    inspection: false,
+    comments: false
+  });
   
   // Controller selection modal
   const [showControllerModal, setShowControllerModal] = useState(false);
@@ -36,10 +48,31 @@ export default function CabinetInspectionFull() {
   const [selectedWorkstationId, setSelectedWorkstationId] = useState(null);
   const [workstationSearchTerm, setWorkstationSearchTerm] = useState('');
   
-  // Network switch selection modal
+  // Switch selection modal
   const [showSwitchModal, setShowSwitchModal] = useState(false);
-  const [currentNetworkIndex, setCurrentNetworkIndex] = useState(null);
+  const [currentSwitchIndex, setCurrentSwitchIndex] = useState(null);
   const [selectedSwitchId, setSelectedSwitchId] = useState(null);
+  const [switchSearchTerm, setSwitchSearchTerm] = useState('');
+  
+  // Premade network equipment models (will be merged with custom models)
+  const defaultNetworkEquipmentModels = [
+    { type: 'Switch', models: ['Cisco 2960', 'Cisco 3750', 'Cisco 3850', 'HP 2530', 'HP 2920', 'Aruba 2530', 'Aruba 2930F'] },
+    { type: 'Router', models: ['Cisco ISR 4000', 'Cisco ASR 1000', 'Juniper MX'] },
+    { type: 'Firewall', models: ['Cisco ASA 5500', 'Palo Alto PA-220', 'Fortinet FortiGate'] },
+    { type: 'Wireless Controller', models: ['Cisco WLC 3504', 'Cisco WLC 5520', 'Aruba 7005'] },
+    { type: 'Other', models: [] }
+  ];
+  
+  // Merge custom models with defaults
+  const networkEquipmentModels = defaultNetworkEquipmentModels.map(typeGroup => {
+    if (typeGroup.type === 'Switch') {
+      return {
+        ...typeGroup,
+        models: [...new Set([...typeGroup.models, ...customSwitchModels])]
+      };
+    }
+    return typeGroup;
+  });
 
   // Form state - all cabinet data
   const [formData, setFormData] = useState({
@@ -76,6 +109,12 @@ export default function CabinetInspectionFull() {
       ground_inspection: '',
     },
     
+    // Rack-specific checkboxes
+    rack_has_ups: false,
+    rack_has_hmi: false,
+    rack_has_kvm: false,
+    rack_has_monitor: false,
+    
     // Comments
     comments: '',
     
@@ -85,7 +124,20 @@ export default function CabinetInspectionFull() {
 
   useEffect(() => {
     loadCabinetData();
+    loadCustomModels();
   }, [id]);
+  
+  const loadCustomModels = async () => {
+    try {
+      const response = await fetch('/api/custom-models/Switch');
+      if (response.ok) {
+        const models = await response.json();
+        setCustomSwitchModels(models);
+      }
+    } catch (error) {
+      console.error('Error loading custom models:', error);
+    }
+  };
 
   const loadCabinetData = async () => {
     try {
@@ -133,13 +185,16 @@ export default function CabinetInspectionFull() {
         network_equipment: ensureArray(cabinetData.network_equipment, []),
         controllers: ensureArray(cabinetData.controllers, []),
         workstations: ensureArray(cabinetData.workstations, []),
-        inspection: ensureArray(cabinetData.inspection_data, {}) || {},
+        inspection: (typeof cabinetData.inspection_data === 'string' ? JSON.parse(cabinetData.inspection_data) : cabinetData.inspection_data) || {},
         photos: ensureArray(cabinetData.photos, []),
         comments: cabinetData.comments || '',
       };
 
       console.log('📊 Parsed cabinet data:');
+      console.log('  Cabinet Type:', parsedData.cabinet_type);
+      console.log('  Cabinet Name:', parsedData.cabinet_name);
       console.log('  Controllers:', parsedData.controllers);
+      console.log('  Workstations:', parsedData.workstations);
       console.log('  Power supplies:', parsedData.power_supplies);
       console.log('  Diodes:', parsedData.diodes);
 
@@ -229,8 +284,14 @@ export default function CabinetInspectionFull() {
     setCollapsed({ ...collapsed, [section]: !collapsed[section] });
   };
 
-  const updateFormData = (field, value) => {
-    setFormData({ ...formData, [field]: value });
+  const updateFormData = async (field, value, shouldAutoSave = false) => {
+    const newFormData = { ...formData, [field]: value };
+    setFormData(newFormData);
+    
+    // Auto-save for rack equipment checkboxes
+    if (shouldAutoSave && isRack) {
+      await autoSaveCabinet(newFormData);
+    }
   };
 
   const updateInspection = (field, value) => {
@@ -379,7 +440,7 @@ export default function CabinetInspectionFull() {
     setShowWorkstationModal(true);
   };
 
-  const selectWorkstationFromModal = () => {
+  const selectWorkstationFromModal = async () => {
     if (selectedWorkstationId === null || currentWorkstationIndex === null) return;
 
     const selectedWS = availableWorkstations.find((w) => w.id === selectedWorkstationId);
@@ -394,10 +455,15 @@ export default function CabinetInspectionFull() {
       serial: selectedWS.serial,
       node_type: selectedWS.node_type,
     };
-    setFormData({ ...formData, workstations: updated });
+    
+    const newFormData = { ...formData, workstations: updated };
+    setFormData(newFormData);
     setShowWorkstationModal(false);
     setCurrentWorkstationIndex(null);
     setSelectedWorkstationId(null);
+    
+    // Auto-save after assignment
+    await autoSaveCabinet(newFormData);
   };
 
   const addWorkstation = () => {
@@ -503,6 +569,49 @@ export default function CabinetInspectionFull() {
     setSelectedControllerId(null);
   };
 
+  const openSwitchModal = (index) => {
+    setCurrentSwitchIndex(index);
+    setSelectedSwitchId(null);
+    setSwitchSearchTerm('');
+    setShowSwitchModal(true);
+  };
+
+  const selectSwitchFromModal = async () => {
+    if (selectedSwitchId === null || currentSwitchIndex === null) return;
+
+    const selectedSwitch = availableSwitches.find((s) => s.id === selectedSwitchId);
+    if (!selectedSwitch) return;
+
+    const updated = [...formData.network_equipment];
+    updated[currentSwitchIndex] = {
+      ...updated[currentSwitchIndex],
+      node_id: selectedSwitch.id,
+      node_name: selectedSwitch.node_name,
+      equipment_type: 'Switch',
+      model_number: selectedSwitch.model || '',
+      serial: selectedSwitch.serial || '',
+      port_count: '', // Leave blank for user to fill
+      condition: 'good', // Default to good
+    };
+    
+    const newFormData = { ...formData, network_equipment: updated };
+    setFormData(newFormData);
+    setShowSwitchModal(false);
+    setCurrentSwitchIndex(null);
+    setSelectedSwitchId(null);
+    
+    // Auto-save after assignment
+    await autoSaveCabinet(newFormData);
+  };
+
+  const filteredSwitchesForModal = availableSwitches.filter((s) => {
+    return (
+      s.node_name?.toLowerCase().includes(switchSearchTerm.toLowerCase()) ||
+      s.model?.toLowerCase().includes(switchSearchTerm.toLowerCase()) ||
+      s.serial?.toLowerCase().includes(switchSearchTerm.toLowerCase())
+    );
+  });
+
   const filteredControllersForModal = availableControllers.filter((c) => {
     const matchesSearch =
       c.node_name?.toLowerCase().includes(controllerSearchTerm.toLowerCase()) ||
@@ -532,6 +641,7 @@ export default function CabinetInspectionFull() {
         ...formData,
         // Ensure JSON fields are ready
         controllers: formData.controllers,
+        workstations: formData.workstations,
         power_supplies: formData.power_supplies,
         diodes: formData.diodes,
         distribution_blocks: formData.distribution_blocks,
@@ -565,8 +675,27 @@ export default function CabinetInspectionFull() {
           }
         }
 
+        // Handle workstation assignments if any (for racks)
+        if (formData.workstations && formData.workstations.length > 0) {
+          console.log('🖥️ Assigning workstations:', formData.workstations.length);
+          for (const workstation of formData.workstations) {
+            if (workstation.node_id) {
+              console.log('  Assigning workstation:', workstation.node_name, 'to cabinet:', id);
+              try {
+                await api.request(`/api/nodes/${workstation.node_id}/assign`, {
+                  method: 'POST',
+                  body: JSON.stringify({ cabinet_id: id }),
+                });
+                console.log('  ✅ Workstation assigned');
+              } catch (error) {
+                console.error('  ❌ Error assigning workstation:', error);
+              }
+            }
+          }
+        }
+
         soundSystem.playSuccess();
-        showMessage('Cabinet inspection saved successfully', 'success');
+        showMessage('Cabinet/Rack inspection saved successfully', 'success');
         
         console.log('🔄 Reloading cabinet data...');
         await loadCabinetData(); // Reload to get updated data
@@ -622,41 +751,149 @@ export default function CabinetInspectionFull() {
     }
   };
 
+  // Helper function to check if voltage is in spec
+  const checkVoltageInSpec = (value, min, max) => {
+    const numValue = parseFloat(value);
+    if (isNaN(numValue) || !value) return null; // No value entered
+    return numValue >= min && numValue <= max;
+  };
+
+  // Auto-calculate pass/fail status for power supplies
+  const autoCalculateStatus = (ps) => {
+    const voltageType = ps.voltage_type || '12VDC';
+    
+    // Define voltage specs
+    const specs = {
+      '12VDC': { ac_min: 100, ac_max: 130, dc_min: 10.8, dc_max: 13.2, neutral_min: 0, neutral_max: 1000 },
+      '24VDC': { ac_min: 100, ac_max: 130, dc_min: 21.6, dc_max: 26.4, neutral_min: 0, neutral_max: 1000 },
+      '48VDC': { ac_min: 100, ac_max: 130, dc_min: 43.2, dc_max: 52.8, neutral_min: 0, neutral_max: 1000 },
+      '120VAC': { ac_min: 100, ac_max: 130, neutral_min: 0, neutral_max: 1000 },
+    };
+
+    const spec = specs[voltageType] || specs['12VDC'];
+    
+    // Check each measurement
+    const checks = [
+      checkVoltageInSpec(ps.line_neutral, spec.ac_min, spec.ac_max),
+      checkVoltageInSpec(ps.line_ground, spec.ac_min, spec.ac_max),
+      checkVoltageInSpec(ps.neutral_ground, spec.neutral_min, spec.neutral_max),
+    ];
+
+    // Add DC check if applicable
+    if (spec.dc_min && spec.dc_max) {
+      checks.push(checkVoltageInSpec(ps.dc_reading, spec.dc_min, spec.dc_max));
+    }
+
+    // If any measurement exists and is out of spec, it's a FAIL
+    const hasFailure = checks.some(check => check === false);
+    // If all measurements are in spec (and at least one exists), it's a PASS
+    const allPass = checks.filter(check => check !== null).length > 0 && checks.every(check => check === null || check === true);
+
+    if (hasFailure) return 'fail';
+    if (allPass) return 'pass';
+    return ''; // No measurements yet
+  };
+
+  // Handler to update power supply voltage and auto-calculate status
+  const handlePowerSupplyVoltageChange = async (index, field, value) => {
+    const updated = [...formData.power_supplies];
+    updated[index][field] = value;
+    
+    // Auto-calculate status based on all voltage readings
+    const autoStatus = autoCalculateStatus(updated[index]);
+    if (autoStatus) {
+      updated[index].status = autoStatus;
+    }
+    
+    const newFormData = { ...formData, power_supplies: updated };
+    setFormData(newFormData);
+    
+    // Auto-save after a short delay
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      autoSaveCabinet(newFormData);
+    }, 500);
+  };
+
+  // Auto-calculate status for all power supplies when data loads
+  useEffect(() => {
+    if (formData.power_supplies && formData.power_supplies.length > 0) {
+      let needsUpdate = false;
+      const updated = formData.power_supplies.map(ps => {
+        const autoStatus = autoCalculateStatus(ps);
+        if (autoStatus && ps.status !== autoStatus) {
+          needsUpdate = true;
+          return { ...ps, status: autoStatus };
+        }
+        return ps;
+      });
+      
+      if (needsUpdate) {
+        console.log('🔄 Auto-updating power supply statuses');
+        setFormData({ ...formData, power_supplies: updated });
+      }
+    }
+  }, [cabinet]); // Run when cabinet data changes
+
   // Calculate section status
   const getSectionStatus = (section) => {
     switch (section) {
-      case 'power_supplies':
-        return formData.power_supplies.length > 0
-          ? { text: `${formData.power_supplies.length} Supplies`, class: 'complete' }
-          : { text: 'Empty', class: 'empty' };
-      case 'controllers':
-        return formData.controllers.length > 0
-          ? { text: `${formData.controllers.length} Controllers`, class: 'complete' }
-          : { text: 'Empty', class: 'empty' };
-      case 'distribution':
+      case 'power_supplies': {
+        const count = formData.power_supplies.length;
+        if (count === 0) return { text: 'Empty', class: 'empty', errors: 0 };
+        const failCount = formData.power_supplies.filter(ps => ps.status === 'fail').length;
+        return {
+          text: `${count} Supplies`,
+          class: failCount > 0 ? 'error' : 'complete',
+          errors: failCount
+        };
+      }
+      case 'controllers': {
+        const count = formData.controllers.length;
+        if (count === 0) return { text: 'Empty', class: 'empty', errors: 0 };
+        const failCount = formData.controllers.filter(c => c.status === 'fail').length;
+        return {
+          text: `${count} Controllers`,
+          class: failCount > 0 ? 'error' : 'complete',
+          errors: failCount
+        };
+      }
+      case 'workstations': {
+        const count = formData.workstations.length;
+        return count > 0
+          ? { text: `${count} Workstations`, class: 'complete', errors: 0 }
+          : { text: 'Empty', class: 'empty', errors: 0 };
+      }
+      case 'distribution': {
         const total = formData.distribution_blocks.length + formData.diodes.length;
         return total > 0
-          ? { text: `${total} Items`, class: 'complete' }
-          : { text: 'Empty', class: 'empty' };
-      case 'network':
-        return formData.network_equipment.length > 0
-          ? { text: `${formData.network_equipment.length} Equipment`, class: 'complete' }
-          : { text: 'Empty', class: 'empty' };
-      case 'inspection':
+          ? { text: `${total} Items`, class: 'complete', errors: 0 }
+          : { text: 'Empty', class: 'empty', errors: 0 };
+      }
+      case 'network': {
+        const count = formData.network_equipment.length;
+        return count > 0
+          ? { text: `${count} Equipment`, class: 'complete', errors: 0 }
+          : { text: 'Empty', class: 'empty', errors: 0 };
+      }
+      case 'inspection': {
         const inspectionValues = Object.values(formData.inspection).filter((v) => v);
         const total_inspection = 8;
         if (inspectionValues.length === total_inspection) {
-          return { text: 'Complete', class: 'complete' };
+          return { text: 'Complete', class: 'complete', errors: 0 };
         } else if (inspectionValues.length > 0) {
-          return { text: `${inspectionValues.length}/${total_inspection} Items`, class: 'partial' };
+          return { text: `${inspectionValues.length}/${total_inspection} Items`, class: 'partial', errors: 0 };
         }
-        return { text: 'Empty', class: 'empty' };
+        return { text: 'Empty', class: 'empty', errors: 0 };
+      }
       case 'comments':
         return formData.comments?.trim()
-          ? { text: 'Has Comments', class: 'complete' }
-          : { text: 'Empty', class: 'empty' };
+          ? { text: 'Has Comments', class: 'complete', errors: 0 }
+          : { text: 'Empty', class: 'empty', errors: 0 };
       default:
-        return { text: 'Empty', class: 'empty' };
+        return { text: 'Empty', class: 'empty', errors: 0 };
     }
   };
 
@@ -670,7 +907,9 @@ export default function CabinetInspectionFull() {
           </h2>
           <span
             className={`text-xs px-3 py-1 rounded-full font-medium ${
-              status.class === 'complete'
+              status.class === 'error'
+                ? 'bg-red-900 text-red-200 border border-red-700'
+                : status.class === 'complete'
                 ? 'bg-green-900 text-green-200 border border-green-700'
                 : status.class === 'partial'
                 ? 'bg-yellow-900 text-yellow-200 border border-yellow-700'
@@ -679,6 +918,11 @@ export default function CabinetInspectionFull() {
           >
             {status.text}
           </span>
+          {collapsed[section] && status.errors > 0 && (
+            <span className="px-2 py-1 bg-red-600 text-white text-xs font-bold rounded-full animate-pulse">
+              ⚠️ {status.errors} {status.errors === 1 ? 'Error' : 'Errors'}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {onAdd && (
@@ -727,6 +971,14 @@ export default function CabinetInspectionFull() {
 
   const isCabinet = formData.cabinet_type === 'cabinet';
   const isRack = formData.cabinet_type === 'rack';
+  
+  // Debug logging
+  console.log('🔍 Cabinet Type Debug:', {
+    cabinet_type: formData.cabinet_type,
+    isCabinet,
+    isRack,
+    cabinet_name: formData.cabinet_name
+  });
 
   return (
     <Layout>
@@ -759,7 +1011,7 @@ export default function CabinetInspectionFull() {
       <div className="flex justify-between items-start mb-8 animate-fadeIn">
         <div>
           <h1 className="text-4xl font-bold gradient-text mb-2">
-            🗄️ {formData.cabinet_name || 'Cabinet Inspection'}
+            {isRack ? '🖥️' : '🗄️'} {formData.cabinet_name || (isRack ? 'Rack Inspection' : 'Cabinet Inspection')}
           </h1>
           {formData.cabinet_date && (
             <p className="text-gray-400">{new Date(formData.cabinet_date).toLocaleDateString()}</p>
@@ -771,7 +1023,11 @@ export default function CabinetInspectionFull() {
         <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => {
-              Object.keys(collapsed).forEach((key) => setCollapsed((prev) => ({ ...prev, [key]: false })));
+              const allExpanded = Object.keys(collapsed).reduce((acc, key) => {
+                acc[key] = false;
+                return acc;
+              }, {});
+              setCollapsed(allExpanded);
               showMessage('All sections expanded', 'info');
             }}
             className="btn btn-secondary text-sm"
@@ -780,7 +1036,11 @@ export default function CabinetInspectionFull() {
           </button>
           <button
             onClick={() => {
-              Object.keys(collapsed).forEach((key) => setCollapsed((prev) => ({ ...prev, [key]: true })));
+              const allCollapsed = Object.keys(collapsed).reduce((acc, key) => {
+                acc[key] = true;
+                return acc;
+              }, {});
+              setCollapsed(allCollapsed);
               showMessage('All sections collapsed', 'info');
             }}
             className="btn btn-secondary text-sm"
@@ -1018,15 +1278,16 @@ export default function CabinetInspectionFull() {
           </div>
         )}
 
-        {/* Power Supplies */}
-        <div className="card">
-          <SectionHeader
-            title="Power Supplies"
-            section="power_supplies"
-            onAdd={addPowerSupply}
-            addLabel="➕ Add Power Supply"
-            icon="⚡"
-          />
+        {/* Power Supplies (Cabinets only) */}
+        {isCabinet && (
+          <div className="card">
+            <SectionHeader
+              title="Power Supplies"
+              section="power_supplies"
+              onAdd={addPowerSupply}
+              addLabel="➕ Add Power Supply"
+              icon="⚡"
+            />
           {!collapsed.power_supplies && (
             <div className="card-body">
               {formData.power_supplies.length === 0 ? (
@@ -1073,11 +1334,7 @@ export default function CabinetInspectionFull() {
                                 type="number"
                                 step="0.01"
                                 value={ps.line_neutral || ''}
-                                onChange={(e) => {
-                                  const updated = [...formData.power_supplies];
-                                  updated[index].line_neutral = e.target.value;
-                                  setFormData({ ...formData, power_supplies: updated });
-                                }}
+                                onChange={(e) => handlePowerSupplyVoltageChange(index, 'line_neutral', e.target.value)}
                                 className={`form-input ${
                                   ps.line_neutral && validateVoltage(ps.line_neutral, 'line_neutral')
                                     ? validateVoltage(ps.line_neutral, 'line_neutral').valid
@@ -1103,11 +1360,7 @@ export default function CabinetInspectionFull() {
                                 type="number"
                                 step="0.01"
                                 value={ps.line_ground || ''}
-                                onChange={(e) => {
-                                  const updated = [...formData.power_supplies];
-                                  updated[index].line_ground = e.target.value;
-                                  setFormData({ ...formData, power_supplies: updated });
-                                }}
+                                onChange={(e) => handlePowerSupplyVoltageChange(index, 'line_ground', e.target.value)}
                                 className={`form-input ${
                                   ps.line_ground && validateVoltage(ps.line_ground, 'line_ground')
                                     ? validateVoltage(ps.line_ground, 'line_ground').valid
@@ -1133,11 +1386,7 @@ export default function CabinetInspectionFull() {
                                 type="number"
                                 step="1"
                                 value={ps.neutral_ground || ''}
-                                onChange={(e) => {
-                                  const updated = [...formData.power_supplies];
-                                  updated[index].neutral_ground = e.target.value;
-                                  setFormData({ ...formData, power_supplies: updated });
-                                }}
+                                onChange={(e) => handlePowerSupplyVoltageChange(index, 'neutral_ground', e.target.value)}
                                 className={`form-input ${
                                   ps.neutral_ground && validateVoltage(ps.neutral_ground, 'neutral_ground')
                                     ? validateVoltage(ps.neutral_ground, 'neutral_ground').valid
@@ -1167,11 +1416,7 @@ export default function CabinetInspectionFull() {
                             type="number"
                             step="0.01"
                             value={ps.dc_reading || ''}
-                            onChange={(e) => {
-                              const updated = [...formData.power_supplies];
-                              updated[index].dc_reading = e.target.value;
-                              setFormData({ ...formData, power_supplies: updated });
-                            }}
+                            onChange={(e) => handlePowerSupplyVoltageChange(index, 'dc_reading', e.target.value)}
                             className={`form-input ${
                               ps.dc_reading && validateVoltage(ps.dc_reading, 'dc_reading', ps.voltage_type)
                                 ? validateVoltage(ps.dc_reading, 'dc_reading', ps.voltage_type).valid
@@ -1239,47 +1484,20 @@ export default function CabinetInspectionFull() {
               )}
             </div>
           )}
-        </div>
+          </div>
+        )}
 
-        {/* Distribution Blocks & Diodes */}
-        {isCabinet && (
+        {/* Workstations Section (Racks only) */}
+        {isRack && (
           <div className="card">
-            <div className="card-header flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <h2 className="text-xl font-semibold text-gray-100">🔌 Distribution Blocks / Diodes</h2>
-                <span className={`text-xs px-3 py-1 rounded-full font-medium ${
-                  getSectionStatus('distribution').class === 'complete'
-                    ? 'bg-green-900 text-green-200 border border-green-700'
-                    : 'bg-gray-700 text-gray-400 border border-gray-600'
-                }`}>
-                  {getSectionStatus('distribution').text}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={addDistributionBlock}
-                  className="btn btn-secondary btn-sm text-xs"
-                >
-                  ➕ Block
-                </button>
-                <button
-                  type="button"
-                  onClick={addDiode}
-                  className="btn btn-secondary btn-sm text-xs"
-                >
-                  ➕ Diode
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleSection('distribution')}
-                  className="text-2xl text-gray-400 hover:text-gray-200 w-8"
-                >
-                  {collapsed.distribution ? '➕' : '➖'}
-                </button>
-              </div>
-            </div>
-            {!collapsed.distribution && (
+            <SectionHeader
+              title="Workstations"
+              section="workstations"
+              onAdd={addWorkstation}
+              addLabel="➕ Add Workstation"
+              icon="🖥️"
+            />
+            {!collapsed.workstations && (
               <div className="card-body">
                 {formData.workstations.length === 0 ? (
                   <p className="text-gray-400 text-sm">No workstations assigned yet.</p>
@@ -1552,6 +1770,41 @@ export default function CabinetInspectionFull() {
                         </button>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Assign Switch from Nodes */}
+                        {availableSwitches.length > 0 && (
+                          <div className="md:col-span-2">
+                            <label className="form-label">Assign Smart Switch from Nodes</label>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => openSwitchModal(index)}
+                                disabled={session?.status === 'completed'}
+                                className="btn btn-secondary flex-1 text-left"
+                              >
+                                {equipment.node_id
+                                  ? `[Switch] ${equipment.node_name}`
+                                  : 'Select Switch from Nodes'}
+                              </button>
+                              {equipment.node_id && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = [...formData.network_equipment];
+                                    updated[index].node_id = '';
+                                    updated[index].node_name = '';
+                                    setFormData({ ...formData, network_equipment: updated });
+                                  }}
+                                  disabled={session?.status === 'completed'}
+                                  className="btn btn-danger"
+                                  title="Unassign switch"
+                                >
+                                  ✖
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
                         <div>
                           <label className="form-label">Equipment Type</label>
                           <select
@@ -1559,31 +1812,86 @@ export default function CabinetInspectionFull() {
                             onChange={(e) => {
                               const updated = [...formData.network_equipment];
                               updated[index].equipment_type = e.target.value;
+                              // Clear model if type changes
+                              if (e.target.value !== updated[index].equipment_type) {
+                                updated[index].model_number = '';
+                              }
                               setFormData({ ...formData, network_equipment: updated });
                             }}
                             className="form-select"
                           >
                             <option value="">Select...</option>
-                            <option value="switch">Switch</option>
-                            <option value="router">Router</option>
-                            <option value="firewall">Firewall</option>
-                            <option value="wireless-ap">Wireless AP</option>
-                            <option value="other">Other</option>
+                            <option value="Switch">Switch</option>
+                            <option value="Router">Router</option>
+                            <option value="Firewall">Firewall</option>
+                            <option value="Wireless Controller">Wireless Controller</option>
+                            <option value="Other">Other</option>
                           </select>
                         </div>
                         <div>
                           <label className="form-label">Model Number</label>
-                          <input
-                            type="text"
-                            value={equipment.model_number}
-                            onChange={(e) => {
-                              const updated = [...formData.network_equipment];
-                              updated[index].model_number = e.target.value;
-                              setFormData({ ...formData, network_equipment: updated });
-                            }}
-                            className="form-input"
-                            placeholder="e.g., Cisco 2960"
-                          />
+                          {equipment.equipment_type && networkEquipmentModels.find(m => m.type === equipment.equipment_type)?.models.length > 0 ? (
+                            <div className="space-y-2">
+                              <select
+                                value={equipment.model_number}
+                                onChange={(e) => {
+                                  const updated = [...formData.network_equipment];
+                                  updated[index].model_number = e.target.value;
+                                  setFormData({ ...formData, network_equipment: updated });
+                                }}
+                                className="form-select"
+                              >
+                                <option value="">Select or enter custom...</option>
+                                {networkEquipmentModels.find(m => m.type === equipment.equipment_type)?.models.map(model => (
+                                  <option key={model} value={model}>{model}</option>
+                                ))}
+                                <option value="__custom__">Custom Model</option>
+                              </select>
+                              {equipment.model_number === '__custom__' && (
+                                <input
+                                  type="text"
+                                  placeholder="Enter custom model"
+                                  onChange={(e) => {
+                                    const updated = [...formData.network_equipment];
+                                    updated[index].model_number = e.target.value;
+                                    setFormData({ ...formData, network_equipment: updated });
+                                  }}
+                                  onBlur={async (e) => {
+                                    const customModel = e.target.value;
+                                    if (customModel && equipment.equipment_type === 'Switch') {
+                                      // Save custom model to database
+                                      try {
+                                        await api.request('/api/custom-models', {
+                                          method: 'POST',
+                                          body: JSON.stringify({
+                                            equipment_type: 'Switch',
+                                            model_name: customModel
+                                          })
+                                        });
+                                        // Reload custom models
+                                        await loadCustomModels();
+                                      } catch (error) {
+                                        console.error('Error saving custom model:', error);
+                                      }
+                                    }
+                                  }}
+                                  className="form-input"
+                                />
+                              )}
+                            </div>
+                          ) : (
+                            <input
+                              type="text"
+                              value={equipment.model_number || ''}
+                              onChange={(e) => {
+                                const updated = [...formData.network_equipment];
+                                updated[index].model_number = e.target.value;
+                                setFormData({ ...formData, network_equipment: updated });
+                              }}
+                              className="form-input"
+                              placeholder="e.g., Cisco 2960"
+                            />
+                          )}
                         </div>
                         <div>
                           <label className="form-label">Port Count</label>
@@ -1640,9 +1948,71 @@ export default function CabinetInspectionFull() {
           )}
         </div>
 
-        {/* Inspection Checklist */}
-        <div className="card">
-          <SectionHeader title="Inspection Checklist" section="inspection" icon="✅" />
+        {/* Rack Equipment Checklist (Racks only) */}
+        {isRack && (
+          <div className="card">
+            <SectionHeader title="Equipment Checklist" section="rack_equipment" icon="✅" />
+            {!collapsed.rack_equipment && (
+              <div className="card-body">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="rack_has_ups"
+                      checked={formData.rack_has_ups || false}
+                      onChange={(e) => updateFormData('rack_has_ups', e.target.checked, true)}
+                      className="form-checkbox h-5 w-5 text-blue-600 rounded"
+                    />
+                    <label htmlFor="rack_has_ups" className="text-gray-200 cursor-pointer">
+                      UPS (Uninterruptible Power Supply)
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="rack_has_hmi"
+                      checked={formData.rack_has_hmi || false}
+                      onChange={(e) => updateFormData('rack_has_hmi', e.target.checked, true)}
+                      className="form-checkbox h-5 w-5 text-blue-600 rounded"
+                    />
+                    <label htmlFor="rack_has_hmi" className="text-gray-200 cursor-pointer">
+                      HMI (Human Machine Interface)
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="rack_has_kvm"
+                      checked={formData.rack_has_kvm || false}
+                      onChange={(e) => updateFormData('rack_has_kvm', e.target.checked, true)}
+                      className="form-checkbox h-5 w-5 text-blue-600 rounded"
+                    />
+                    <label htmlFor="rack_has_kvm" className="text-gray-200 cursor-pointer">
+                      KVM Switch
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="rack_has_monitor"
+                      checked={formData.rack_has_monitor || false}
+                      onChange={(e) => updateFormData('rack_has_monitor', e.target.checked, true)}
+                      className="form-checkbox h-5 w-5 text-blue-600 rounded"
+                    />
+                    <label htmlFor="rack_has_monitor" className="text-gray-200 cursor-pointer">
+                      Monitor/Display
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Inspection Checklist (Cabinets only) */}
+        {isCabinet && (
+          <div className="card">
+            <SectionHeader title="Inspection Checklist" section="inspection" icon="✅" />
           {!collapsed.inspection && (
             <div className="card-body">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1673,7 +2043,8 @@ export default function CabinetInspectionFull() {
               </div>
             </div>
           )}
-        </div>
+          </div>
+        )}
 
         {/* Comments */}
         <div className="card">
@@ -1838,6 +2209,210 @@ export default function CabinetInspectionFull() {
                 className="btn btn-primary"
               >
                 Select Controller
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Switch Selection Modal */}
+      {showSwitchModal && (
+        <div className="modal-backdrop">
+          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-4xl w-full mx-4 border border-gray-700 max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
+              <h3 className="text-lg font-semibold text-gray-100">Select Smart Switch</h3>
+              <button
+                onClick={() => {
+                  setShowSwitchModal(false);
+                  setCurrentSwitchIndex(null);
+                  setSelectedSwitchId(null);
+                }}
+                className="text-gray-400 hover:text-gray-200 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="px-6 py-4 border-b border-gray-700 flex-shrink-0">
+              <input
+                type="text"
+                placeholder="Search switches by name, model, or serial..."
+                value={switchSearchTerm}
+                onChange={(e) => setSwitchSearchTerm(e.target.value)}
+                className="form-input"
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              <div className="space-y-3">
+                {filteredSwitchesForModal.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">
+                    {switchSearchTerm
+                      ? 'No switches match your search'
+                      : 'No available switches found'}
+                  </div>
+                ) : (
+                  filteredSwitchesForModal.map((switchNode) => (
+                    <div
+                      key={switchNode.id}
+                      onClick={() => setSelectedSwitchId(switchNode.id)}
+                      className={`cursor-pointer p-4 rounded-lg border transition-all ${
+                        selectedSwitchId === switchNode.id
+                          ? 'bg-blue-900/50 border-blue-500'
+                          : 'bg-gray-700/30 border-gray-600 hover:border-gray-500'
+                      } ${switchNode.assigned_cabinet_id ? 'opacity-60' : ''}`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-100">
+                            [{switchNode.node_type}] {switchNode.node_name}
+                          </div>
+                          <div className="text-sm text-gray-400 mt-1">
+                            Model: {switchNode.model || 'Unknown'} | Serial: {switchNode.serial || 'No Serial'}
+                          </div>
+                          {switchNode.assigned_cabinet_name && (
+                            <div className="text-sm text-yellow-400 mt-1">
+                              Currently in: {switchNode.assigned_cabinet_name}
+                            </div>
+                          )}
+                        </div>
+                        {selectedSwitchId === switchNode.id && (
+                          <span className="text-green-400 text-xl ml-3">✓</span>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSwitchModal(false);
+                  setCurrentSwitchIndex(null);
+                  setSelectedSwitchId(null);
+                }}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={selectSwitchFromModal}
+                disabled={selectedSwitchId === null}
+                className="btn btn-primary"
+              >
+                Select Switch
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Workstation Selection Modal */}
+      {showWorkstationModal && (
+        <div className="modal-backdrop">
+          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-4xl w-full mx-4 border border-gray-700 max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
+              <h3 className="text-lg font-semibold text-gray-100">Select Workstation</h3>
+              <button
+                onClick={() => {
+                  setShowWorkstationModal(false);
+                  setCurrentWorkstationIndex(null);
+                  setSelectedWorkstationId(null);
+                }}
+                className="text-gray-400 hover:text-gray-200 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="px-6 py-4 border-b border-gray-700 flex-shrink-0">
+              <input
+                type="text"
+                placeholder="🔍 Search workstations by name, model, or serial..."
+                value={workstationSearchTerm}
+                onChange={(e) => setWorkstationSearchTerm(e.target.value)}
+                className="form-input"
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              <div className="space-y-3">
+                {availableWorkstations.filter((ws) => {
+                  return (
+                    ws.node_name?.toLowerCase().includes(workstationSearchTerm.toLowerCase()) ||
+                    ws.model?.toLowerCase().includes(workstationSearchTerm.toLowerCase()) ||
+                    ws.serial?.toLowerCase().includes(workstationSearchTerm.toLowerCase())
+                  );
+                }).length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">
+                    {workstationSearchTerm
+                      ? 'No workstations match your search'
+                      : 'No available workstations found'}
+                  </div>
+                ) : (
+                  availableWorkstations.filter((ws) => {
+                    return (
+                      ws.node_name?.toLowerCase().includes(workstationSearchTerm.toLowerCase()) ||
+                      ws.model?.toLowerCase().includes(workstationSearchTerm.toLowerCase()) ||
+                      ws.serial?.toLowerCase().includes(workstationSearchTerm.toLowerCase())
+                    );
+                  }).map((ws) => (
+                    <div
+                      key={ws.id}
+                      onClick={() => setSelectedWorkstationId(ws.id)}
+                      className={`cursor-pointer p-4 rounded-lg border transition-all ${
+                        selectedWorkstationId === ws.id
+                          ? 'bg-blue-900/50 border-blue-500'
+                          : 'bg-gray-700/30 border-gray-600 hover:border-gray-500'
+                      } ${ws.assigned_cabinet_id ? 'opacity-60' : ''}`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-100">
+                            [{ws.node_type}] {ws.node_name}
+                          </div>
+                          <div className="text-sm text-gray-400 mt-1">
+                            Model: {ws.model || 'Unknown'} | Serial: {ws.serial || 'No Serial'}
+                          </div>
+                          {ws.assigned_cabinet_name && (
+                            <div className="text-sm text-yellow-400 mt-1">
+                              Currently in: {ws.assigned_cabinet_name}
+                            </div>
+                          )}
+                        </div>
+                        {selectedWorkstationId === ws.id && (
+                          <span className="text-green-400 text-xl ml-3">✓</span>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowWorkstationModal(false);
+                  setCurrentWorkstationIndex(null);
+                  setSelectedWorkstationId(null);
+                }}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={selectWorkstationFromModal}
+                disabled={selectedWorkstationId === null}
+                className="btn btn-primary"
+              >
+                Select Workstation
               </button>
             </div>
           </div>

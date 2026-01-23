@@ -51,11 +51,19 @@ const isPackaged = typeof process.pkg !== 'undefined';
 
 // Set up proper paths for packaged executable
 const appBasePath = isPackaged ? path.dirname(process.execPath) : __dirname;
-const dbPath = path.join(appBasePath, 'data', 'cabinet_pm_tablet.db');
+const dataDir = path.join(appBasePath, 'data');
+const dbPath = path.join(dataDir, 'cabinet_pm_tablet.db');
+
+// Ensure data directory exists
+if (!fs.existsSync(dataDir)) {
+    console.log('📁 Creating data directory:', dataDir);
+    fs.mkdirSync(dataDir, { recursive: true });
+}
 
 console.log('🔧 Environment Setup:');
 console.log(`   Packaged: ${isPackaged}`);
 console.log(`   Base Path: ${appBasePath}`);
+console.log(`   Data Directory: ${dataDir}`);
 console.log(`   Database Path: ${dbPath}`);
 
 // Chrome detection function for PDF generation
@@ -486,7 +494,7 @@ function initializeDatabase() {
         // Column already exists, ignore error - for switches firmware updates
       });
 
-    // Cabinet Locations table
+    // Cabinet Locations table (both names for backward compatibility)
     db.run(`CREATE TABLE IF NOT EXISTS cabinet_names (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -503,6 +511,30 @@ function initializeDatabase() {
     // Add deleted column to cabinet_names table (for soft delete sync)
     db.run(`ALTER TABLE cabinet_names ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {
       // Column already exists, ignore error
+    });
+
+    // ALSO create cabinet_locations table (for MongoDB sync compatibility)
+    // MongoDB uses "cabinet_locations" while SQLite uses "cabinet_names"
+    db.run(`CREATE TABLE IF NOT EXISTS cabinet_locations (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      location_name TEXT NOT NULL,
+      description TEXT,
+      is_collapsed BOOLEAN DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      deleted INTEGER DEFAULT 0,
+      synced INTEGER DEFAULT 0,
+      uuid TEXT,
+      FOREIGN KEY (session_id) REFERENCES sessions(id),
+      UNIQUE(session_id, location_name)
+    )`, (err) => {
+      if (err) {
+        console.error('❌ Error creating cabinet_locations table:', err);
+      } else {
+        console.log('✅ Created (or found) cabinet_locations table for MongoDB sync');
+      }
     });
 
     // Add location_id column to cabinets table (check if exists first)
@@ -523,6 +555,116 @@ function initializeDatabase() {
             }
           }
         });
+      }
+    });
+
+    // Add cabinet_name, cabinet_type, location and workstations columns to cabinets table (migration from cabinet_location)
+    db.all(`PRAGMA table_info(cabinets)`, (err, columns) => {
+      if (!err && columns) {
+        const hasCabinetName = columns.some(col => col.name === 'cabinet_name');
+        const hasCabinetType = columns.some(col => col.name === 'cabinet_type');
+        const hasLocation = columns.some(col => col.name === 'location');
+        const hasWorkstations = columns.some(col => col.name === 'workstations');
+        
+        if (!hasCabinetName) {
+          console.log('🔄 Migrating cabinet_location to cabinet_name...');
+          db.run(`ALTER TABLE cabinets ADD COLUMN cabinet_name TEXT`, (err) => {
+            if (err) {
+              console.log('❌ Error adding cabinet_name:', err.message);
+            } else {
+              // Copy cabinet_location to cabinet_name for existing records
+              db.run(`UPDATE cabinets SET cabinet_name = cabinet_location WHERE cabinet_name IS NULL`, (err) => {
+                if (err) {
+                  console.log('❌ Error migrating data:', err.message);
+                } else {
+                  console.log('✅ Added cabinet_name column and migrated data');
+                }
+              });
+            }
+          });
+        }
+        
+        if (!hasCabinetType) {
+          console.log('Adding cabinet_type column to cabinets table...');
+          db.run(`ALTER TABLE cabinets ADD COLUMN cabinet_type TEXT DEFAULT 'cabinet'`, (err) => {
+            if (err) {
+              console.log('❌ Error adding cabinet_type:', err.message);
+            } else {
+              // Set default cabinet_type for existing records
+              db.run(`UPDATE cabinets SET cabinet_type = 'cabinet' WHERE cabinet_type IS NULL`, (err) => {
+                if (err) {
+                  console.log('❌ Error setting default cabinet_type:', err.message);
+                } else {
+                  console.log('✅ Added cabinet_type column with defaults');
+                }
+              });
+            }
+          });
+        }
+        
+        if (!hasLocation) {
+          console.log('Adding location column to cabinets table...');
+          db.run(`ALTER TABLE cabinets ADD COLUMN location TEXT`, (err) => {
+            if (err) {
+              console.log('❌ Error adding location:', err.message);
+            } else {
+              console.log('✅ Added location column to cabinets table');
+            }
+          });
+        }
+        
+        if (!hasWorkstations) {
+          console.log('Adding workstations column to cabinets table...');
+          db.run(`ALTER TABLE cabinets ADD COLUMN workstations TEXT DEFAULT '[]'`, (err) => {
+            if (err) {
+              console.log('❌ Error adding workstations:', err.message);
+            } else {
+              console.log('✅ Added workstations column with default empty array');
+            }
+          });
+        }
+      }
+    });
+
+    // Add comments column to cabinets table
+    db.run(`ALTER TABLE cabinets ADD COLUMN comments TEXT`, (err) => {
+      // Column already exists, ignore error
+    });
+
+    // Add rack-specific equipment columns to cabinets table
+    db.run(`ALTER TABLE cabinets ADD COLUMN rack_has_ups INTEGER DEFAULT 0`, (err) => {
+      // Column already exists, ignore error
+    });
+    db.run(`ALTER TABLE cabinets ADD COLUMN rack_has_hmi INTEGER DEFAULT 0`, (err) => {
+      // Column already exists, ignore error
+    });
+    db.run(`ALTER TABLE cabinets ADD COLUMN rack_has_kvm INTEGER DEFAULT 0`, (err) => {
+      // Column already exists, ignore error
+    });
+    db.run(`ALTER TABLE cabinets ADD COLUMN rack_has_monitor INTEGER DEFAULT 0`, (err) => {
+      // Column already exists, ignore error
+    });
+
+    // Add system credentials columns to customers table
+    db.run(`ALTER TABLE customers ADD COLUMN system_username TEXT`, (err) => {
+      // Column already exists, ignore error
+    });
+    db.run(`ALTER TABLE customers ADD COLUMN system_password TEXT`, (err) => {
+      // Column already exists, ignore error
+    });
+
+    // Custom network equipment models table
+    db.run(`CREATE TABLE IF NOT EXISTS custom_equipment_models (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      equipment_type TEXT NOT NULL,
+      model_name TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(equipment_type, model_name)
+    )`, (err) => {
+      if (err) {
+        console.error('❌ Error creating custom_equipment_models table:', err);
+      } else {
+        console.log('✅ Created (or found) custom_equipment_models table');
       }
     });
 
@@ -683,6 +825,42 @@ function initializeDatabase() {
       }
     });
 
+    // Create csv_import_history table to track CSV imports
+    db.run(`CREATE TABLE IF NOT EXISTS csv_import_history (
+      id TEXT PRIMARY KEY,
+      customer_id INTEGER NOT NULL,
+      file_name TEXT NOT NULL,
+      import_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      nodes_imported INTEGER DEFAULT 0,
+      imported_by TEXT,
+      uuid TEXT,
+      synced INTEGER DEFAULT 0,
+      device_id TEXT,
+      deleted INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (customer_id) REFERENCES customers(id)
+    )`, (err) => {
+      if (err) {
+        console.error('❌ Error creating csv_import_history table:', err);
+      } else {
+        console.log('✅ Created (or found) csv_import_history table');
+      }
+    });
+
+    // Create sync_metadata table for device tracking and sync timestamps
+    db.run(`CREATE TABLE IF NOT EXISTS sync_metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`, (err) => {
+      if (err) {
+        console.error('❌ Error creating sync_metadata table:', err);
+      } else {
+        console.log('✅ Created (or found) sync_metadata table');
+      }
+    });
+
     // Database migrations - add columns if they don't exist
     const addColumnIfNotExists = (tableName, columnName, columnType) => {
       console.log(`🔍 DEBUG: Checking if column ${columnName} exists in table ${tableName}`);
@@ -825,26 +1003,36 @@ app.use(session({
 // Detect if running as executable and adjust paths (reuse isPackaged from above)
 const basePath = isPackaged ? path.dirname(process.execPath) : __dirname;
 
-// Check if React build exists, otherwise use old HTML frontend
+// Serve React build
 const reactBuildPath = path.join(basePath, 'frontend-react', 'dist');
-const useReactBuild = fs.existsSync(reactBuildPath);
 
-if (useReactBuild) {
-  console.log('✨ Serving React build from:', reactBuildPath);
-  // Serve React app static files
-  app.use(express.static(reactBuildPath));
-} else {
-  console.log('📄 Serving HTML frontend from:', path.join(basePath, 'frontend', 'public'));
-  // Serve static files from frontend/public directory (legacy)
-  app.use(express.static(path.join(basePath, 'frontend', 'public')));
-  app.use('/assets', express.static(path.join(basePath, 'frontend', 'public', 'assets')));
+if (!fs.existsSync(reactBuildPath)) {
+  console.error('❌ ERROR: React build not found!');
+  console.error('📍 Expected location:', reactBuildPath);
+  console.error('🔧 Run: cd frontend-react && npm run build');
+  process.exit(1);
 }
+
+console.log('✨ Serving React app from:', reactBuildPath);
+app.use(express.static(reactBuildPath));
 
 // Authentication middleware
 function requireAuth(req, res, next) {
+  console.log('🔐 [AUTH DEBUG]', {
+    path: req.path,
+    method: req.method,
+    hasSession: !!req.session,
+    sessionId: req.session?.id,
+    userId: req.session?.userId,
+    username: req.session?.username,
+    cookie: req.headers.cookie ? 'present' : 'missing'
+  });
+  
   if (req.session && req.session.userId) {
+    console.log('✅ [AUTH] Authenticated:', req.session.username);
     return next();
   } else {
+    console.log('❌ [AUTH] Unauthorized - No session or userId');
     return res.status(401).json({ error: 'Authentication required' });
   }
 }
@@ -1014,10 +1202,34 @@ app.post('/api/customers', requireAuth, async (req, res) => {
 // Update customer
 app.put('/api/customers/:customerId', requireAuth, async (req, res) => {
   const customerId = parseInt(req.params.customerId);
-  const { name, location, contact_info } = req.body;
+  const { name, location, contact_info, contact_person, email, phone, address, system_username, system_password } = req.body;
   
   try {
-    const result = await db.prepare('UPDATE customers SET name = ?, location = ?, contact_info = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run([name, location, contact_info, customerId]);
+    const result = await db.prepare(`
+      UPDATE customers SET 
+        name = ?, 
+        location = ?, 
+        contact_info = ?, 
+        contact_person = ?, 
+        email = ?, 
+        phone = ?, 
+        address = ?,
+        system_username = ?,
+        system_password = ?,
+        updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `).run([
+      name, 
+      location, 
+      contact_info, 
+      contact_person || null, 
+      email || null, 
+      phone || null, 
+      address || null,
+      system_username || null,
+      system_password || null,
+      customerId
+    ]);
     
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Customer not found' });
@@ -1026,6 +1238,36 @@ app.put('/api/customers/:customerId', requireAuth, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Update customer error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Get custom equipment models
+app.get('/api/custom-models/:equipmentType', requireAuth, async (req, res) => {
+  const equipmentType = req.params.equipmentType;
+  
+  try {
+    const models = await db.prepare('SELECT model_name FROM custom_equipment_models WHERE equipment_type = ? ORDER BY model_name').all([equipmentType]);
+    res.json(models.map(m => m.model_name));
+  } catch (error) {
+    console.error('Get custom models error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Add custom equipment model
+app.post('/api/custom-models', requireAuth, async (req, res) => {
+  const { equipment_type, model_name } = req.body;
+  
+  if (!equipment_type || !model_name) {
+    return res.status(400).json({ error: 'Equipment type and model name are required' });
+  }
+  
+  try {
+    await db.prepare('INSERT OR IGNORE INTO custom_equipment_models (equipment_type, model_name) VALUES (?, ?)').run([equipment_type, model_name]);
+    res.json({ success: true, message: 'Custom model saved' });
+  } catch (error) {
+    console.error('Add custom model error:', error);
     res.status(500).json({ error: 'Database error' });
   }
 });
@@ -1261,9 +1503,13 @@ app.get('/api/sessions/:sessionId', requireAuth, async (req, res) => {
       ORDER BY sort_order, location_name
     `).all([sessionId]);
     
-    // Parse JSON fields for cabinets
+    // Parse JSON fields for cabinets and handle backward compatibility
     const cabinets = sessionCabinets.map(cabinet => ({
       ...cabinet,
+      // Backward compatibility: use cabinet_location as fallback for cabinet_name
+      cabinet_name: cabinet.cabinet_name || cabinet.cabinet_location || 'Unnamed Cabinet',
+      // location_name from join or fallback to old cabinet_location field
+      location_name: cabinet.location_name || cabinet.cabinet_location || 'Unassigned',
       power_supplies: JSON.parse(cabinet.power_supplies || '[]'),
       distribution_blocks: JSON.parse(cabinet.distribution_blocks || '[]'),
       diodes: JSON.parse(cabinet.diodes || '[]'),
@@ -1554,6 +1800,12 @@ app.post('/api/cabinets', requireAuth, async (req, res) => {
     ...inspection
   };
   
+  console.log('🔍 [DEBUG] Create Cabinet Request:', {
+    cabinet_name,
+    cabinet_type,
+    pm_session_id
+  });
+  
   try {
     // Check if session is completed
     if (await isSessionCompleted(pm_session_id)) {
@@ -1581,6 +1833,12 @@ app.post('/api/cabinets', requireAuth, async (req, res) => {
       JSON.stringify(network_equipment || []),
       JSON.stringify(defaultInspection)
     ]);
+    
+    console.log('✅ [DEBUG] Cabinet Created Successfully:', {
+      id: cabinetId,
+      cabinet_type,
+      cabinet_name
+    });
     
     const cabinet = {
       id: cabinetId,
@@ -1650,6 +1908,16 @@ app.get('/api/cabinets/:cabinetId', requireAuth, async (req, res) => {
       inspection: JSON.parse(cabinet.inspection_data || '{}')
     };
     
+    console.log('🔍 [DEBUG] Get Cabinet API Response:', {
+      id: result.id,
+      cabinet_name: result.cabinet_name,
+      cabinet_type: result.cabinet_type,
+      rack_has_ups: result.rack_has_ups,
+      rack_has_hmi: result.rack_has_hmi,
+      rack_has_kvm: result.rack_has_kvm,
+      rack_has_monitor: result.rack_has_monitor
+    });
+    
     res.json(result);
   } catch (error) {
     console.error('Get cabinet details error:', error);
@@ -1683,11 +1951,27 @@ app.put('/api/cabinets/:cabinetId', requireAuth, async (req, res) => {
       });
     }
     
+    console.log('💾 [DEBUG] Saving Cabinet/Rack Data:', {
+      id: cabinetId,
+      cabinet_type: updateData.cabinet_type,
+      cabinet_name: updateData.cabinet_name,
+      workstations_count: updateData.workstations?.length || 0,
+      controllers_count: updateData.controllers?.length || 0,
+      network_equipment_count: updateData.network_equipment?.length || 0,
+      rack_has_ups: updateData.rack_has_ups,
+      rack_has_hmi: updateData.rack_has_hmi,
+      rack_has_kvm: updateData.rack_has_kvm,
+      rack_has_monitor: updateData.rack_has_monitor,
+      comments_length: updateData.comments?.length || 0
+    });
+
     const result = await db.prepare(`
       UPDATE cabinets SET 
         cabinet_name = ?, cabinet_type = ?, cabinet_location = ?, cabinet_date = ?, status = ?,
         power_supplies = ?, distribution_blocks = ?, diodes = ?,
-        network_equipment = ?, controllers = ?, workstations = ?, inspection_data = ?, location_id = ?, updated_at = CURRENT_TIMESTAMP
+        network_equipment = ?, controllers = ?, workstations = ?, inspection_data = ?, location_id = ?,
+        rack_has_ups = ?, rack_has_hmi = ?, rack_has_kvm = ?, rack_has_monitor = ?,
+        comments = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run([
       updateData.cabinet_name,
@@ -1703,8 +1987,15 @@ app.put('/api/cabinets/:cabinetId', requireAuth, async (req, res) => {
       JSON.stringify(updateData.workstations || []),
       JSON.stringify(updateData.inspection || {}),
       updateData.location_id || null,
+      updateData.rack_has_ups ? 1 : 0,
+      updateData.rack_has_hmi ? 1 : 0,
+      updateData.rack_has_kvm ? 1 : 0,
+      updateData.rack_has_monitor ? 1 : 0,
+      updateData.comments || '',
       cabinetId
     ]);
+    
+    console.log('✅ [DEBUG] Cabinet/Rack Saved Successfully. Rows affected:', result.changes);
     
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Cabinet not found' });
@@ -1712,8 +2003,14 @@ app.put('/api/cabinets/:cabinetId', requireAuth, async (req, res) => {
     
     res.json({ success: true, message: 'Cabinet data saved successfully' });
   } catch (error) {
-    console.error('Save cabinet data error:', error);
-    res.status(500).json({ error: 'Database error' });
+    console.error('❌ Save cabinet data error:', error);
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Error stack:', error.stack);
+    console.error('❌ Cabinet ID:', cabinetId);
+    res.status(500).json({ 
+      error: 'Database error',
+      details: error.message 
+    });
   }
 });
 
@@ -2088,6 +2385,8 @@ app.post('/api/cabinets/:cabinetId/pdf', requireAuth, async (req, res) => {
     
     const cabinet = {
       ...cabinetData,
+      // Backward compatibility: use cabinet_location as fallback for cabinet_name
+      cabinet_name: cabinetData.cabinet_name || cabinetData.cabinet_location || 'Unnamed Cabinet',
       power_supplies: JSON.parse(cabinetData.power_supplies || '[]'),
       distribution_blocks: JSON.parse(cabinetData.distribution_blocks || '[]'),
       diodes: JSON.parse(cabinetData.diodes || '[]'),
@@ -2218,6 +2517,8 @@ app.post('/api/sessions/:sessionId/export-pdfs', requireAuth, async (req, res) =
       
       sessionCabinets.push({
         ...cabinetData,
+        // Backward compatibility: use cabinet_location as fallback for cabinet_name
+        cabinet_name: cabinetData.cabinet_name || cabinetData.cabinet_location || 'Unnamed Cabinet',
         power_supplies: JSON.parse(cabinetData.power_supplies || '[]'),
         distribution_blocks: JSON.parse(cabinetData.distribution_blocks || '[]'),
         diodes: JSON.parse(cabinetData.diodes || '[]'),
@@ -6624,8 +6925,8 @@ app.post('/api/ii-documents/:documentId/ii-equipment', requireAuth, async (req, 
       await db.prepare('UPDATE session_ii_equipment SET clamp_on_rms_ammeter = ?, digit_dvm = ?, fluke_1630_earth_ground = ?, fluke_mt8200_micromapper = ?, notes = ?, synced = 0, updated_at = ? WHERE document_id = ? AND deleted = 0').run([clamp_on_rms_ammeter, digit_dvm, fluke_1630_earth_ground, fluke_mt8200_micromapper, notes, now, documentId]);
       equipment = await db.prepare('SELECT * FROM session_ii_equipment WHERE document_id = ? AND deleted = 0').get([documentId]);
     } else {
-      console.log(`🔍 DEBUG: Creating new equipment record with session_id: ${sessionId} and document_id: ${documentId}`);
-      await db.prepare('INSERT INTO session_ii_equipment (session_id, document_id, clamp_on_rms_ammeter, digit_dvm, fluke_1630_earth_ground, fluke_mt8200_micromapper, notes, uuid, synced, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)').run([sessionId, documentId, clamp_on_rms_ammeter, digit_dvm, fluke_1630_earth_ground, fluke_mt8200_micromapper, notes, uuid, now, now]);
+      console.log(`🔍 DEBUG: Creating new equipment record for document_id: ${documentId}`);
+      await db.prepare('INSERT INTO session_ii_equipment (document_id, clamp_on_rms_ammeter, digit_dvm, fluke_1630_earth_ground, fluke_mt8200_micromapper, notes, uuid, synced, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)').run([documentId, clamp_on_rms_ammeter, digit_dvm, fluke_1630_earth_ground, fluke_mt8200_micromapper, notes, uuid, now, now]);
       equipment = await db.prepare('SELECT * FROM session_ii_equipment WHERE document_id = ? AND deleted = 0').get([documentId]);
     }
     
@@ -6683,12 +6984,12 @@ app.post('/api/ii-documents/:documentId/ii-checklist', requireAuth, async (req, 
       await db.prepare('UPDATE session_ii_checklist SET answer = ?, comments = ?, performed_by = ?, date_completed = ?, measurement_ohms = ?, measurement_ac_ma = ?, measurement_dc_ma = ?, measurement_voltage = ?, measurement_frequency = ?, synced = 0, updated_at = ? WHERE id = ?').run([answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, now, existing.id]);
       item = await db.prepare('SELECT * FROM session_ii_checklist WHERE id = ?').get([existing.id]);
     } else {
-      console.log(`🔍 DEBUG: Creating new checklist item with session_id: ${sessionId} and document_id: ${documentId}`);
+      console.log(`🔍 DEBUG: Creating new checklist item for document_id: ${documentId}`);
       console.log(`🔍 DEBUG: Insert values:`, {
-        sessionId, documentId, section_name, item_name, answer, comments, performed_by, date_completed,
+        documentId, section_name, item_name, answer, comments, performed_by, date_completed,
         measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency
       });
-      await db.prepare('INSERT INTO session_ii_checklist (session_id, document_id, section_name, item_name, answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, uuid, synced, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)').run([sessionId, documentId, section_name, item_name, answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, uuid, now, now]);
+      await db.prepare('INSERT INTO session_ii_checklist (document_id, section_name, item_name, answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, uuid, synced, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)').run([documentId, section_name, item_name, answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, uuid, now, now]);
       item = await db.prepare('SELECT * FROM session_ii_checklist WHERE document_id = ? AND section_name = ? AND item_name = ? AND deleted = 0').get([documentId, section_name, item_name]);
     }
     
@@ -6725,11 +7026,10 @@ app.post('/api/ii-documents/:documentId/ii-equipment-used', requireAuth, async (
       return res.status(404).json({ error: 'Document not found' });
     }
     
-    const sessionId = document.session_id;
     const uuid = require('crypto').randomUUID();
     const now = new Date().toISOString();
     
-    await db.prepare('INSERT INTO session_ii_equipment_used (session_id, document_id, manufacturer, type, serial_number, recalibration_date, used_in_section, uuid, synced, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)').run([sessionId, documentId, manufacturer, type, serial_number, recalibration_date, used_in_section, uuid, now, now]);
+    await db.prepare('INSERT INTO session_ii_equipment_used (document_id, manufacturer, type, serial_number, recalibration_date, used_in_section, uuid, synced, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)').run([documentId, manufacturer, type, serial_number, recalibration_date, used_in_section, uuid, now, now]);
     
     const equipment = await db.prepare('SELECT * FROM session_ii_equipment_used WHERE document_id = ? AND deleted = 0 ORDER BY manufacturer, type').all([documentId]);
     res.json(equipment);
@@ -6984,7 +7284,8 @@ app.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => {
     
     // Return current nodes for active sessions or when no sessionId provided
     const nodes = await db.prepare(`
-      SELECT n.*, c.cabinet_name as assigned_cabinet_name
+      SELECT n.*, 
+        COALESCE(c.cabinet_name, c.cabinet_location) as assigned_cabinet_name
       FROM nodes n
       LEFT JOIN cabinets c ON n.assigned_cabinet_id = c.id
       WHERE n.customer_id = ?
@@ -7581,31 +7882,27 @@ async function startServer() {
     
     // Catch-all route for React Router (must be last)
     // Serves index.html for all routes that don't match API endpoints
-    if (useReactBuild) {
-      console.log('✅ Adding catch-all route for React Router');
-      console.log('📂 React build path:', reactBuildPath);
-      console.log('📄 Index.html path:', path.join(reactBuildPath, 'index.html'));
-      console.log('📄 Index.html exists?', fs.existsSync(path.join(reactBuildPath, 'index.html')));
-      
-      app.get('*', (req, res) => {
-        console.log('🎯 Catch-all route hit for:', req.path);
-        try {
-          const indexPath = path.join(reactBuildPath, 'index.html');
-          console.log('📤 Sending file:', indexPath);
-          res.sendFile(indexPath, (err) => {
-            if (err) {
-              console.error('❌ Error sending file:', err);
-              res.status(500).send('Error loading page');
-            }
-          });
-        } catch (error) {
-          console.error('❌ Catch-all route error:', error);
-          res.status(500).send('Server error');
-        }
-      });
-    } else {
-      console.log('⚠️  React build not found, not adding catch-all route');
-    }
+    console.log('✅ Adding catch-all route for React Router');
+    console.log('📂 React build path:', reactBuildPath);
+    console.log('📄 Index.html path:', path.join(reactBuildPath, 'index.html'));
+    console.log('📄 Index.html exists?', fs.existsSync(path.join(reactBuildPath, 'index.html')));
+    
+    app.get('*', (req, res) => {
+      console.log('🎯 Catch-all route hit for:', req.path);
+      try {
+        const indexPath = path.join(reactBuildPath, 'index.html');
+        console.log('📤 Sending file:', indexPath);
+        res.sendFile(indexPath, (err) => {
+          if (err) {
+            console.error('❌ Error sending file:', err);
+            res.status(500).send('Error loading page');
+          }
+        });
+      } catch (error) {
+        console.error('❌ Catch-all route error:', error);
+        res.status(500).send('Server error');
+      }
+    });
     
     // Start listening only after everything is initialized
     try {

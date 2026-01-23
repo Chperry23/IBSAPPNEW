@@ -11,8 +11,9 @@ class EnhancedMergeReplication {
     this.mongoConnectionString = mongoConnectionString;
     this.isConnected = false;
     
-    // Generate unique device ID for this client
-    this.deviceId = this.getOrCreateDeviceId();
+    // Device ID will be initialized asynchronously
+    this.deviceId = null;
+    this.deviceIdPromise = this.getOrCreateDeviceId();
     
     // All tables that need to be synced
     this.syncTables = [
@@ -28,7 +29,8 @@ class EnhancedMergeReplication {
       'session_ii_documents',
       'session_ii_equipment',
       'session_ii_checklist',
-      'session_ii_equipment_used'
+      'session_ii_equipment_used',
+      'csv_import_history'
     ];
     
     // Map table names to MongoDB models
@@ -45,7 +47,8 @@ class EnhancedMergeReplication {
       'session_ii_documents': models.SessionIIDocument,
       'session_ii_equipment': models.SessionIIEquipment,
       'session_ii_checklist': models.SessionIIChecklist,
-      'session_ii_equipment_used': models.SessionIIEquipmentUsed
+      'session_ii_equipment_used': models.SessionIIEquipmentUsed,
+      'csv_import_history': models.CSVImportHistory
     };
 
     // Conflict resolution strategy: 'local_wins', 'master_wins', 'latest_wins'
@@ -56,30 +59,42 @@ class EnhancedMergeReplication {
   // DEVICE IDENTIFICATION
   // ============================================================
 
-  getOrCreateDeviceId() {
+  async getOrCreateDeviceId() {
     try {
-      const result = this.localDb.prepare('SELECT value FROM sync_metadata WHERE key = ?').get(['device_id']);
+      const result = await this.localDb.prepare('SELECT value FROM sync_metadata WHERE key = ?').get(['device_id']);
       
       if (result && result.value) {
         console.log(`📱 Using existing device ID: ${result.value}`);
+        this.deviceId = result.value;
         return result.value;
       }
     } catch (error) {
-      // Table might not exist yet
+      // Table might not exist yet, will create it below
+      console.log('📱 sync_metadata table not found or empty, creating new device ID...');
     }
     
     // Generate new device ID based on hostname and random string
     const deviceId = `${require('os').hostname()}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     
     try {
-      this.localDb.prepare('CREATE TABLE IF NOT EXISTS sync_metadata (key TEXT PRIMARY KEY, value TEXT)').run();
-      this.localDb.prepare('INSERT OR REPLACE INTO sync_metadata (key, value) VALUES (?, ?)').run(['device_id', deviceId]);
+      await this.localDb.prepare('CREATE TABLE IF NOT EXISTS sync_metadata (key TEXT PRIMARY KEY, value TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)').run();
+      await this.localDb.prepare('INSERT OR REPLACE INTO sync_metadata (key, value) VALUES (?, ?)').run(['device_id', deviceId]);
       console.log(`📱 Generated new device ID: ${deviceId}`);
+      this.deviceId = deviceId;
     } catch (error) {
       console.error('Error storing device ID:', error);
+      this.deviceId = deviceId; // Use it anyway
     }
     
     return deviceId;
+  }
+
+  // Ensure device ID is initialized before using it
+  async ensureDeviceId() {
+    if (!this.deviceId) {
+      this.deviceId = await this.deviceIdPromise;
+    }
+    return this.deviceId;
   }
 
   // ============================================================
@@ -114,6 +129,9 @@ class EnhancedMergeReplication {
 
   async performFullMergeSync() {
     try {
+      // Ensure device ID is initialized
+      await this.ensureDeviceId();
+      
       if (!this.isConnected) {
         await this.connectToMongoDB();
       }
@@ -667,6 +685,9 @@ class EnhancedMergeReplication {
 
   async getSyncStatus() {
     try {
+      // Ensure device ID is initialized
+      await this.ensureDeviceId();
+      
       if (!this.isConnected) {
         await this.connectToMongoDB();
       }
@@ -739,6 +760,9 @@ class EnhancedMergeReplication {
   // ============================================================
 
   async ensureSyncColumns() {
+    // Ensure device ID is initialized
+    await this.ensureDeviceId();
+    
     console.log('🔧 Ensuring all tables have sync columns...');
     
     const columnsToAdd = [
@@ -1054,6 +1078,9 @@ class EnhancedMergeReplication {
 
   async performFullMergeSyncWithCleanup() {
     try {
+      // Ensure device ID is initialized
+      await this.ensureDeviceId();
+      
       if (!this.isConnected) {
         await this.connectToMongoDB();
       }

@@ -33,6 +33,13 @@ export default function SessionDetailFull() {
     try {
       // The session endpoint already returns cabinets!
       const sessionData = await api.getSession(id);
+      
+      // If this is an I&I session, redirect to I&I view
+      if (sessionData.session_type === 'ii') {
+        navigate(`/ii-session/${id}`);
+        return;
+      }
+      
       setSession(sessionData);
       setCabinets(sessionData.cabinets || []);
       setLocations(sessionData.locations || []);
@@ -164,10 +171,7 @@ export default function SessionDetailFull() {
       const result = await api.generateSessionPDF(id);
       if (result.success) {
         soundSystem.playSuccess();
-        showMessage('PDF generated successfully!', 'success');
-        if (result.pdfUrl) {
-          window.open(result.pdfUrl, '_blank');
-        }
+        showMessage('PDF downloaded successfully!', 'success');
       } else {
         soundSystem.playError();
         showMessage(result.error || 'Error generating PDF', 'error');
@@ -488,21 +492,61 @@ export default function SessionDetailFull() {
                 className="card hover:border-blue-500/50 transition-all group"
               >
                 <div className="card-header">
-                  <h3 className="font-semibold text-gray-100">{cabinet.cabinet_name}</h3>
+                  <h3 className="font-semibold text-gray-100">
+                    {cabinet.cabinet_name || cabinet.cabinet_location || 'Unnamed Cabinet'}
+                  </h3>
+                  {cabinet.cabinet_type === 'rack' && (
+                    <span className="badge badge-blue ml-2">Rack</span>
+                  )}
                 </div>
                 <div className="card-body">
-                  <div className="space-y-3 mb-4">
+                  <div className="space-y-2 mb-4">
                     <div className="flex items-center text-sm text-gray-400">
                       <span className="mr-2">📅</span>
-                      {new Date(cabinet.cabinet_date).toLocaleDateString()}
+                      {cabinet.cabinet_date ? new Date(cabinet.cabinet_date).toLocaleDateString() : 'No date'}
                     </div>
-                    {cabinet.location && (
+                    {(cabinet.location_name || cabinet.cabinet_location) && (
                       <div className="flex items-center text-sm text-gray-400">
                         <span className="mr-2">📍</span>
-                        {cabinet.location}
+                        {cabinet.location_name || cabinet.cabinet_location || 'Unassigned'}
                       </div>
                     )}
-                    <div>
+                    
+                    {/* Content Preview */}
+                    <div className="pt-2 border-t border-gray-700">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {cabinet.cabinet_type === 'rack' ? (
+                          <>
+                            <div className="text-gray-400">
+                              🖥️ {(cabinet.workstations || []).length} Workstations
+                            </div>
+                            <div className="text-gray-400">
+                              🔌 {(cabinet.power_supplies || []).length} Power
+                            </div>
+                            <div className="text-gray-400">
+                              🌐 {(cabinet.network_equipment || []).length} Network
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-gray-400">
+                              🎛️ {(cabinet.controllers || []).length} Controllers
+                            </div>
+                            <div className="text-gray-400">
+                              🔌 {(cabinet.power_supplies || []).length} Power
+                            </div>
+                            <div className="text-gray-400">
+                              📡 {(cabinet.distribution_blocks || []).length} Dist Blocks
+                            </div>
+                            <div className="text-gray-400">
+                              🌐 {(cabinet.network_equipment || []).length} Network
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="pt-2">
                       <span
                         className={`badge ${
                           cabinet.status === 'completed' ? 'badge-green' : 'badge-gray'
