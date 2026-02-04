@@ -69,12 +69,16 @@ router.post('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
     
     for (const [nodeId, maintenance] of Object.entries(maintenanceData)) {
       // Only insert if at least one field has data
+      // IMPORTANT: no_errors_checked can be false (meaning HAS errors), so check !== undefined
       const hasData = maintenance.dv_checked || maintenance.os_checked || maintenance.macafee_checked ||
                      maintenance.redundancy_checked || maintenance.cold_restart_checked || 
-                     maintenance.no_errors_checked || maintenance.hdd_replaced || maintenance.hf_updated ||
+                     (maintenance.no_errors_checked !== undefined) || // false means HAS errors, must be saved!
+                     maintenance.hdd_replaced || maintenance.hf_updated ||
                      maintenance.firmware_updated_checked || (maintenance.free_time && maintenance.free_time.trim()) ||
                      maintenance.performance_value || (maintenance.notes && maintenance.notes.trim()) ||
                      maintenance.is_custom_node || maintenance.completed;
+      
+      console.log(`[nodeMaintenance] Node ${nodeId}: hasData=${hasData}, no_errors_checked=${maintenance.no_errors_checked}`);
       
       if (hasData) {
         await db.prepare(`

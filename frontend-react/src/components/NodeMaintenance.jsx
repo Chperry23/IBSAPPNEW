@@ -95,6 +95,10 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
 
   const performSave = async (dataToSave, nodeId, field, value) => {
     setSaving(true);
+    console.log('💾 [NodeMaintenance] Saving to backend...');
+    console.log('💾 [NodeMaintenance] Node ID:', nodeId, 'Field:', field, 'Value:', value);
+    console.log('💾 [NodeMaintenance] Full data being sent:', dataToSave);
+    
     try {
       const response = await fetch(`/api/sessions/${sessionId}/node-maintenance`, {
         method: 'POST',
@@ -109,10 +113,10 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
         showMessage('Session expired. Please refresh and login again.', 'error');
       } else {
         const errorText = await response.text();
-        console.error('Save failed:', response.status, errorText);
+        console.error('❌ [NodeMaintenance] Save failed:', response.status, errorText);
       }
     } catch (error) {
-      console.error('Auto-save error:', error);
+      console.error('❌ [NodeMaintenance] Auto-save error:', error);
     } finally {
       setSaving(false);
     }
@@ -479,7 +483,13 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                             <input
                               type="checkbox"
                               checked={maint.hf_updated || false}
-                              onChange={(e) => autoSave(controller.id, 'hf_updated', e.target.checked)}
+                              onChange={(e) => {
+                                const updated = { ...maintenanceData };
+                                if (!updated[controller.id]) updated[controller.id] = {};
+                                updated[controller.id].hf_updated = e.target.checked;
+                                setMaintenanceData(updated);
+                                autoSave(controller.id, 'hf_updated', e.target.checked);
+                              }}
                               disabled={isCompleted}
                               className="w-4 h-4"
                             />
@@ -488,7 +498,13 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                             <input
                               type="checkbox"
                               checked={maint.redundancy_checked || false}
-                              onChange={(e) => autoSave(controller.id, 'redundancy_checked', e.target.checked)}
+                              onChange={(e) => {
+                                const updated = { ...maintenanceData };
+                                if (!updated[controller.id]) updated[controller.id] = {};
+                                updated[controller.id].redundancy_checked = e.target.checked;
+                                setMaintenanceData(updated);
+                                autoSave(controller.id, 'redundancy_checked', e.target.checked);
+                              }}
                               disabled={isCompleted}
                               className="w-4 h-4"
                             />
@@ -497,22 +513,47 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                             <input
                               type="checkbox"
                               checked={maint.cold_restart_checked || false}
-                              onChange={(e) => autoSave(controller.id, 'cold_restart_checked', e.target.checked)}
+                              onChange={(e) => {
+                                const updated = { ...maintenanceData };
+                                if (!updated[controller.id]) updated[controller.id] = {};
+                                updated[controller.id].cold_restart_checked = e.target.checked;
+                                setMaintenanceData(updated);
+                                autoSave(controller.id, 'cold_restart_checked', e.target.checked);
+                              }}
                               disabled={isCompleted}
                               className="w-4 h-4"
                             />
                           </td>
                           <td className="px-3 py-2 text-center">
-                            <input
-                              type="checkbox"
-                              checked={maint.no_errors_checked === false}
-                              onChange={(e) => {
-                                // Invert: Checking "Errors" box means HAS errors, so no_errors_checked = false
-                                autoSave(controller.id, 'no_errors_checked', !e.target.checked);
-                              }}
-                              disabled={isCompleted}
-                              className="w-4 h-4"
-                            />
+                            {(() => {
+                              const noErrors = maint.no_errors_checked ?? true; // default: no errors
+                              const hasErrors = !noErrors;
+
+                              return (
+                                <input
+                                  type="checkbox"
+                                  checked={hasErrors}
+                                  onChange={(e) => {
+                                    const newNoErrors = !e.target.checked; // checked Errors => noErrors=false
+                                    console.log('🔧 [NodeMaintenance] Errors checkbox changed for controller:', controller.id, controller.node_name);
+                                    console.log('🔧 [NodeMaintenance] Checkbox checked:', e.target.checked, '=> no_errors_checked:', newNoErrors);
+                                    
+                                    // Update local state immediately
+                                    const updated = { ...maintenanceData };
+                                    if (!updated[controller.id]) updated[controller.id] = {};
+                                    updated[controller.id].no_errors_checked = newNoErrors;
+                                    setMaintenanceData(updated);
+                                    
+                                    console.log('🔧 [NodeMaintenance] Updated local state for node:', controller.id);
+                                    
+                                    // Then save
+                                    autoSave(controller.id, 'no_errors_checked', newNoErrors);
+                                  }}
+                                  disabled={isCompleted}
+                                  className="w-4 h-4"
+                                />
+                              );
+                            })()}
                           </td>
                           <td className="px-3 py-2">
                             <input
@@ -535,6 +576,10 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                               type="checkbox"
                               checked={maint.completed || false}
                               onChange={(e) => {
+                                const updated = { ...maintenanceData };
+                                if (!updated[controller.id]) updated[controller.id] = {};
+                                updated[controller.id].completed = e.target.checked;
+                                setMaintenanceData(updated);
                                 autoSave(controller.id, 'completed', e.target.checked);
                                 if (e.target.checked) soundSystem.playSuccess();
                               }}
@@ -693,7 +738,13 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                             <input
                               type="checkbox"
                               checked={maint.dv_checked || false}
-                              onChange={(e) => autoSave(computer.id, 'dv_checked', e.target.checked)}
+                              onChange={(e) => {
+                                const updated = { ...maintenanceData };
+                                if (!updated[computer.id]) updated[computer.id] = {};
+                                updated[computer.id].dv_checked = e.target.checked;
+                                setMaintenanceData(updated);
+                                autoSave(computer.id, 'dv_checked', e.target.checked);
+                              }}
                               disabled={isCompleted}
                               className="w-4 h-4"
                             />
@@ -702,7 +753,13 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                             <input
                               type="checkbox"
                               checked={maint.os_checked || false}
-                              onChange={(e) => autoSave(computer.id, 'os_checked', e.target.checked)}
+                              onChange={(e) => {
+                                const updated = { ...maintenanceData };
+                                if (!updated[computer.id]) updated[computer.id] = {};
+                                updated[computer.id].os_checked = e.target.checked;
+                                setMaintenanceData(updated);
+                                autoSave(computer.id, 'os_checked', e.target.checked);
+                              }}
                               disabled={isCompleted}
                               className="w-4 h-4"
                             />
@@ -711,7 +768,13 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                             <input
                               type="checkbox"
                               checked={maint.macafee_checked || false}
-                              onChange={(e) => autoSave(computer.id, 'macafee_checked', e.target.checked)}
+                              onChange={(e) => {
+                                const updated = { ...maintenanceData };
+                                if (!updated[computer.id]) updated[computer.id] = {};
+                                updated[computer.id].macafee_checked = e.target.checked;
+                                setMaintenanceData(updated);
+                                autoSave(computer.id, 'macafee_checked', e.target.checked);
+                              }}
                               disabled={isCompleted}
                               className="w-4 h-4"
                             />
@@ -720,7 +783,13 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                             <input
                               type="checkbox"
                               checked={maint.hdd_replaced || false}
-                              onChange={(e) => autoSave(computer.id, 'hdd_replaced', e.target.checked)}
+                              onChange={(e) => {
+                                const updated = { ...maintenanceData };
+                                if (!updated[computer.id]) updated[computer.id] = {};
+                                updated[computer.id].hdd_replaced = e.target.checked;
+                                setMaintenanceData(updated);
+                                autoSave(computer.id, 'hdd_replaced', e.target.checked);
+                              }}
                               disabled={isCompleted}
                               className="w-4 h-4"
                             />
@@ -746,6 +815,10 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                               type="checkbox"
                               checked={maint.completed || false}
                               onChange={(e) => {
+                                const updated = { ...maintenanceData };
+                                if (!updated[computer.id]) updated[computer.id] = {};
+                                updated[computer.id].completed = e.target.checked;
+                                setMaintenanceData(updated);
                                 autoSave(computer.id, 'completed', e.target.checked);
                                 if (e.target.checked) soundSystem.playSuccess();
                               }}
@@ -885,7 +958,13 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                             <input
                               type="checkbox"
                               checked={maint.firmware_updated_checked || false}
-                              onChange={(e) => autoSave(switchNode.id, 'firmware_updated_checked', e.target.checked)}
+                              onChange={(e) => {
+                                const updated = { ...maintenanceData };
+                                if (!updated[switchNode.id]) updated[switchNode.id] = {};
+                                updated[switchNode.id].firmware_updated_checked = e.target.checked;
+                                setMaintenanceData(updated);
+                                autoSave(switchNode.id, 'firmware_updated_checked', e.target.checked);
+                              }}
                               disabled={isCompleted}
                               className="w-4 h-4"
                             />
@@ -911,6 +990,10 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                               type="checkbox"
                               checked={maint.completed || false}
                               onChange={(e) => {
+                                const updated = { ...maintenanceData };
+                                if (!updated[switchNode.id]) updated[switchNode.id] = {};
+                                updated[switchNode.id].completed = e.target.checked;
+                                setMaintenanceData(updated);
                                 autoSave(switchNode.id, 'completed', e.target.checked);
                                 if (e.target.checked) soundSystem.playSuccess();
                               }}

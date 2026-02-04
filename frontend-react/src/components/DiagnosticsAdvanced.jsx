@@ -29,53 +29,109 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
     { value: 'no_card', label: 'No Card', icon: '🚫', description: 'Card missing' },
   ];
 
+  // Helper to normalize maintenance data (array or object)
+  const normalizeMaintenance = (data) => {
+    console.log('🔍 [DiagnosticsAdvanced] Raw maintenance data type:', Array.isArray(data) ? 'array' : typeof data);
+    console.log('🔍 [DiagnosticsAdvanced] Raw maintenance data:', data);
+    
+    if (!data) return {};
+    if (Array.isArray(data)) {
+      const mapped = {};
+      data.forEach((item) => {
+        mapped[item.node_id] = item;
+      });
+      console.log('✅ [DiagnosticsAdvanced] Normalized array to object:', mapped);
+      return mapped;
+    }
+    if (typeof data === 'object') {
+      console.log('✅ [DiagnosticsAdvanced] Already object format');
+      return data;
+    }
+    return {};
+  };
+
   useEffect(() => {
     loadData();
   }, [sessionId, customerId]);
 
   const loadData = async () => {
     try {
+      console.log('📊 [DiagnosticsAdvanced] Loading data for session:', sessionId);
+      
       // Load diagnostics first
       const diagResponse = await fetch(`/api/sessions/${sessionId}/diagnostics`);
       let diagData = [];
       if (diagResponse.ok) {
         diagData = await diagResponse.json() || [];
+        console.log('📊 [DiagnosticsAdvanced] Loaded', diagData.length, 'diagnostic entries');
         setDiagnostics(diagData);
       }
 
       // Load node maintenance to check which controllers are marked with errors
+      console.log('🔍 [DiagnosticsAdvanced] Fetching node maintenance data...');
       const maintenanceResponse = await fetch(`/api/sessions/${sessionId}/node-maintenance`);
       let controllersMarkedWithErrors = [];
+      
       if (maintenanceResponse.ok) {
-        const maintenanceData = await maintenanceResponse.json();
-        // The "Errors" checkbox in Diagnostics: CHECKED = has errors
-        // Database field "no_errors_checked" - we need to invert this
-        // If the "Errors" checkbox is checked, no_errors_checked should be FALSE (has errors)
-        // So we show controllers where no_errors_checked is FALSE or missing
-        controllersMarkedWithErrors = Object.entries(maintenanceData)
-          .filter(([nodeId, data]) => data.no_errors_checked === false) // false = has errors
-          .map(([nodeId]) => parseInt(nodeId));
+        const raw = await maintenanceResponse.json();
+        const maintenanceData = normalizeMaintenance(raw);
+        
+        // Filter for controllers where no_errors_checked === false (meaning HAS errors)
+        const entries = Object.entries(maintenanceData);
+        console.log('🔍 [DiagnosticsAdvanced] Total maintenance entries:', entries.length);
+        
+        controllersMarkedWithErrors = entries
+          .filter(([nodeId, data]) => {
+            const hasErrors = data?.no_errors_checked === false;
+            if (hasErrors) {
+              console.log('⚠️ [DiagnosticsAdvanced] Node', nodeId, 'marked with errors:', data);
+            }
+            return hasErrors;
+          })
+          .map(([nodeId]) => Number(nodeId));
+        
+        console.log('⚠️ [DiagnosticsAdvanced] Controllers marked with errors (IDs):', controllersMarkedWithErrors);
+      } else {
+        console.warn('⚠️ [DiagnosticsAdvanced] Failed to load maintenance data');
       }
 
       // Get unique controller names from existing diagnostics
       const controllersWithIOErrors = [...new Set(diagData.map(d => d.controller_name))];
+      console.log('🔧 [DiagnosticsAdvanced] Controllers with I/O errors from diagnostics table:', controllersWithIOErrors);
       
       // Load nodes (pass sessionId for completed sessions to get snapshot data)
+      console.log('🔍 [DiagnosticsAdvanced] Fetching nodes for customer:', customerId);
       const nodesResponse = await fetch(`/api/customers/${customerId}/nodes${isCompleted ? `?sessionId=${sessionId}` : ''}`);
+      
       if (nodesResponse.ok) {
         const nodesData = await nodesResponse.json();
+        console.log('📊 [DiagnosticsAdvanced] Loaded', nodesData.length, 'total nodes');
+        
         // Show controllers that either:
         // 1. Have I/O errors in diagnostics table, OR
         // 2. Are marked with errors in node maintenance (no_errors_checked = false)
         const controllerNodes = nodesData.filter(
-          (n) =>
-            ['Controller', 'CIOC', 'CSLS'].includes(n.node_type) &&
-            !n.node_name.endsWith('-partner') &&
-            (controllersWithIOErrors.includes(n.node_name) || controllersMarkedWithErrors.includes(n.id))
+          (n) => {
+            const isController = ['Controller', 'CIOC', 'CSLS'].includes(n.node_type);
+            const notPartner = !n.node_name.endsWith('-partner');
+            const hasIOError = controllersWithIOErrors.includes(n.node_name);
+            const markedWithError = controllersMarkedWithErrors.includes(n.id);
+            
+            const shouldInclude = isController && notPartner && (hasIOError || markedWithError);
+            
+            if (shouldInclude) {
+              console.log('✅ [DiagnosticsAdvanced] Including controller:', n.node_name, 'ID:', n.id, 'hasIOError:', hasIOError, 'markedWithError:', markedWithError);
+            }
+            
+            return shouldInclude;
+          }
         );
+        
+        console.log('✅ [DiagnosticsAdvanced] Final controller list:', controllerNodes.length, 'controllers');
         setNodes(controllerNodes);
         buildControllersStructure(controllerNodes, diagData);
       } else {
+        console.warn('⚠️ [DiagnosticsAdvanced] Failed to load nodes');
         buildControllersStructure([], diagData);
       }
     } catch (error) {
