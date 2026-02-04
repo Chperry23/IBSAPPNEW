@@ -12,6 +12,7 @@ export default function Nodes() {
   const [loading, setLoading] = useState(true);
   const [showNewNodeModal, setShowNewNodeModal] = useState(false);
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+  const [editingNode, setEditingNode] = useState(null);
   const [message, setMessage] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -102,31 +103,29 @@ export default function Nodes() {
       // Parse header
       const headers = lines[0].split(',').map(h => h.trim());
       
-      // Parse nodes
+      // Parse nodes (allow rows with fewer columns so numeric-first node names aren't skipped)
       const nodes = [];
       for (let i = 1; i < lines.length; i++) {
         const values = lines[i].split(',');
-        if (values.length < headers.length) continue;
+        const rawName = values[0] != null ? String(values[0]).trim().replace(/^"|"$/g, '') : '';
+        if (!rawName) continue;
         
         const node = {
-          node_name: values[0]?.trim(),
-          node_type: values[1]?.trim(),
-          model: values[2]?.trim() || '',
-          description: values[3]?.trim() || '',
-          serial: values[4]?.trim() || '',
-          firmware: values[5]?.trim() || '',
-          version: values[6]?.trim() || '',
-          status: values[7]?.trim() || '',
-          is_redundant: values[8]?.trim().toLowerCase() === 'yes',
-          os_name: values[9]?.trim() || '',
-          os_service_pack: values[10]?.trim() || '',
-          bios_version: values[11]?.trim() || '',
-          oem_type_description: values[12]?.trim() || '',
+          node_name: rawName,
+          node_type: (values[1] != null ? String(values[1]).trim() : '') || '',
+          model: (values[2] != null ? String(values[2]).trim() : '') || '',
+          description: (values[3] != null ? String(values[3]).trim() : '') || '',
+          serial: (values[4] != null ? String(values[4]).trim() : '') || '',
+          firmware: (values[5] != null ? String(values[5]).trim() : '') || '',
+          version: (values[6] != null ? String(values[6]).trim() : '') || '',
+          status: (values[7] != null ? String(values[7]).trim() : '') || '',
+          is_redundant: (values[8] != null ? String(values[8]).trim().toLowerCase() : '') === 'yes',
+          os_name: (values[9] != null ? String(values[9]).trim() : '') || '',
+          os_service_pack: (values[10] != null ? String(values[10]).trim() : '') || '',
+          bios_version: (values[11] != null ? String(values[11]).trim() : '') || '',
+          oem_type_description: (values[12] != null ? String(values[12]).trim() : '') || '',
         };
-        
-        if (node.node_name) {
-          nodes.push(node);
-        }
+        nodes.push(node);
       }
 
       if (nodes.length === 0) {
@@ -150,6 +149,41 @@ export default function Nodes() {
     } catch (error) {
       soundSystem.playError();
       showMessage('Error importing nodes: ' + error.message, 'error');
+    }
+  };
+
+  const handleUpdateNode = async (e) => {
+    e.preventDefault();
+    if (!editingNode) return;
+    const formData = new FormData(e.target);
+    const data = {
+      node_type: formData.get('node_type') || null,
+      model: formData.get('model') || null,
+      description: formData.get('description') || null,
+      serial: formData.get('serial') || null,
+      firmware: formData.get('firmware') || null,
+      version: formData.get('version') || null,
+      status: formData.get('status') || null,
+      redundant: formData.get('redundant') ? 'Yes' : null,
+      os_name: formData.get('os_name') || null,
+      os_service_pack: formData.get('os_service_pack') || null,
+      bios_version: formData.get('bios_version') || null,
+      oem_type_description: formData.get('oem_type_description') || null,
+    };
+    try {
+      const result = await api.updateNode(editingNode.id, data);
+      if (result.success) {
+        soundSystem.playSuccess();
+        setEditingNode(null);
+        loadNodesData();
+        showMessage('Node updated', 'success');
+      } else {
+        soundSystem.playError();
+        showMessage(result.error || 'Error updating node', 'error');
+      }
+    } catch (error) {
+      soundSystem.playError();
+      showMessage('Error updating node: ' + error.message, 'error');
     }
   };
 
@@ -180,7 +214,7 @@ export default function Nodes() {
     return matchesSearch && matchesType;
   });
 
-  const nodeTypes = ['Controller', 'CIOC', 'CSLS', 'Wireless', 'Operator', 'Application', 'Other'];
+  const nodeTypes = ['Controller', 'CIOC', 'CSLS', 'SZ Controller', 'Charms Smart Logic Solver', 'DeltaV EIOC', 'Wireless', 'Local Operator', 'Local ProfessionalPlus', 'Power Supply', 'Operator', 'Application', 'Other'];
 
   if (loading) {
     return (
@@ -356,17 +390,26 @@ export default function Nodes() {
                   <tr key={node.id}>
                     <td className="font-medium text-gray-200">{node.node_name}</td>
                     <td>
-                      <span className="badge badge-blue">{node.node_type}</span>
+                      <span className={`badge badge-blue ${!node.node_type?.trim() ? 'opacity-75' : ''}`}>
+                        {node.node_type?.trim() || 'Not available'}
+                      </span>
                     </td>
-                    <td className="text-sm">{node.description || 'N/A'}</td>
+                    <td className="text-sm">{node.description?.trim() || 'Not available'}</td>
                     <td>
-                      <span className={`badge ${node.is_redundant ? 'badge-red' : 'badge-green'}`}>
-                        {node.is_redundant ? 'Redundant' : 'Active'}
+                      <span className={`badge ${(node.is_redundant ?? node.redundant) ? 'badge-red' : 'badge-green'}`}>
+                        {(node.is_redundant ?? node.redundant) ? 'Redundant' : 'Active'}
                       </span>
                     </td>
                     <td>
-                      <div className="flex gap-2">
-                        {node.assigned_to ? (
+                      <div className="flex gap-2 flex-wrap">
+                        <button
+                          onClick={() => setEditingNode(node)}
+                          className="text-amber-400 hover:text-amber-300 font-medium"
+                          title="Categorize / edit type and description"
+                        >
+                          Edit
+                        </button>
+                        {node.assigned_cabinet_id ? (
                           <button
                             onClick={async () => {
                               if (!confirm('Unassign this node from its cabinet?')) return;
@@ -483,6 +526,104 @@ export default function Nodes() {
                 <button type="submit" className="btn btn-primary">
                   Create Node
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit / Categorize Node Modal */}
+      {editingNode && (
+        <div className="modal-backdrop">
+          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-2xl w-full mx-4 border border-gray-700 max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center shrink-0">
+              <h3 className="text-lg font-semibold text-gray-100">✏️ Categorize node: {editingNode.node_name}</h3>
+              <button
+                onClick={() => setEditingNode(null)}
+                className="text-gray-400 hover:text-gray-200 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleUpdateNode} className="flex flex-col min-h-0">
+              <div className="px-6 py-4 space-y-4 overflow-y-auto">
+                <div>
+                  <label className="form-label">Node Type</label>
+                  <select name="node_type" className="form-select" defaultValue={editingNode.node_type ?? ''}>
+                    <option value="">Not available</option>
+                    {nodeTypes.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="form-label">Description</label>
+                  <textarea
+                    name="description"
+                    rows="2"
+                    placeholder="e.g. DeltaV SZ Controller, Windows Server..."
+                    className="form-textarea"
+                    defaultValue={editingNode.description ?? ''}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="form-label">Model</label>
+                    <input type="text" name="model" className="form-input" defaultValue={editingNode.model ?? ''} placeholder="e.g. VE3007" />
+                  </div>
+                  <div>
+                    <label className="form-label">Serial</label>
+                    <input type="text" name="serial" className="form-input" defaultValue={editingNode.serial ?? ''} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="form-label">Firmware</label>
+                    <input type="text" name="firmware" className="form-input" defaultValue={editingNode.firmware ?? ''} />
+                  </div>
+                  <div>
+                    <label className="form-label">Version</label>
+                    <input type="text" name="version" className="form-input" defaultValue={editingNode.version ?? ''} />
+                  </div>
+                </div>
+                <div>
+                  <label className="form-label">Status</label>
+                  <input type="text" name="status" className="form-input" defaultValue={editingNode.status ?? ''} placeholder="e.g. Current" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="form-label">OS Name</label>
+                    <input type="text" name="os_name" className="form-input" defaultValue={editingNode.os_name ?? ''} placeholder="e.g. Windows 10 Enterprise" />
+                  </div>
+                  <div>
+                    <label className="form-label">OS Service Pack</label>
+                    <input type="text" name="os_service_pack" className="form-input" defaultValue={editingNode.os_service_pack ?? ''} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="form-label">BIOS Version</label>
+                    <input type="text" name="bios_version" className="form-input" defaultValue={editingNode.bios_version ?? ''} />
+                  </div>
+                  <div>
+                    <label className="form-label">OEM Type</label>
+                    <input type="text" name="oem_type_description" className="form-input" defaultValue={editingNode.oem_type_description ?? ''} />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    name="redundant"
+                    id="edit_redundant"
+                    className="w-4 h-4"
+                    defaultChecked={!!(editingNode.redundant || editingNode.is_redundant)}
+                  />
+                  <label htmlFor="edit_redundant" className="text-gray-300">Redundant</label>
+                </div>
+              </div>
+              <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3 shrink-0">
+                <button type="button" onClick={() => setEditingNode(null)} className="btn btn-secondary">Cancel</button>
+                <button type="submit" className="btn btn-primary">Save</button>
               </div>
             </form>
           </div>

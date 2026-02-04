@@ -66,6 +66,8 @@ function getSharedStyles() {
       border-collapse: collapse; 
       margin-bottom: 20px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      page-break-inside: avoid;
+      page-break-before: auto;
     }
     th, td { 
       border: 1px solid #0066cc; 
@@ -88,6 +90,8 @@ function getSharedStyles() {
       color: white;
       border-radius: 8px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      page-break-after: avoid;
+      page-break-inside: avoid;
     }
     .status-pass { color: #28a745; font-weight: bold; }
     .status-fail { color: #dc3545; font-weight: bold; }
@@ -261,12 +265,6 @@ function getSharedStyles() {
       color: #0066cc;
       border-top: 1px solid #dee2e6;
     }
-      align-items: center;
-      padding: 12px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      background: #f8f9fa;
-    }
     .inspection-item:nth-child(odd) {
       background: #e3f2fd;
     }
@@ -290,8 +288,8 @@ function getSharedStyles() {
     }
     tr:nth-child(even) { background-color: #f8f9fa; }
     
-    /* Page Break Rules */
-    .cabinet-title { page-break-before: auto; page-break-after: avoid; page-break-inside: avoid; }
+    /* Page Break Rules - Each cabinet starts on new page */
+    .cabinet-title { page-break-before: always; page-break-after: avoid; page-break-inside: avoid; }
     .section-title { page-break-after: avoid; page-break-inside: avoid; }
     .maintenance-table { page-break-inside: auto; }
     table { page-break-inside: avoid; }
@@ -316,11 +314,77 @@ function getSharedStyles() {
     .summary-table { page-break-inside: avoid; }
     .overview-table { page-break-inside: avoid; }
     
+    /* Chart Styles */
+    .chart-container {
+      margin: 20px 0;
+      padding: 20px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .bar-chart {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-around;
+      height: 200px;
+      border-bottom: 2px solid #333;
+      border-left: 2px solid #333;
+      padding: 10px;
+      gap: 15px;
+    }
+    .bar {
+      flex: 1;
+      background: linear-gradient(180deg, #dc3545, #c82333);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: center;
+      border-radius: 4px 4px 0 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      min-height: 20px;
+    }
+    .bar-label {
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      color: white;
+      font-weight: bold;
+      padding: 8px 0;
+      font-size: 11px;
+    }
+    .bar-value {
+      position: absolute;
+      top: -25px;
+      font-weight: bold;
+      color: #333;
+      font-size: 12px;
+    }
+    .bar-wrapper {
+      position: relative;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .bar-category {
+      margin-top: 8px;
+      font-size: 10px;
+      text-align: center;
+      color: #666;
+      font-weight: bold;
+    }
+    
+    /* Section with title and content - keep together */
+    .section-group {
+      page-break-inside: avoid;
+      page-break-after: auto;
+    }
+    
     @media print {
-      .cabinet-title { page-break-before: auto; page-break-after: avoid; page-break-inside: avoid; }
-      .section-title { page-break-after: avoid; page-break-inside: avoid; }
+      .cabinet-title { page-break-before: always; page-break-after: avoid; page-break-inside: avoid; }
+      .section-title { page-break-after: avoid; page-break-inside: avoid; page-break-before: auto; }
+      .section-group { page-break-inside: avoid; page-break-after: auto; }
       .maintenance-table { page-break-inside: auto; }
-      table { page-break-inside: avoid; }
+      table { page-break-inside: avoid; page-break-before: auto; }
       .info-section { page-break-inside: avoid; }
       .inspection-grid { page-break-inside: avoid; }
       .comments-section { page-break-inside: avoid; }
@@ -511,14 +575,6 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
   const controllers = cabinet.controllers || [];
   
   return `
-    <div class="header">
-      <div class="logo">
-        ECI
-        <div class="logo-subtitle">Emerson Impact Partner</div>
-      </div>
-      <div class="title">DeltaV Preventive Maintenance Report</div>
-    </div>
-    
     <div class="cabinet-title">
       Cabinet ${cabinetNumber}: ${cabinet.cabinet_name}
     </div>
@@ -539,83 +595,96 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
     </div>
     
     ${powerSupplies.length > 0 ? `
-    <div class="section-title">Power Supply Measurements</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Voltage Type</th>
-          <th>Line to Neutral (V)</th>
-          <th>Line to Ground (V)</th>
-          <th>Neutral to Ground (mV)</th>
-          <th>DC Reading (V)</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${powerSupplies.map(ps => `
+    <div class="section-group">
+      <div class="section-title">Power Supply Measurements</div>
+      <table>
+        <thead>
           <tr>
-            <td><strong>${ps.voltage_type}</strong></td>
-            <td>${formatValue(ps.line_neutral)}</td>
-            <td>${formatValue(ps.line_ground)}</td>
-            <td>${formatValue(ps.neutral_ground)}</td>
-            <td>${formatValue(ps.dc_reading)}</td>
-            <td class="status-${ps.status}">${formatStatus(ps.status)}</td>
+            <th>Voltage Type</th>
+            <th>Line to Neutral (V)</th>
+            <th>Line to Ground (V)</th>
+            <th>Neutral to Ground (mV)</th>
+            <th>DC Reading (V)</th>
+            <th>Status</th>
           </tr>
-        `).join('')}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          ${powerSupplies.map(ps => `
+            <tr>
+              <td><strong>${ps.voltage_type}</strong></td>
+              <td>${formatValue(ps.line_neutral)}</td>
+              <td>${formatValue(ps.line_ground)}</td>
+              <td>${formatValue(ps.neutral_ground)}</td>
+              <td>${formatValue(ps.dc_reading)}</td>
+              <td class="status-${ps.status}">${formatStatus(ps.status)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
     ` : ''}
     
     ${distributionBlocks.length > 0 ? `
-    <div class="section-title">Distribution Blocks</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Block #</th>
-          <th>DC Reading (V)</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${distributionBlocks.map((block, index) => `
+    <div class="section-group">
+      <div class="section-title">Distribution Blocks</div>
+      <table>
+        <thead>
           <tr>
-            <td><strong>${index + 1}</strong></td>
-            <td>${formatValue(block.dc_reading)}</td>
-            <td class="status-${block.status}">${formatStatus(block.status)}</td>
+            <th>Block #</th>
+            <th>DC Reading (V)</th>
+            <th>Status</th>
           </tr>
-        `).join('')}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          ${distributionBlocks.map((block, index) => `
+            <tr>
+              <td><strong>${index + 1}</strong></td>
+              <td>${formatValue(block.dc_reading)}</td>
+              <td class="status-${block.status}">${formatStatus(block.status)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
     ` : ''}
     
     ${diodes.length > 0 ? `
-    <div class="section-title">Diodes</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Diode #</th>
-          <th>DC Reading (V)</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${diodes.map((diode, index) => `
+    <div class="section-group">
+      <div class="section-title">Diodes</div>
+      <table>
+        <thead>
           <tr>
-            <td><strong>${index + 1}</strong></td>
-            <td>${formatValue(diode.dc_reading)}</td>
-            <td class="status-${diode.status}">${formatStatus(diode.status)}</td>
+            <th>Diode #</th>
+            <th>DC Reading (V)</th>
+            <th>Status</th>
           </tr>
-        `).join('')}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          ${diodes.map((diode, index) => `
+            <tr>
+              <td><strong>${index + 1}</strong></td>
+              <td>${formatValue(diode.dc_reading)}</td>
+              <td class="status-${diode.status}">${formatStatus(diode.status)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
     ` : ''}
     
-    <div class="section-title">Inspection Items</div>
-    <div class="inspection-grid">
+    <div class="section-group">
+      <div class="section-title">Inspection Items</div>
+      <div class="inspection-grid">
       <div class="inspection-item">
         <span><strong>Cabinet fans running (if installed)</strong></span>
         <span class="status-${inspection.cabinet_fans || 'pass'}">${formatStatus(inspection.cabinet_fans)}</span>
       </div>
+      ${inspection.cabinet_fans === 'fail' ? `
+      <div class="inspection-item" style="grid-column: 1 / -1;">
+        <span><strong>Fan fail details</strong></span>
+        <span>Fan: ${inspection.fan_fail_fan || '—'} | Part #: ${inspection.fan_fail_part_number || '—'}</span>
+      </div>
+      ` : ''}
       <div class="inspection-item">
         <span><strong>Controller Status LEDs</strong></span>
         <span class="status-${inspection.controller_leds || 'pass'}">${formatStatus(inspection.controller_leds)}</span>
@@ -644,52 +713,57 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
         <span><strong>Ground Inspection</strong></span>
         <span class="status-${inspection.ground_inspection || 'pass'}">${formatStatus(inspection.ground_inspection)}</span>
       </div>
+      </div>
     </div>
     
     ${networkEquipment.length > 0 ? `
-    <div class="section-title">Network Equipment</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Equipment Type</th>
-          <th>Model Number</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${networkEquipment.map(equipment => `
+    <div class="section-group">
+      <div class="section-title">Network Equipment</div>
+      <table>
+        <thead>
           <tr>
-            <td><strong>${equipment.equipment_type}</strong></td>
-            <td>${equipment.model_number || 'Not specified'}</td>
-            <td class="status-${equipment.status}">${formatStatus(equipment.status)}</td>
+            <th>Equipment Type</th>
+            <th>Model Number</th>
+            <th>Status</th>
           </tr>
-        `).join('')}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          ${networkEquipment.map(equipment => `
+            <tr>
+              <td><strong>${equipment.equipment_type}</strong></td>
+              <td>${equipment.model_number || 'Not specified'}</td>
+              <td class="status-${equipment.status}">${formatStatus(equipment.status)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
     ` : ''}
     
     ${controllers.length > 0 ? `
-    <div class="section-title">Controllers</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Controller Name</th>
-          <th>Type</th>
-          <th>Model</th>
-          <th>Serial</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${controllers.map(controller => `
+    <div class="section-group">
+      <div class="section-title">Controllers</div>
+      <table>
+        <thead>
           <tr>
-            <td><strong>${controller.node_name || 'Unnamed Controller'}</strong></td>
-            <td><strong>${getEnhancedControllerType(controller)}</strong></td>
-            <td>${controller.model || 'Unknown'}</td>
-            <td>${controller.serial || 'No Serial'}</td>
+            <th>Controller Name</th>
+            <th>Type</th>
+            <th>Model</th>
+            <th>Serial</th>
           </tr>
-        `).join('')}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          ${controllers.map(controller => `
+            <tr>
+              <td><strong>${controller.node_name || 'Unnamed Controller'}</strong></td>
+              <td><strong>${getEnhancedControllerType(controller)}</strong></td>
+              <td>${controller.model || 'Unknown'}</td>
+              <td>${controller.serial || 'No Serial'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
     ` : ''}
     
     ${inspection.comments && inspection.comments.trim() ? `
@@ -731,14 +805,6 @@ function generatePDFHtml(data) {
       </style>
     </head>
     <body>
-      <div class="header">
-        <div class="logo">
-          ECI
-          <div class="logo-subtitle">Emerson Impact Partner</div>
-        </div>
-        <div class="title">DeltaV Preventive Maintenance Report</div>
-      </div>
-      
       <div class="info-section">
         <div class="info-row">
           <span class="info-label">Cabinet Location:</span>
@@ -751,83 +817,96 @@ function generatePDFHtml(data) {
       </div>
       
       ${powerSupplies.length > 0 ? `
-      <div class="section-title">Power Supply Measurements</div>
-      <table>
-        <thead>
-          <tr>
-            <th>Voltage Type</th>
-            <th>Line to Neutral (V)</th>
-            <th>Line to Ground (V)</th>
-            <th>Neutral to Ground (mV)</th>
-            <th>DC Reading (V)</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${powerSupplies.map(ps => `
+      <div class="section-group">
+        <div class="section-title">Power Supply Measurements</div>
+        <table>
+          <thead>
             <tr>
-              <td><strong>${ps.voltage_type}</strong></td>
-              <td>${formatValue(ps.line_neutral)}</td>
-              <td>${formatValue(ps.line_ground)}</td>
-              <td>${formatValue(ps.neutral_ground)}</td>
-              <td>${formatValue(ps.dc_reading)}</td>
-              <td class="status-${ps.status}">${formatStatus(ps.status)}</td>
+              <th>Voltage Type</th>
+              <th>Line to Neutral (V)</th>
+              <th>Line to Ground (V)</th>
+              <th>Neutral to Ground (mV)</th>
+              <th>DC Reading (V)</th>
+              <th>Status</th>
             </tr>
-          `).join('')}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            ${powerSupplies.map(ps => `
+              <tr>
+                <td><strong>${ps.voltage_type}</strong></td>
+                <td>${formatValue(ps.line_neutral)}</td>
+                <td>${formatValue(ps.line_ground)}</td>
+                <td>${formatValue(ps.neutral_ground)}</td>
+                <td>${formatValue(ps.dc_reading)}</td>
+                <td class="status-${ps.status}">${formatStatus(ps.status)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
       ` : ''}
       
       ${distributionBlocks.length > 0 ? `
-      <div class="section-title">Distribution Blocks</div>
-      <table>
-        <thead>
-          <tr>
-            <th>Block #</th>
-            <th>DC Reading (V)</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${distributionBlocks.map((block, index) => `
+      <div class="section-group">
+        <div class="section-title">Distribution Blocks</div>
+        <table>
+          <thead>
             <tr>
-              <td><strong>${index + 1}</strong></td>
-              <td>${formatValue(block.dc_reading)}</td>
-              <td class="status-${block.status}">${formatStatus(block.status)}</td>
+              <th>Block #</th>
+              <th>DC Reading (V)</th>
+              <th>Status</th>
             </tr>
-          `).join('')}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            ${distributionBlocks.map((block, index) => `
+              <tr>
+                <td><strong>${index + 1}</strong></td>
+                <td>${formatValue(block.dc_reading)}</td>
+                <td class="status-${block.status}">${formatStatus(block.status)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
       ` : ''}
       
       ${diodes.length > 0 ? `
-      <div class="section-title">Diodes</div>
-      <table>
-        <thead>
-          <tr>
-            <th>Diode #</th>
-            <th>DC Reading (V)</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${diodes.map((diode, index) => `
+      <div class="section-group">
+        <div class="section-title">Diodes</div>
+        <table>
+          <thead>
             <tr>
-              <td><strong>${index + 1}</strong></td>
-              <td>${formatValue(diode.dc_reading)}</td>
-              <td class="status-${diode.status}">${formatStatus(diode.status)}</td>
+              <th>Diode #</th>
+              <th>DC Reading (V)</th>
+              <th>Status</th>
             </tr>
-          `).join('')}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            ${diodes.map((diode, index) => `
+              <tr>
+                <td><strong>${index + 1}</strong></td>
+                <td>${formatValue(diode.dc_reading)}</td>
+                <td class="status-${diode.status}">${formatStatus(diode.status)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
       ` : ''}
       
-      <div class="section-title">Inspection Items</div>
-      <div class="inspection-grid">
-        <div class="inspection-item">
+      <div class="section-group">
+        <div class="section-title">Inspection Items</div>
+        <div class="inspection-grid">
+          <div class="inspection-item">
           <span><strong>Cabinet fans running (if installed)</strong></span>
           <span class="status-${inspection.cabinet_fans || 'pass'}">${formatStatus(inspection.cabinet_fans)}</span>
         </div>
+        ${inspection.cabinet_fans === 'fail' ? `
+        <div class="inspection-item" style="grid-column: 1 / -1;">
+          <span><strong>Fan fail details</strong></span>
+          <span>Fan: ${inspection.fan_fail_fan || '—'} | Part #: ${inspection.fan_fail_part_number || '—'}</span>
+        </div>
+        ` : ''}
         <div class="inspection-item">
           <span><strong>Controller Status LEDs</strong></span>
           <span class="status-${inspection.controller_leds || 'pass'}">${formatStatus(inspection.controller_leds)}</span>
@@ -856,52 +935,57 @@ function generatePDFHtml(data) {
           <span><strong>Ground Inspection</strong></span>
           <span class="status-${inspection.ground_inspection || 'pass'}">${formatStatus(inspection.ground_inspection)}</span>
         </div>
+        </div>
       </div>
       
       ${networkEquipment.length > 0 ? `
-      <div class="section-title">Network Equipment</div>
-      <table>
-        <thead>
-          <tr>
-            <th>Equipment Type</th>
-            <th>Model Number</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${networkEquipment.map(equipment => `
+      <div class="section-group">
+        <div class="section-title">Network Equipment</div>
+        <table>
+          <thead>
             <tr>
-              <td><strong>${equipment.equipment_type}</strong></td>
-              <td>${equipment.model_number || 'Not specified'}</td>
-              <td class="status-${equipment.status}">${formatStatus(equipment.status)}</td>
+              <th>Equipment Type</th>
+              <th>Model Number</th>
+              <th>Status</th>
             </tr>
-          `).join('')}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            ${networkEquipment.map(equipment => `
+              <tr>
+                <td><strong>${equipment.equipment_type}</strong></td>
+                <td>${equipment.model_number || 'Not specified'}</td>
+                <td class="status-${equipment.status}">${formatStatus(equipment.status)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
       ` : ''}
       
       ${controllers.length > 0 ? `
-      <div class="section-title">Controllers</div>
-      <table>
-        <thead>
-          <tr>
-            <th>Controller Name</th>
-            <th>Type</th>
-            <th>Model</th>
-            <th>Serial</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${controllers.map(controller => `
+      <div class="section-group">
+        <div class="section-title">Controllers</div>
+        <table>
+          <thead>
             <tr>
-              <td><strong>${controller.node_name || 'Unnamed Controller'}</strong></td>
-              <td><strong>${getEnhancedControllerType(controller)}</strong></td>
-              <td>${controller.model || 'Unknown'}</td>
-              <td>${controller.serial || 'No Serial'}</td>
+              <th>Controller Name</th>
+              <th>Type</th>
+              <th>Model</th>
+              <th>Serial</th>
             </tr>
-          `).join('')}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            ${controllers.map(controller => `
+              <tr>
+                <td><strong>${controller.node_name || 'Unnamed Controller'}</strong></td>
+                <td><strong>${getEnhancedControllerType(controller)}</strong></td>
+                <td>${controller.model || 'Unknown'}</td>
+                <td>${controller.serial || 'No Serial'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
       ` : ''}
       
       ${inspection.comments && inspection.comments.trim() ? `
@@ -922,5 +1006,125 @@ function generatePDFHtml(data) {
   `;
 }
 
-module.exports = { getSharedStyles, generateSingleCabinetHtml, generatePDFHtml };
+/**
+ * Generate HTML for the session-level Risk Assessment page (score, issues, recommendations, error breakdown).
+ * @param {object} risk - Result from generateRiskAssessment(cabinets, nodeMaintenanceData)
+ * @param {string} sessionName - Session name for the header
+ */
+function generateRiskAssessmentPage(risk, sessionName) {
+  const {
+    riskScore,
+    riskLevel,
+    riskColor,
+    criticalIssues,
+    warnings,
+    slightIssues,
+    recommendations,
+    totalComponents,
+    failedComponents,
+    riskBreakdown
+  } = risk;
+
+  return `
+    <div class="page-break" style="page-break-before: always;">
+      <h2 style="text-align: center; color: #2563eb; font-size: 28px; margin: 20px 0; padding: 15px; border-bottom: 3px solid #2563eb;">Risk Assessment — ${sessionName || 'PM Session'}</h2>
+      <div class="risk-summary">
+        <div class="risk-score-box" style="background: ${riskColor}; color: white;">
+          <div class="risk-score">${riskScore}</div>
+          <div class="risk-level">${riskLevel}</div>
+        </div>
+        <div class="risk-stats">
+          <div class="stat-item"><span class="stat-label">Total components / items assessed</span><span class="stat-value">${totalComponents}</span></div>
+          <div class="stat-item"><span class="stat-label">Failed / out of spec</span><span class="stat-value">${failedComponents}</span></div>
+        </div>
+      </div>
+      ${criticalIssues.length > 0 ? `
+      <div class="issues-section critical">
+        <div class="issues-header">Critical issues</div>
+        <ul class="issues-list">${criticalIssues.map(i => `<li>${i}</li>`).join('')}</ul>
+      </div>
+      ` : ''}
+      ${warnings.length > 0 ? `
+      <div class="issues-section warning">
+        <div class="issues-header">Moderate issues</div>
+        <ul class="issues-list">${warnings.map(i => `<li>${i}</li>`).join('')}</ul>
+      </div>
+      ` : ''}
+      ${slightIssues.length > 0 ? `
+      <div class="issues-section slight">
+        <div class="issues-header">Slight issues</div>
+        <ul class="issues-list">${slightIssues.map(i => `<li>${i}</li>`).join('')}</ul>
+      </div>
+      ` : ''}
+      <div class="recommendations-section">
+        <div class="recommendations-header">Recommendations</div>
+        <ul class="recommendations-list">${recommendations.map(r => `<li>${r}</li>`).join('')}</ul>
+      </div>
+      <div class="risk-breakdown-section">
+        <div class="breakdown-header">Error / issue breakdown (scored items)</div>
+        <ul class="breakdown-list">${riskBreakdown.length ? riskBreakdown.map(b => `<li>${b}</li>`).join('') : '<li>No issues scored.</li>'}</ul>
+        <div class="total-score">Total risk score: ${riskScore} — ${riskLevel}</div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Generate professional cover page with logo
+ */
+
+
+/**
+ * Generate professional cover page with ECI DeltaV logo
+ */
+function generateCoverPage(sessionInfo, customerName, sessionDate) {
+  const fs = require('fs');
+  const path = require('path');
+  
+  // Load logo from file and convert to base64
+  const logoPath = path.join(__dirname, '../../../ECI_POWER_DELTAV-square.png');
+  let logoBase64 = '';
+  
+  try {
+    const logoBuffer = fs.readFileSync(logoPath);
+    logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`;
+  } catch (err) {
+    console.error('Error loading logo:', err);
+    // Fallback to empty string if logo can't be loaded
+    logoBase64 = '';
+  }
+  
+  return `
+    <div style="text-align: center; padding: 60px 40px; min-height: 800px; display: flex; flex-direction: column; justify-content: center;">
+      ${logoBase64 ? `
+      <div style="margin-bottom: 40px;">
+        <img src="${logoBase64}" style="width: 320px; height: auto; margin: 0 auto; display: block;" alt="ECI DeltaV Logo"/>
+      </div>
+      ` : ''}
+      
+      <h1 style="color: #2563eb; font-size: 42px; font-weight: bold; margin: 30px 0 10px 0;">DeltaV Preventative Maintenance Report</h1>
+      
+      <div style="max-width: 500px; margin: 40px auto; background: #f8f9fa; padding: 30px; border: 3px solid #2563eb; border-radius: 12px; text-align: left; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+        <div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px dotted #ddd;">
+          <span style="font-weight: bold; color: #0066cc; font-size: 16px; display: inline-block; width: 120px;">Date:</span>
+          <span style="font-size: 16px; color: #333;">${sessionDate ? new Date(sessionDate).toLocaleDateString() : new Date().toLocaleDateString()}</span>
+        </div>
+        <div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px dotted #ddd;">
+          <span style="font-weight: bold; color: #0066cc; font-size: 16px; display: inline-block; width: 120px;">Customer:</span>
+          <span style="font-size: 16px; color: #333;">${customerName || '—'}</span>
+        </div>
+        <div style="margin-bottom: 0;">
+          <span style="font-weight: bold; color: #0066cc; font-size: 16px; display: inline-block; width: 120px;">Session:</span>
+          <span style="font-size: 16px; color: #333;">${sessionInfo.session_name || '—'}</span>
+        </div>
+      </div>
+      
+      <p style="font-size: 14px; color: #666; margin-top: 50px; font-style: italic;">
+        This document includes the Summary of the PM for all equipment for <strong>${customerName || 'this customer'}</strong>.
+      </p>
+    </div>
+  `;
+}
+
+module.exports = { getSharedStyles, generateSingleCabinetHtml, generatePDFHtml, generateRiskAssessmentPage, generateCoverPage };
 

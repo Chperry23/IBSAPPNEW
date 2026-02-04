@@ -104,8 +104,15 @@ export default function PMNotes({ sessionId, isCompleted }) {
     }
   };
 
+  const hasAnyNotes = notes.additional_work_notes?.trim() || notes.troubleshooting_notes?.trim() || notes.recommendations_notes?.trim() || (Array.isArray(notes.common_tasks) && notes.common_tasks.length > 0);
+
   return (
     <div className="space-y-6">
+      {isCompleted && !hasAnyNotes && (
+        <div className="px-4 py-3 rounded-lg bg-gray-700/50 text-gray-400 border border-gray-600">
+          No PM notes were recorded for this session.
+        </div>
+      )}
       {/* Message */}
       {message && (
         <div

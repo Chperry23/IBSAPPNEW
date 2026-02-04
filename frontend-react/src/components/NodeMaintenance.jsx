@@ -9,6 +9,10 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
   const [searchTerm, setSearchTerm] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveTimeout, setSaveTimeout] = useState(null);
+  const [showCustomController, setShowCustomController] = useState(false);
+  const [showCustomComputer, setShowCustomComputer] = useState(false);
+  const [showCustomSwitch, setShowCustomSwitch] = useState(false);
+  const [customNode, setCustomNode] = useState({ node_name: '', node_type: '', model: '', serial: '' });
 
   useEffect(() => {
     loadData();
@@ -16,40 +20,40 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
 
   const loadData = async () => {
     try {
-      // Load nodes
-      const nodesResponse = await fetch(`/api/customers/${customerId}/nodes?sessionId=${sessionId}`);
-      if (nodesResponse.ok) {
-        const nodesData = await nodesResponse.json();
-        console.log('Nodes data received:', nodesData);
-        // Ensure it's an array
-        const nodesArray = Array.isArray(nodesData) ? nodesData : [];
-        // Filter out partner controllers
-        const filtered = nodesArray.filter((n) => !n.node_name?.endsWith('-partner'));
-        setNodes(filtered);
-      }
-
-      // Load maintenance data
+      // Load maintenance data first (we need it to show rows for old PMs with no snapshot)
       const maintenanceResponse = await fetch(`/api/sessions/${sessionId}/node-maintenance`);
       if (maintenanceResponse.ok) {
         const data = await maintenanceResponse.json();
-        console.log('Maintenance data received:', data);
-        
-        // Check if it's already an object (expected format) or needs conversion
         if (typeof data === 'object' && !Array.isArray(data)) {
-          // Already in {nodeId: {data}} format
           setMaintenanceData(data);
         } else if (Array.isArray(data)) {
-          // Convert array to object format
           const mapped = {};
           data.forEach((item) => {
             mapped[item.node_id] = item;
           });
           setMaintenanceData(mapped);
         } else {
-          console.warn('Unexpected maintenance data format:', data);
           setMaintenanceData({});
         }
       }
+
+      // Load nodes (for completed sessions this returns snapshot; if empty, fall back to current nodes so we can show maintenance data)
+      let nodesArray = [];
+      const nodesResponse = await fetch(`/api/customers/${customerId}/nodes?sessionId=${sessionId}`);
+      if (nodesResponse.ok) {
+        const nodesData = await nodesResponse.json();
+        nodesArray = Array.isArray(nodesData) ? nodesData : [];
+      }
+      // For completed sessions with empty snapshot (e.g. old PMs), use current customer nodes so line-by-line maintenance still shows
+      if (isCompleted && nodesArray.length === 0) {
+        const fallbackResponse = await fetch(`/api/customers/${customerId}/nodes`);
+        if (fallbackResponse.ok) {
+          const fallbackData = await fallbackResponse.json();
+          nodesArray = Array.isArray(fallbackData) ? fallbackData : [];
+        }
+      }
+      const filtered = nodesArray.filter((n) => !n.node_name?.endsWith('-partner'));
+      setNodes(filtered);
     } catch (error) {
       console.error('Error loading:', error);
     } finally {
@@ -218,6 +222,87 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
     return { displayType: node.node_type, perfType: 'free_time', min: 1, max: 100 };
   };
 
+  const addCustomNode = async (nodeType) => {
+    if (!customNode.node_name.trim()) {
+      showMessage('Please enter a node name', 'error');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/custom-node`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          ...customNode,
+          node_type: nodeType,
+          customer_id: customerId
+        }),
+      });
+
+      if (response.ok) {
+        const newNode = await response.json();
+        
+        // Add the node to the list
+        setNodes([...nodes, newNode]);
+        
+        // Reload maintenance data to get the new entry with is_custom_node flag
+        const maintenanceResponse = await fetch(`/api/sessions/${sessionId}/node-maintenance`, {
+          credentials: 'include'
+        });
+        if (maintenanceResponse.ok) {
+          const data = await maintenanceResponse.json();
+          setMaintenanceData(data);
+        }
+        
+        setCustomNode({ node_name: '', node_type: '', model: '', serial: '' });
+        setShowCustomController(false);
+        setShowCustomComputer(false);
+        setShowCustomSwitch(false);
+        soundSystem.playSuccess();
+        showMessage('Custom node added successfully!', 'success');
+      } else {
+        const errorData = await response.json();
+        showMessage(errorData.error || 'Failed to add custom node', 'error');
+      }
+    } catch (error) {
+      console.error('Error adding custom node:', error);
+      showMessage('Error adding custom node', 'error');
+    }
+  };
+
+  const deleteCustomNode = async (nodeId) => {
+    if (!confirm('Are you sure you want to remove this custom node?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/custom-node/${nodeId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        // Remove from nodes list
+        setNodes(nodes.filter(n => n.id !== nodeId));
+        
+        // Remove from maintenance data
+        const updatedMaintenance = { ...maintenanceData };
+        delete updatedMaintenance[nodeId];
+        setMaintenanceData(updatedMaintenance);
+        
+        soundSystem.playSuccess();
+        showMessage('Custom node removed successfully!', 'success');
+      } else {
+        const errorData = await response.json();
+        showMessage(errorData.error || 'Failed to delete custom node', 'error');
+      }
+    } catch (error) {
+      console.error('Error deleting custom node:', error);
+      showMessage('Error deleting custom node', 'error');
+    }
+  };
+
   // Separate equipment types
   const controllers = nodes.filter((n) =>
     ['Controller', 'CIOC', 'CSLS', 'DeltaV EIOC', 'SIS'].includes(n.node_type)
@@ -347,7 +432,9 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                       <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Redundancy</th>
                       <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Cold Restart</th>
                       <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Errors</th>
+                      <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Notes/Reason</th>
                       <th className="px-3 py-2 text-center text-xs text-green-400 bg-gray-700">✓ Done</th>
+                      {!isCompleted && <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700">
@@ -427,6 +514,22 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                               className="w-4 h-4"
                             />
                           </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              placeholder="Add notes/reason..."
+                              value={maint.notes || ''}
+                              onChange={(e) => {
+                                const updated = { ...maintenanceData };
+                                if (!updated[controller.id]) updated[controller.id] = {};
+                                updated[controller.id].notes = e.target.value;
+                                setMaintenanceData(updated);
+                              }}
+                              onBlur={(e) => autoSave(controller.id, 'notes', e.target.value, true)}
+                              disabled={isCompleted}
+                              className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-gray-200 text-xs"
+                            />
+                          </td>
                           <td className="px-3 py-2 text-center">
                             <input
                               type="checkbox"
@@ -439,12 +542,81 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                               className="w-5 h-5"
                             />
                           </td>
+                          {!isCompleted && (
+                            <td className="px-3 py-2 text-center">
+                              {maint.is_custom_node && (
+                                <button
+                                  onClick={() => deleteCustomNode(controller.id)}
+                                  className="text-red-400 hover:text-red-300 text-xs"
+                                  title="Delete custom node"
+                                >
+                                  🗑️
+                                </button>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
+              {!isCompleted && (
+                <div className="card-footer">
+                  {!showCustomController ? (
+                    <button
+                      onClick={() => setShowCustomController(true)}
+                      className="btn btn-secondary btn-sm"
+                    >
+                      + Add Custom Controller
+                    </button>
+                  ) : (
+                    <div className="bg-gray-700 p-4 rounded-lg">
+                      <h5 className="text-sm font-semibold text-gray-200 mb-3">Add Custom Controller</h5>
+                      <div className="grid grid-cols-2 gap-3">
+                        <input
+                          type="text"
+                          placeholder="Controller Name *"
+                          value={customNode.node_name}
+                          onChange={(e) => setCustomNode({...customNode, node_name: e.target.value})}
+                          className="form-input text-sm"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Model"
+                          value={customNode.model}
+                          onChange={(e) => setCustomNode({...customNode, model: e.target.value})}
+                          className="form-input text-sm"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Serial Number"
+                          value={customNode.serial}
+                          onChange={(e) => setCustomNode({...customNode, serial: e.target.value})}
+                          className="form-input text-sm"
+                        />
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => addCustomNode('Controller')}
+                          className="btn btn-success btn-sm"
+                        >
+                          Add Controller
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowCustomController(false);
+                            setCustomNode({ node_name: '', node_type: '', model: '', serial: '' });
+                          }}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -502,7 +674,9 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                       <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">OS Update</th>
                       <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">McAfee</th>
                       <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">HDD Replaced</th>
+                      <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Notes/Reason</th>
                       <th className="px-3 py-2 text-center text-xs text-green-400 bg-gray-700">✓ Done</th>
+                      {!isCompleted && <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700">
@@ -551,6 +725,22 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                               className="w-4 h-4"
                             />
                           </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              placeholder="Add notes/reason..."
+                              value={maint.notes || ''}
+                              onChange={(e) => {
+                                const updated = { ...maintenanceData };
+                                if (!updated[computer.id]) updated[computer.id] = {};
+                                updated[computer.id].notes = e.target.value;
+                                setMaintenanceData(updated);
+                              }}
+                              onBlur={(e) => autoSave(computer.id, 'notes', e.target.value, true)}
+                              disabled={isCompleted}
+                              className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-gray-200 text-xs"
+                            />
+                          </td>
                           <td className="px-3 py-2 text-center">
                             <input
                               type="checkbox"
@@ -563,12 +753,74 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                               className="w-5 h-5"
                             />
                           </td>
+                          {!isCompleted && (
+                            <td className="px-3 py-2 text-center">
+                              {maint.is_custom_node && (
+                                <button
+                                  onClick={() => deleteCustomNode(computer.id)}
+                                  className="text-red-400 hover:text-red-300 text-xs"
+                                  title="Delete custom node"
+                                >
+                                  🗑️
+                                </button>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
+              {!isCompleted && (
+                <div className="card-footer">
+                  {!showCustomComputer ? (
+                    <button
+                      onClick={() => setShowCustomComputer(true)}
+                      className="btn btn-secondary btn-sm"
+                    >
+                      + Add Custom Workstation
+                    </button>
+                  ) : (
+                    <div className="bg-gray-700 p-4 rounded-lg">
+                      <h5 className="text-sm font-semibold text-gray-200 mb-3">Add Custom Workstation</h5>
+                      <div className="grid grid-cols-2 gap-3">
+                        <input
+                          type="text"
+                          placeholder="Workstation Name *"
+                          value={customNode.node_name}
+                          onChange={(e) => setCustomNode({...customNode, node_name: e.target.value})}
+                          className="form-input text-sm"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Model"
+                          value={customNode.model}
+                          onChange={(e) => setCustomNode({...customNode, model: e.target.value})}
+                          className="form-input text-sm"
+                        />
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => addCustomNode('Local Operator')}
+                          className="btn btn-success btn-sm"
+                        >
+                          Add Workstation
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowCustomComputer(false);
+                            setCustomNode({ node_name: '', node_type: '', model: '', serial: '' });
+                          }}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -615,7 +867,9 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                       <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Switch</th>
                       <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Serial</th>
                       <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Firmware Updated</th>
+                      <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Notes/Reason</th>
                       <th className="px-3 py-2 text-center text-xs text-green-400 bg-gray-700">✓ Done</th>
+                      {!isCompleted && <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700">
@@ -636,6 +890,22 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                               className="w-4 h-4"
                             />
                           </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              placeholder="Add notes/reason..."
+                              value={maint.notes || ''}
+                              onChange={(e) => {
+                                const updated = { ...maintenanceData };
+                                if (!updated[switchNode.id]) updated[switchNode.id] = {};
+                                updated[switchNode.id].notes = e.target.value;
+                                setMaintenanceData(updated);
+                              }}
+                              onBlur={(e) => autoSave(switchNode.id, 'notes', e.target.value, true)}
+                              disabled={isCompleted}
+                              className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-gray-200 text-xs"
+                            />
+                          </td>
                           <td className="px-3 py-2 text-center">
                             <input
                               type="checkbox"
@@ -648,12 +918,74 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                               className="w-5 h-5"
                             />
                           </td>
+                          {!isCompleted && (
+                            <td className="px-3 py-2 text-center">
+                              {maint.is_custom_node && (
+                                <button
+                                  onClick={() => deleteCustomNode(switchNode.id)}
+                                  className="text-red-400 hover:text-red-300 text-xs"
+                                  title="Delete custom node"
+                                >
+                                  🗑️
+                                </button>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
+              {!isCompleted && (
+                <div className="card-footer">
+                  {!showCustomSwitch ? (
+                    <button
+                      onClick={() => setShowCustomSwitch(true)}
+                      className="btn btn-secondary btn-sm"
+                    >
+                      + Add Custom Switch
+                    </button>
+                  ) : (
+                    <div className="bg-gray-700 p-4 rounded-lg">
+                      <h5 className="text-sm font-semibold text-gray-200 mb-3">Add Custom Network Switch</h5>
+                      <div className="grid grid-cols-2 gap-3">
+                        <input
+                          type="text"
+                          placeholder="Switch Name *"
+                          value={customNode.node_name}
+                          onChange={(e) => setCustomNode({...customNode, node_name: e.target.value})}
+                          className="form-input text-sm"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Serial Number"
+                          value={customNode.serial}
+                          onChange={(e) => setCustomNode({...customNode, serial: e.target.value})}
+                          className="form-input text-sm"
+                        />
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => addCustomNode('Smart Network Devices')}
+                          className="btn btn-success btn-sm"
+                        >
+                          Add Switch
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowCustomSwitch(false);
+                            setCustomNode({ node_name: '', node_type: '', model: '', serial: '' });
+                          }}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </>

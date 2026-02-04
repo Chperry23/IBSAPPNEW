@@ -12,7 +12,8 @@ router.get('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
     const maintenanceData = await db.prepare(`
       SELECT node_id, dv_checked, os_checked, macafee_checked, 
              free_time, redundancy_checked, cold_restart_checked, no_errors_checked,
-             hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked
+             hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked,
+             notes, is_custom_node, completed
       FROM session_node_maintenance 
       WHERE session_id = ?
     `).all([sessionId]);
@@ -32,7 +33,10 @@ router.get('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
         performance_type: item.performance_type || 'free_time',
         performance_value: item.performance_value || null,
         hf_updated: Boolean(item.hf_updated),
-        firmware_updated_checked: Boolean(item.firmware_updated_checked)
+        firmware_updated_checked: Boolean(item.firmware_updated_checked),
+        notes: item.notes || '',
+        is_custom_node: Boolean(item.is_custom_node),
+        completed: Boolean(item.completed)
       };
     });
     
@@ -69,15 +73,17 @@ router.post('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
                      maintenance.redundancy_checked || maintenance.cold_restart_checked || 
                      maintenance.no_errors_checked || maintenance.hdd_replaced || maintenance.hf_updated ||
                      maintenance.firmware_updated_checked || (maintenance.free_time && maintenance.free_time.trim()) ||
-                     maintenance.performance_value;
+                     maintenance.performance_value || (maintenance.notes && maintenance.notes.trim()) ||
+                     maintenance.is_custom_node || maintenance.completed;
       
       if (hasData) {
         await db.prepare(`
           INSERT INTO session_node_maintenance (
             session_id, node_id, dv_checked, os_checked, macafee_checked,
             free_time, redundancy_checked, cold_restart_checked, no_errors_checked,
-            hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked,
+            notes, is_custom_node, completed
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run([
           sessionId,
           parseInt(nodeId),
@@ -92,7 +98,10 @@ router.post('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
           maintenance.performance_type || 'free_time',
           maintenance.performance_value || null,
           maintenance.hf_updated ? 1 : 0,
-          maintenance.firmware_updated_checked ? 1 : 0
+          maintenance.firmware_updated_checked ? 1 : 0,
+          maintenance.notes || null,
+          maintenance.is_custom_node ? 1 : 0,
+          maintenance.completed ? 1 : 0
         ]);
         insertedCount++;
       }

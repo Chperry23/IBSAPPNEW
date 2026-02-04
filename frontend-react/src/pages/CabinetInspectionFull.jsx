@@ -107,6 +107,8 @@ export default function CabinetInspectionFull() {
       is_clean: '',
       clean_filter_installed: '',
       ground_inspection: '',
+      fan_fail_fan: '',
+      fan_fail_part_number: '',
     },
     
     // Rack-specific checkboxes
@@ -179,15 +181,22 @@ export default function CabinetInspectionFull() {
 
       const parsedData = {
         ...cabinetData,
+        cabinet_type: cabinetData.cabinet_type || 'cabinet',
         power_supplies: ensureArray(cabinetData.power_supplies, []),
         distribution_blocks: ensureArray(cabinetData.distribution_blocks, []),
         diodes: ensureArray(cabinetData.diodes, []),
         network_equipment: ensureArray(cabinetData.network_equipment, []),
         controllers: ensureArray(cabinetData.controllers, []),
         workstations: ensureArray(cabinetData.workstations, []),
-        inspection: (typeof cabinetData.inspection_data === 'string' ? JSON.parse(cabinetData.inspection_data) : cabinetData.inspection_data) || {},
+        inspection: (typeof cabinetData.inspection_data === 'string'
+          ? (() => { try { return JSON.parse(cabinetData.inspection_data); } catch (_) { return {}; } })()
+          : (cabinetData.inspection_data ?? cabinetData.inspection)) || {},
         photos: ensureArray(cabinetData.photos, []),
         comments: cabinetData.comments || '',
+        rack_has_ups: Boolean(cabinetData.rack_has_ups),
+        rack_has_hmi: Boolean(cabinetData.rack_has_hmi),
+        rack_has_kvm: Boolean(cabinetData.rack_has_kvm),
+        rack_has_monitor: Boolean(cabinetData.rack_has_monitor),
       };
 
       console.log('📊 Parsed cabinet data:');
@@ -214,7 +223,7 @@ export default function CabinetInspectionFull() {
           // Load available nodes for this customer
           try {
             console.log('Loading nodes for customer:', sessionData.customer_id);
-            const response = await fetch(`/api/customers/${sessionData.customer_id}/nodes`);
+            const response = await fetch(`/api/customers/${sessionData.customer_id}/nodes${sessionData.id ? `?sessionId=${sessionData.id}` : ''}`);
             console.log('Nodes API response status:', response.status);
             
             if (response.ok) {
@@ -626,6 +635,39 @@ export default function CabinetInspectionFull() {
     return matchesSearch && matchesFilter;
   });
 
+  const handleMarkCabinetComplete = async () => {
+    if (session?.status === 'completed') return;
+    setSaving(true);
+    try {
+      const dataToSave = {
+        ...formData,
+        status: 'completed',
+        controllers: formData.controllers,
+        workstations: formData.workstations,
+        power_supplies: formData.power_supplies,
+        diodes: formData.diodes,
+        distribution_blocks: formData.distribution_blocks,
+        network_equipment: formData.network_equipment,
+        inspection: formData.inspection,
+      };
+      const result = await api.updateCabinet(id, dataToSave);
+      if (result.success) {
+        setFormData(prev => ({ ...prev, status: 'completed' }));
+        soundSystem.playSuccess();
+        showMessage('Cabinet marked complete', 'success');
+        loadCabinetData();
+      } else {
+        soundSystem.playError();
+        showMessage(result.error || 'Failed to mark cabinet complete', 'error');
+      }
+    } catch (error) {
+      soundSystem.playError();
+      showMessage('Error marking cabinet complete', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     if (session?.status === 'completed') {
       showMessage('Cannot save changes - PM session is completed', 'error');
@@ -639,6 +681,7 @@ export default function CabinetInspectionFull() {
     try {
       const dataToSave = {
         ...formData,
+        status: formData.status || 'active',
         // Ensure JSON fields are ready
         controllers: formData.controllers,
         workstations: formData.workstations,
@@ -897,7 +940,7 @@ export default function CabinetInspectionFull() {
     }
   };
 
-  const SectionHeader = ({ title, section, onAdd, addLabel, icon = '' }) => {
+  const SectionHeader = ({ title, section, onAdd, addLabel, icon = '', hideAdd = false }) => {
     const status = getSectionStatus(section);
     return (
       <div className="card-header flex justify-between items-center">
@@ -925,7 +968,7 @@ export default function CabinetInspectionFull() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {onAdd && (
+          {onAdd && !hideAdd && (
             <button
               type="button"
               onClick={onAdd}
@@ -971,6 +1014,7 @@ export default function CabinetInspectionFull() {
 
   const isCabinet = formData.cabinet_type === 'cabinet';
   const isRack = formData.cabinet_type === 'rack';
+  const isViewOnly = session?.status === 'completed';
   
   // Debug logging
   console.log('🔍 Cabinet Type Debug:', {
@@ -1053,6 +1097,16 @@ export default function CabinetInspectionFull() {
           >
             📄 PDF
           </button>
+          {formData.status !== 'completed' && session?.status !== 'completed' && (
+            <button
+              onClick={handleMarkCabinetComplete}
+              disabled={saving}
+              className="btn btn-success"
+              title="Mark this cabinet as done for this PM"
+            >
+              ✅ Mark cabinet complete
+            </button>
+          )}
           <button
             onClick={handleSave}
             disabled={saving || session?.status === 'completed'}
@@ -1084,7 +1138,7 @@ export default function CabinetInspectionFull() {
       <form id="cabinet-form" className="space-y-6">
         {/* Cabinet Information */}
         <div className="card">
-          <SectionHeader title="Cabinet Information" section="info" icon="ℹ️" />
+          <SectionHeader title="Cabinet Information" section="info" icon="ℹ️" hideAdd={isViewOnly} />
           {!collapsed.info && (
             <div className="card-body">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1096,6 +1150,7 @@ export default function CabinetInspectionFull() {
                     onChange={(e) => updateFormData('cabinet_name', e.target.value)}
                     className="form-input"
                     required
+                    readOnly={isViewOnly}
                   />
                 </div>
                 <div>
@@ -1106,6 +1161,7 @@ export default function CabinetInspectionFull() {
                     onChange={(e) => updateFormData('cabinet_date', e.target.value)}
                     className="form-input"
                     required
+                    readOnly={isViewOnly}
                   />
                 </div>
                 <div>
@@ -1114,6 +1170,7 @@ export default function CabinetInspectionFull() {
                     value={formData.location_id}
                     onChange={(e) => updateFormData('location_id', e.target.value)}
                     className="form-select"
+                    disabled={isViewOnly}
                   >
                     <option value="">Unassigned</option>
                     {locations.map((loc) => (
@@ -1129,6 +1186,7 @@ export default function CabinetInspectionFull() {
                     value={formData.cabinet_type}
                     onChange={(e) => updateFormData('cabinet_type', e.target.value)}
                     className="form-select"
+                    disabled={isViewOnly}
                   >
                     <option value="cabinet">Cabinet</option>
                     <option value="rack">Rack</option>
@@ -1148,6 +1206,7 @@ export default function CabinetInspectionFull() {
               onAdd={addController}
               addLabel="➕ Add Controller"
               icon="🎛️"
+              hideAdd={isViewOnly}
             />
             {!collapsed.controllers && (
               <div className="card-body">
@@ -1159,13 +1218,15 @@ export default function CabinetInspectionFull() {
                       <div key={controller.id || index} className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
                         <div className="flex justify-between items-start mb-3">
                           <h4 className="text-gray-200 font-medium">Controller {index + 1}</h4>
-                          <button
-                            type="button"
-                            onClick={() => removeController(index)}
-                            className="text-red-400 hover:text-red-300"
-                          >
-                            🗑️
-                          </button>
+                          {!isViewOnly && (
+                            <button
+                              type="button"
+                              onClick={() => removeController(index)}
+                              className="text-red-400 hover:text-red-300"
+                            >
+                              🗑️
+                            </button>
+                          )}
                         </div>
                         <div className="space-y-4">
                           <div>
@@ -1174,6 +1235,7 @@ export default function CabinetInspectionFull() {
                               <button
                                 type="button"
                                 onClick={() => openControllerModal(index)}
+                                disabled={isViewOnly}
                                 className={`flex-1 btn ${
                                   controller.node_id ? 'btn-success' : 'btn-secondary'
                                 } text-left justify-start`}
@@ -1239,6 +1301,7 @@ export default function CabinetInspectionFull() {
                                   setFormData({ ...formData, controllers: updated });
                                 }}
                                 className="form-select"
+                                disabled={isViewOnly}
                               >
                                 <option value="">Select...</option>
                                 <option value="pass">✅ PASS</option>
@@ -1258,6 +1321,7 @@ export default function CabinetInspectionFull() {
                                 rows="2"
                                 className="form-textarea"
                                 placeholder="Additional notes about this controller"
+                                readOnly={isViewOnly}
                               ></textarea>
                             </div>
                           </div>
@@ -1287,6 +1351,7 @@ export default function CabinetInspectionFull() {
               onAdd={addPowerSupply}
               addLabel="➕ Add Power Supply"
               icon="⚡"
+              hideAdd={isViewOnly}
             />
           {!collapsed.power_supplies && (
             <div className="card-body">
@@ -1298,13 +1363,15 @@ export default function CabinetInspectionFull() {
                     <div key={ps.id || index} className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
                       <div className="flex justify-between items-start mb-3">
                         <h4 className="text-gray-200 font-medium">Power Supply {index + 1}</h4>
-                        <button
-                          type="button"
-                          onClick={() => removePowerSupply(index)}
-                          className="text-red-400 hover:text-red-300"
-                        >
-                          🗑️
-                        </button>
+                        {!isViewOnly && (
+                          <button
+                            type="button"
+                            onClick={() => removePowerSupply(index)}
+                            className="text-red-400 hover:text-red-300"
+                          >
+                            🗑️
+                          </button>
+                        )}
                       </div>
                       <div className="space-y-4">
                         {/* Voltage Type */}
@@ -1318,6 +1385,7 @@ export default function CabinetInspectionFull() {
                               setFormData({ ...formData, power_supplies: updated });
                             }}
                             className="form-select"
+                            disabled={isViewOnly}
                           >
                             <option value="24VDC">24VDC</option>
                             <option value="12VDC">12VDC</option>
@@ -1335,6 +1403,7 @@ export default function CabinetInspectionFull() {
                                 step="0.01"
                                 value={ps.line_neutral || ''}
                                 onChange={(e) => handlePowerSupplyVoltageChange(index, 'line_neutral', e.target.value)}
+                                readOnly={isViewOnly}
                                 className={`form-input ${
                                   ps.line_neutral && validateVoltage(ps.line_neutral, 'line_neutral')
                                     ? validateVoltage(ps.line_neutral, 'line_neutral').valid
@@ -1387,6 +1456,7 @@ export default function CabinetInspectionFull() {
                                 step="1"
                                 value={ps.neutral_ground || ''}
                                 onChange={(e) => handlePowerSupplyVoltageChange(index, 'neutral_ground', e.target.value)}
+                                readOnly={isViewOnly}
                                 className={`form-input ${
                                   ps.neutral_ground && validateVoltage(ps.neutral_ground, 'neutral_ground')
                                     ? validateVoltage(ps.neutral_ground, 'neutral_ground').valid
@@ -1417,6 +1487,7 @@ export default function CabinetInspectionFull() {
                             step="0.01"
                             value={ps.dc_reading || ''}
                             onChange={(e) => handlePowerSupplyVoltageChange(index, 'dc_reading', e.target.value)}
+                            readOnly={isViewOnly}
                             className={`form-input ${
                               ps.dc_reading && validateVoltage(ps.dc_reading, 'dc_reading', ps.voltage_type)
                                 ? validateVoltage(ps.dc_reading, 'dc_reading', ps.voltage_type).valid
@@ -1496,6 +1567,7 @@ export default function CabinetInspectionFull() {
               onAdd={addWorkstation}
               addLabel="➕ Add Workstation"
               icon="🖥️"
+              hideAdd={isViewOnly}
             />
             {!collapsed.workstations && (
               <div className="card-body">
@@ -1571,6 +1643,7 @@ export default function CabinetInspectionFull() {
                             rows="2"
                             className="form-textarea"
                             placeholder="Additional notes..."
+                            readOnly={isViewOnly}
                           ></textarea>
                         </div>
                       </div>
@@ -1604,20 +1677,24 @@ export default function CabinetInspectionFull() {
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={addDistributionBlock}
-                  className="btn btn-secondary btn-sm text-xs"
-                >
-                  ➕ Block
-                </button>
-                <button
-                  type="button"
-                  onClick={addDiode}
-                  className="btn btn-secondary btn-sm text-xs"
-                >
-                  ➕ Diode
-                </button>
+                {!isViewOnly && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={addDistributionBlock}
+                      className="btn btn-secondary btn-sm text-xs"
+                    >
+                      ➕ Block
+                    </button>
+                    <button
+                      type="button"
+                      onClick={addDiode}
+                      className="btn btn-secondary btn-sm text-xs"
+                    >
+                      ➕ Diode
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   onClick={() => toggleSection('distribution')}
@@ -1646,14 +1723,17 @@ export default function CabinetInspectionFull() {
                             }}
                             className="form-input flex-1"
                             placeholder="Block type/description"
+                            readOnly={isViewOnly}
                           />
-                          <button
-                            type="button"
-                            onClick={() => removeDistributionBlock(index)}
-                            className="text-red-400 hover:text-red-300"
-                          >
-                            🗑️
-                          </button>
+                          {!isViewOnly && (
+                            <button
+                              type="button"
+                              onClick={() => removeDistributionBlock(index)}
+                              className="text-red-400 hover:text-red-300"
+                            >
+                              🗑️
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1669,13 +1749,15 @@ export default function CabinetInspectionFull() {
                         <div key={diode.id || index} className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
                           <div className="flex justify-between items-start mb-3">
                             <h5 className="text-gray-200 font-medium">{diode.diode_name || `Diode ${index + 1}`}</h5>
-                            <button
-                              type="button"
-                              onClick={() => removeDiode(index)}
-                              className="text-red-400 hover:text-red-300"
-                            >
-                              🗑️
-                            </button>
+                            {!isViewOnly && (
+                              <button
+                                type="button"
+                                onClick={() => removeDiode(index)}
+                                className="text-red-400 hover:text-red-300"
+                              >
+                                🗑️
+                              </button>
+                            )}
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
@@ -1689,6 +1771,7 @@ export default function CabinetInspectionFull() {
                                   autoSaveCabinet({ ...formData, diodes: updated });
                                 }}
                                 className="form-select"
+                                disabled={isViewOnly}
                               >
                                 <option value="24VDC">24VDC</option>
                                 <option value="12VDC">12VDC</option>
@@ -1706,6 +1789,7 @@ export default function CabinetInspectionFull() {
                                   setFormData({ ...formData, diodes: updated });
                                 }}
                                 onBlur={() => autoSaveCabinet()}
+                                readOnly={isViewOnly}
                                 className={`form-input ${
                                   diode.dc_reading && validateVoltage(diode.dc_reading, 'dc_reading', diode.voltage_type)
                                     ? validateVoltage(diode.dc_reading, 'dc_reading', diode.voltage_type).valid
@@ -1750,6 +1834,7 @@ export default function CabinetInspectionFull() {
             onAdd={addNetworkEquipment}
             addLabel="➕ Add Equipment"
             icon="🌐"
+            hideAdd={isViewOnly}
           />
           {!collapsed.network && (
             <div className="card-body">
@@ -1761,13 +1846,15 @@ export default function CabinetInspectionFull() {
                     <div key={equipment.id || index} className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
                       <div className="flex justify-between items-start mb-3">
                         <h4 className="text-gray-200 font-medium">Equipment {index + 1}</h4>
-                        <button
-                          type="button"
-                          onClick={() => removeNetworkEquipment(index)}
-                          className="text-red-400 hover:text-red-300"
-                        >
-                          🗑️
-                        </button>
+                        {!isViewOnly && (
+                          <button
+                            type="button"
+                            onClick={() => removeNetworkEquipment(index)}
+                            className="text-red-400 hover:text-red-300"
+                          >
+                            🗑️
+                          </button>
+                        )}
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Assign Switch from Nodes */}
@@ -1778,7 +1865,7 @@ export default function CabinetInspectionFull() {
                               <button
                                 type="button"
                                 onClick={() => openSwitchModal(index)}
-                                disabled={session?.status === 'completed'}
+                                disabled={isViewOnly}
                                 className="btn btn-secondary flex-1 text-left"
                               >
                                 {equipment.node_id
@@ -1794,7 +1881,7 @@ export default function CabinetInspectionFull() {
                                     updated[index].node_name = '';
                                     setFormData({ ...formData, network_equipment: updated });
                                   }}
-                                  disabled={session?.status === 'completed'}
+                                  disabled={isViewOnly}
                                   className="btn btn-danger"
                                   title="Unassign switch"
                                 >
@@ -1819,6 +1906,7 @@ export default function CabinetInspectionFull() {
                               setFormData({ ...formData, network_equipment: updated });
                             }}
                             className="form-select"
+                            disabled={isViewOnly}
                           >
                             <option value="">Select...</option>
                             <option value="Switch">Switch</option>
@@ -1840,6 +1928,7 @@ export default function CabinetInspectionFull() {
                                   setFormData({ ...formData, network_equipment: updated });
                                 }}
                                 className="form-select"
+                                disabled={isViewOnly}
                               >
                                 <option value="">Select or enter custom...</option>
                                 {networkEquipmentModels.find(m => m.type === equipment.equipment_type)?.models.map(model => (
@@ -1851,6 +1940,7 @@ export default function CabinetInspectionFull() {
                                 <input
                                   type="text"
                                   placeholder="Enter custom model"
+                                  readOnly={isViewOnly}
                                   onChange={(e) => {
                                     const updated = [...formData.network_equipment];
                                     updated[index].model_number = e.target.value;
@@ -1890,6 +1980,7 @@ export default function CabinetInspectionFull() {
                               }}
                               className="form-input"
                               placeholder="e.g., Cisco 2960"
+                              readOnly={isViewOnly}
                             />
                           )}
                         </div>
@@ -1905,6 +1996,7 @@ export default function CabinetInspectionFull() {
                             }}
                             className="form-input"
                             placeholder="e.g., 24"
+                            readOnly={isViewOnly}
                           />
                         </div>
                         <div>
@@ -1961,6 +2053,7 @@ export default function CabinetInspectionFull() {
                       id="rack_has_ups"
                       checked={formData.rack_has_ups || false}
                       onChange={(e) => updateFormData('rack_has_ups', e.target.checked, true)}
+                      disabled={isViewOnly}
                       className="form-checkbox h-5 w-5 text-blue-600 rounded"
                     />
                     <label htmlFor="rack_has_ups" className="text-gray-200 cursor-pointer">
@@ -1973,6 +2066,7 @@ export default function CabinetInspectionFull() {
                       id="rack_has_hmi"
                       checked={formData.rack_has_hmi || false}
                       onChange={(e) => updateFormData('rack_has_hmi', e.target.checked, true)}
+                      disabled={isViewOnly}
                       className="form-checkbox h-5 w-5 text-blue-600 rounded"
                     />
                     <label htmlFor="rack_has_hmi" className="text-gray-200 cursor-pointer">
@@ -1985,6 +2079,7 @@ export default function CabinetInspectionFull() {
                       id="rack_has_kvm"
                       checked={formData.rack_has_kvm || false}
                       onChange={(e) => updateFormData('rack_has_kvm', e.target.checked, true)}
+                      disabled={isViewOnly}
                       className="form-checkbox h-5 w-5 text-blue-600 rounded"
                     />
                     <label htmlFor="rack_has_kvm" className="text-gray-200 cursor-pointer">
@@ -1997,6 +2092,7 @@ export default function CabinetInspectionFull() {
                       id="rack_has_monitor"
                       checked={formData.rack_has_monitor || false}
                       onChange={(e) => updateFormData('rack_has_monitor', e.target.checked, true)}
+                      disabled={isViewOnly}
                       className="form-checkbox h-5 w-5 text-blue-600 rounded"
                     />
                     <label htmlFor="rack_has_monitor" className="text-gray-200 cursor-pointer">
@@ -2032,12 +2128,39 @@ export default function CabinetInspectionFull() {
                       value={formData.inspection[item.key] || ''}
                       onChange={(e) => updateInspection(item.key, e.target.value)}
                       className="form-select"
+                      disabled={isViewOnly}
                     >
                       <option value="">Select...</option>
                       <option value="pass">✅ PASS</option>
                       <option value="fail">❌ FAIL</option>
                       <option value="na">➖ N/A</option>
                     </select>
+                    {item.key === 'cabinet_fans' && (formData.inspection.cabinet_fans || '') === 'fail' && (
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4 pl-2 border-l-2 border-red-500">
+                        <div>
+                          <label className="form-label text-sm">Fan (description/location)</label>
+                          <input
+                            type="text"
+                            value={formData.inspection.fan_fail_fan || ''}
+                            onChange={(e) => updateInspection('fan_fail_fan', e.target.value)}
+                            className="form-input"
+                            placeholder="e.g. Top rear fan"
+                            disabled={isViewOnly}
+                          />
+                        </div>
+                        <div>
+                          <label className="form-label text-sm">Part #</label>
+                          <input
+                            type="text"
+                            value={formData.inspection.fan_fail_part_number || ''}
+                            onChange={(e) => updateInspection('fan_fail_part_number', e.target.value)}
+                            className="form-input"
+                            placeholder="Replacement part number"
+                            disabled={isViewOnly}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2057,6 +2180,7 @@ export default function CabinetInspectionFull() {
                 rows="6"
                 className="form-textarea"
                 placeholder="Enter any additional notes, observations, or issues found during inspection..."
+                readOnly={isViewOnly}
               ></textarea>
             </div>
           )}

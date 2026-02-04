@@ -55,8 +55,8 @@ export default function Sync() {
       if (status.success && status.status) {
         setSyncStatus({
           ...status.status,
-          unsyncedCounts: unsynced,
-          lastSyncTimes: lastSync,
+          unsyncedCounts: unsynced?.data ?? status.status?.unsyncedCounts ?? {},
+          lastSyncTimes: lastSync?.data ?? status.status?.lastSyncTimes ?? {},
         });
       }
     } catch (error) {
@@ -165,8 +165,11 @@ export default function Sync() {
   };
 
   const calculateTotalUnsynced = () => {
-    if (!syncStatus?.unsyncedCounts) return 0;
-    return Object.values(syncStatus.unsyncedCounts).reduce((sum, count) => sum + count, 0);
+    if (!syncStatus?.unsyncedCounts || typeof syncStatus.unsyncedCounts !== 'object') return 0;
+    return Object.values(syncStatus.unsyncedCounts).reduce(
+      (sum, count) => sum + (typeof count === 'number' ? count : 0),
+      0
+    );
   };
 
   return (
@@ -332,15 +335,33 @@ export default function Sync() {
                   </thead>
                   <tbody className="divide-y divide-gray-700">
                     {Object.keys(syncStatus.localCounts || {}).map((table) => {
-                      const localCount = syncStatus.localCounts[table] || 0;
-                      const masterCount = syncStatus.masterCounts[table] || 0;
-                      const unsyncedCount = syncStatus.unsyncedCounts[table] || 0;
+                      const localCount = syncStatus.localCounts[table];
+                      const masterCount = syncStatus.masterCounts[table];
+                      const unsyncedCount = syncStatus.unsyncedCounts[table];
+                      const localNum = typeof localCount === 'number' ? localCount : 0;
+                      const masterNum = typeof masterCount === 'number' ? masterCount : 0;
+                      const unsyncedNum = typeof unsyncedCount === 'number' ? unsyncedCount : 0;
                       
-                      const isMatch = localCount === masterCount;
-                      const hasUnsynced = unsyncedCount > 0;
+                      const isMatch = typeof localCount === 'number' && typeof masterCount === 'number' && localCount === masterCount;
+                      const hasUnsynced = unsyncedNum > 0;
                       
-                      // Format table name for display
-                      const displayName = table
+                      // Friendly display names for sync tables
+                      const tableDisplayNames = {
+                        users: 'Users',
+                        customers: 'Customers',
+                        sessions: 'Sessions',
+                        cabinets: 'Cabinets',
+                        nodes: 'Nodes',
+                        session_node_maintenance: 'Node Maintenance',
+                        cabinet_locations: 'Cabinet Locations',
+                        session_pm_notes: 'PM Notes',
+                        session_ii_documents: 'I&I Documents',
+                        session_ii_equipment: 'I&I Equipment',
+                        session_ii_checklist: 'I&I Checklist',
+                        session_ii_equipment_used: 'I&I Equipment Used',
+                        csv_import_history: 'CSV Import History',
+                      };
+                      const displayName = tableDisplayNames[table] ?? table
                         .replace(/_/g, ' ')
                         .replace(/\b\w/g, c => c.toUpperCase())
                         .replace('Csv', 'CSV')
@@ -365,10 +386,10 @@ export default function Sync() {
                       return (
                         <tr key={table} className="hover:bg-gray-700/20">
                           <td className="px-4 py-3 text-gray-200">{displayName}</td>
-                          <td className="px-4 py-3 text-center text-gray-300">{localCount}</td>
-                          <td className="px-4 py-3 text-center text-gray-300">{masterCount}</td>
+                          <td className="px-4 py-3 text-center text-gray-300">{typeof localCount === 'string' ? <span className="text-red-400 text-xs" title={localCount}>{localCount}</span> : localNum}</td>
+                          <td className="px-4 py-3 text-center text-gray-300">{typeof masterCount === 'string' ? <span className="text-red-400 text-xs">{masterCount}</span> : masterNum}</td>
                           <td className={`px-4 py-3 text-center ${hasUnsynced ? 'text-yellow-400 font-bold' : 'text-gray-400'}`}>
-                            {unsyncedCount}
+                            {typeof unsyncedCount === 'string' ? <span className="text-red-400 text-xs">{unsyncedCount}</span> : unsyncedNum}
                           </td>
                           <td className={`px-4 py-3 text-center ${statusClass}`}>
                             {statusIcon} {statusText}

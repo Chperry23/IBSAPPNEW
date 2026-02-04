@@ -3,6 +3,12 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
+const puppeteer = require('puppeteer');
+const { findChrome } = require('../utils/chrome');
+const { getSharedStyles, generateSingleCabinetHtml, generateRiskAssessmentPage, generateCoverPage } = require('../services/pdf/cabinetReport');
+const { generateMaintenanceReportPage } = require('../services/pdf/maintenanceReport');
+const { generateDiagnosticsPage, generateDiagnosticsSummary, generateControllerBreakdown } = require('../services/pdf/diagnosticsReport');
+const { generateRiskAssessment } = require('../utils/risk-assessment');
 
 // Helper function to check if session is completed
 async function isSessionCompleted(sessionId) {
@@ -187,17 +193,273 @@ router.get('/:sessionId', requireAuth, async (req, res) => {
       controllers: JSON.parse(cabinet.controllers || '[]'),
       inspection: JSON.parse(cabinet.inspection_data || '{}')
     }));
-    
+
+    // Controller/CIOC assignment stats: how many assigned to session cabinets vs total for customer
+    const controllerTypes = ['Controller', 'CIOC', 'SZ Controller', 'Charms Smart Logic Solver', 'DeltaV EIOC', 'SIS'];
+    const cabinetIds = sessionCabinets.map(c => c.id);
+    const placeholders = cabinetIds.length ? cabinetIds.map(() => '?').join(',') : 'NULL';
+    const customerId = session.customer_id;
+    let controllerAssignmentStats = { assigned: 0, total: 0 };
+    if (customerId) {
+      const totalRow = await db.prepare(`
+        SELECT COUNT(*) as count FROM nodes
+        WHERE customer_id = ? AND node_type IN (?, ?, ?, ?, ?, ?) AND node_name NOT LIKE '%-partner'
+      `).get([customerId, ...controllerTypes]);
+      controllerAssignmentStats.total = totalRow?.count ?? 0;
+      if (cabinetIds.length > 0) {
+        const assignedRow = await db.prepare(`
+          SELECT COUNT(*) as count FROM nodes
+          WHERE customer_id = ? AND node_type IN (?, ?, ?, ?, ?, ?) AND node_name NOT LIKE '%-partner'
+          AND assigned_cabinet_id IN (${placeholders})
+        `).get([customerId, ...controllerTypes, ...cabinetIds]);
+        controllerAssignmentStats.assigned = assignedRow?.count ?? 0;
+      }
+    }
+
     const result = {
       ...session,
       cabinets,
-      locations
+      locations,
+      controllerAssignmentStats
     };
     
     res.json(result);
   } catch (error) {
     console.error('Get session details error:', error);
     res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Full session PDF (cabinets + diagnostics + node maintenance + PM notes)
+router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
+  const sessionId = req.params.sessionId;
+  try {
+    const session = await db.prepare(`
+      SELECT s.*, c.name as customer_name
+      FROM sessions s
+      LEFT JOIN customers c ON s.customer_id = c.id
+      WHERE s.id = ?
+    `).get([sessionId]);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    if (session.session_type === 'ii') {
+      return res.status(400).json({ error: 'Use I&I export for I&I sessions' });
+    }
+
+    const sessionCabinets = await db.prepare(`
+      SELECT c.* FROM cabinets c WHERE c.pm_session_id = ? ORDER BY c.created_at
+    `).all([sessionId]);
+
+    const sessionInfo = { id: session.id, session_name: session.session_name, status: session.status, customer_name: session.customer_name };
+
+    // Build cabinet list with parsed JSON and enriched controllers
+    const cabinets = [];
+    for (const row of sessionCabinets) {
+      let controllers = JSON.parse(row.controllers || '[]');
+      for (let i = 0; i < controllers.length; i++) {
+        if (controllers[i].node_id) {
+          const nodeDetails = await db.prepare('SELECT * FROM nodes WHERE id = ?').get([controllers[i].node_id]);
+          if (nodeDetails) {
+            controllers[i] = {
+              ...controllers[i],
+              node_name: nodeDetails.node_name,
+              model: nodeDetails.model,
+              serial: nodeDetails.serial,
+              firmware: nodeDetails.firmware,
+              node_type: nodeDetails.node_type
+            };
+          }
+        }
+      }
+      const inspection = (() => {
+        try {
+          return typeof row.inspection_data === 'string' ? JSON.parse(row.inspection_data || '{}') : (row.inspection_data || {});
+        } catch (_) { return {}; }
+      })();
+      cabinets.push({
+        ...row,
+        cabinet_type: row.cabinet_type || 'cabinet',
+        power_supplies: JSON.parse(row.power_supplies || '[]'),
+        distribution_blocks: JSON.parse(row.distribution_blocks || '[]'),
+        diodes: JSON.parse(row.diodes || '[]'),
+        network_equipment: JSON.parse(row.network_equipment || '[]'),
+        controllers,
+        workstations: JSON.parse(row.workstations || '[]'),
+        inspection,
+        comments: row.comments || '',
+        rack_has_ups: Boolean(row.rack_has_ups),
+        rack_has_hmi: Boolean(row.rack_has_hmi),
+        rack_has_kvm: Boolean(row.rack_has_kvm),
+        rack_has_monitor: Boolean(row.rack_has_monitor),
+      });
+    }
+
+    // Node maintenance data: merge session_node_maintenance with nodes
+    let nodeMaintenanceData = [];
+    if (session.customer_id) {
+      const maintenanceRows = await db.prepare(`
+        SELECT node_id, dv_checked, os_checked, macafee_checked, free_time, redundancy_checked, cold_restart_checked, no_errors_checked, hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked
+        FROM session_node_maintenance WHERE session_id = ?
+      `).all([sessionId]);
+      const nodes = await db.prepare(`
+        SELECT id, node_name, node_type, model, serial, description FROM nodes WHERE customer_id = ?
+      `).all([session.customer_id]);
+      const maintByNode = {};
+      maintenanceRows.forEach(m => { maintByNode[m.node_id] = m; });
+      nodeMaintenanceData = nodes.map(n => ({
+        ...n,
+        dv_checked: Boolean(maintByNode[n.id]?.dv_checked),
+        os_checked: Boolean(maintByNode[n.id]?.os_checked),
+        macafee_checked: Boolean(maintByNode[n.id]?.macafee_checked),
+        free_time: maintByNode[n.id]?.free_time || '',
+        redundancy_checked: Boolean(maintByNode[n.id]?.redundancy_checked),
+        cold_restart_checked: Boolean(maintByNode[n.id]?.cold_restart_checked),
+        no_errors_checked: Boolean(maintByNode[n.id]?.no_errors_checked),
+        hdd_replaced: Boolean(maintByNode[n.id]?.hdd_replaced),
+        performance_type: maintByNode[n.id]?.performance_type || 'free_time',
+        performance_value: maintByNode[n.id]?.performance_value,
+        hf_updated: Boolean(maintByNode[n.id]?.hf_updated),
+        firmware_updated_checked: Boolean(maintByNode[n.id]?.firmware_updated_checked),
+      }));
+    }
+
+    const diagnostics = await db.prepare(`
+      SELECT * FROM session_diagnostics WHERE session_id = ? AND (deleted IS NULL OR deleted = 0) ORDER BY controller_name, card_number, channel_number
+    `).all([sessionId]);
+
+    const pmNotesRow = await db.prepare(`
+      SELECT * FROM session_pm_notes WHERE session_id = ? AND (deleted IS NULL OR deleted = 0) LIMIT 1
+    `).get([sessionId]);
+
+    const riskResult = generateRiskAssessment(cabinets, nodeMaintenanceData);
+    const riskAssessmentHtml = generateRiskAssessmentPage(riskResult, session.session_name);
+    const maintenanceHtml = generateMaintenanceReportPage(nodeMaintenanceData);
+    const diagnosticsHtml = generateDiagnosticsPage(diagnostics);
+    const hasDiagnosticsErrors = diagnostics && diagnostics.length > 0;
+    
+    // Generate comprehensive diagnostics summary with charts (replaces old simple summary)
+    const dvSummaryHtml = generateDiagnosticsSummary(diagnostics);
+    
+    // Generate detailed controller breakdown (appears after cabinets)
+    const controllerBreakdownHtml = generateControllerBreakdown(diagnostics);
+    
+    const cabinetsHtml = cabinets.map((cab, i) => generateSingleCabinetHtml(cab, sessionInfo, i + 1)).join('');
+    
+    // Generate professional cover page
+    const coverPageHtml = generateCoverPage(sessionInfo, session.customer_name, session.completed_at || session.created_at);
+
+    // Task label mapping
+    const taskLabels = {
+      'inspect_status_leds': 'Inspect Status LEDs',
+      'clean_enclosure': 'Clean Enclosure',
+      'test_fans': 'Test Fans',
+      'check_power_supplies': 'Check Power Supplies',
+      'test_controllers': 'Test Controllers',
+      'update_firmware': 'Update Firmware',
+      'document_changes': 'Document Changes',
+      'backup_configuration': 'Backup Configuration',
+      'inspect_network': 'Inspect Network',
+      'inspect_wiring': 'Inspect Wiring',
+      'check_temperatures': 'Check Temperatures',
+      'inspect_terminals': 'Inspect Terminals'
+    };
+
+    let pmNotesHtml = '';
+    if (pmNotesRow && (pmNotesRow.common_tasks || pmNotesRow.additional_work_notes || pmNotesRow.troubleshooting_notes || pmNotesRow.recommendations_notes)) {
+      const tasks = typeof pmNotesRow.common_tasks === 'string' ? JSON.parse(pmNotesRow.common_tasks || '[]') : (pmNotesRow.common_tasks || []);
+      const formattedTasks = tasks.map(task => taskLabels[task] || task).filter(t => t);
+      
+      pmNotesHtml = `
+        <div class="page-break" style="page-break-before: always;">
+          <h2 style="text-align: center; color: #2563eb; font-size: 28px; margin: 20px 0; padding: 15px; border-bottom: 3px solid #2563eb;">PM Notes</h2>
+          
+          <div style="margin: 30px 0;">
+            ${formattedTasks.length > 0 ? `
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #0066cc; margin-bottom: 25px;">
+              <h3 style="color: #0066cc; margin: 0 0 15px 0; font-size: 18px; font-weight: bold;">✓ Tasks Completed</h3>
+              <ul style="margin: 0; padding-left: 25px; line-height: 1.8;">
+                ${formattedTasks.map(task => `<li style="margin: 8px 0; color: #333;">${task}</li>`).join('')}
+              </ul>
+            </div>
+            ` : ''}
+            
+            ${pmNotesRow.additional_work_notes ? `
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #0066cc; margin-bottom: 25px;">
+              <h3 style="color: #0066cc; margin: 0 0 15px 0; font-size: 18px; font-weight: bold;">Additional Work</h3>
+              <p style="margin: 0; line-height: 1.6; color: #333; white-space: pre-wrap;">${String(pmNotesRow.additional_work_notes).replace(/\n/g, '<br>')}</p>
+            </div>
+            ` : ''}
+            
+            ${pmNotesRow.troubleshooting_notes ? `
+            <div style="background: #fff5f5; padding: 20px; border-radius: 8px; border-left: 4px solid #dc3545; margin-bottom: 25px;">
+              <h3 style="color: #dc3545; margin: 0 0 15px 0; font-size: 18px; font-weight: bold;">⚠️ Troubleshooting</h3>
+              <p style="margin: 0; line-height: 1.6; color: #333; white-space: pre-wrap;">${String(pmNotesRow.troubleshooting_notes).replace(/\n/g, '<br>')}</p>
+            </div>
+            ` : ''}
+            
+            ${pmNotesRow.recommendations_notes ? `
+            <div style="background: #f0f8ff; padding: 20px; border-radius: 8px; border-left: 4px solid #17a2b8; margin-bottom: 25px;">
+              <h3 style="color: #17a2b8; margin: 0 0 15px 0; font-size: 18px; font-weight: bold;">💡 Recommendations</h3>
+              <p style="margin: 0; line-height: 1.6; color: #333; white-space: pre-wrap;">${String(pmNotesRow.recommendations_notes).replace(/\n/g, '<br>')}</p>
+            </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>PM Session Report - ${session.session_name}</title>
+        <style>
+          body { font-family: Arial, sans-serif; font-size: 12px; line-height: 1.4; margin: 0; padding: 20px; color: #333; }
+          .page-break { page-break-before: always; }
+          .page-break:first-of-type { page-break-before: avoid; }
+          .no-errors-section { text-align: center; padding: 24px; background: #f8f9fa; border-radius: 8px; border: 2px solid #28a745; }
+          .no-errors-section .success-icon { font-size: 32px; margin-bottom: 8px; }
+          .no-errors-section h2 { color: #28a745; margin: 8px 0; font-size: 18px; }
+          ${getSharedStyles()}
+        </style>
+      </head>
+      <body>
+        ${coverPageHtml}
+        ${riskAssessmentHtml}
+        ${maintenanceHtml}
+        ${dvSummaryHtml}
+        ${pmNotesHtml}
+        ${cabinetsHtml}
+        ${controllerBreakdownHtml}
+        ${diagnosticsHtml}
+      </body>
+      </html>
+    `;
+
+    const browser = await puppeteer.launch({
+      executablePath: await findChrome(),
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-web-security'],
+    });
+    const page = await browser.newPage();
+    page.setDefaultTimeout(120000);
+    await page.setContent(fullHtml, { waitUntil: 'networkidle0', timeout: 120000 });
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '0.5in', right: '0.5in', bottom: '0.5in', left: '0.5in' },
+    });
+    await browser.close();
+
+    const safeName = (session.session_name || 'Session').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="PM-Session-Report-${safeName}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Session export-pdfs error:', error);
+    res.status(500).json({ error: 'PDF generation failed' });
   }
 });
 
@@ -272,14 +534,12 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
 // Duplicate PM session
 router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
   const sourceSessionId = req.params.sessionId;
-  const { session_name } = req.body;
+  let { session_name } = req.body;
   const newSessionId = uuidv4();
   
   try {
     console.log('🔄 DUPLICATE SESSION DEBUG - Starting duplication');
     console.log('📋 Source Session ID:', sourceSessionId);
-    console.log('📋 New Session Name:', session_name);
-    console.log('📋 New Session ID:', newSessionId);
     
     // Get source session
     const sourceSession = await db.prepare('SELECT * FROM sessions WHERE id = ?').get([sourceSessionId]);
@@ -289,6 +549,19 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
     }
     
     console.log('✅ Source session found:', sourceSession.session_name);
+    
+    // If no session name provided, use the source session name with current date
+    if (!session_name) {
+      const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+      session_name = sourceSession.session_name.replace(/\d{1,2}\/\d{1,2}\/\d{2,4}/g, today);
+      // If no date was found to replace, append the date
+      if (session_name === sourceSession.session_name) {
+        session_name = `${sourceSession.session_name}-${today.replace(/\//g, '-')}`;
+      }
+    }
+    
+    console.log('📋 New Session Name:', session_name);
+    console.log('📋 New Session ID:', newSessionId);
     
     // Create new session
     await db.prepare('INSERT INTO sessions (id, customer_id, user_id, session_name, status) VALUES (?, ?, ?, ?, ?)').run([
@@ -437,6 +710,108 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('❌ DUPLICATE SESSION ERROR:', error);
     res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Add custom node for session
+router.post('/:sessionId/custom-node', requireAuth, async (req, res) => {
+  const { sessionId } = req.params;
+  const { node_name, node_type, model, serial, customer_id } = req.body;
+  
+  try {
+    console.log('Adding custom node:', { sessionId, node_name, node_type, customer_id });
+    
+    // Check if node with this name already exists for this customer
+    const existingNode = await db.prepare(`
+      SELECT * FROM nodes WHERE customer_id = ? AND node_name = ?
+    `).get([customer_id, node_name]);
+    
+    let nodeId;
+    
+    if (existingNode) {
+      // Node already exists, just link it to this session
+      nodeId = existingNode.id;
+      console.log('Node already exists, using existing node ID:', nodeId);
+    } else {
+      // Create the node in the nodes table
+      const result = await db.prepare(`
+        INSERT INTO nodes (customer_id, node_name, node_type, model, serial, description)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run([customer_id, node_name, node_type, model || '', serial || '', 'Custom node added during PM']);
+      
+      nodeId = result.lastInsertRowid;
+      console.log('Created new node with ID:', nodeId);
+    }
+    
+    // Check if maintenance entry already exists
+    const existingMaintenance = await db.prepare(`
+      SELECT * FROM session_node_maintenance WHERE session_id = ? AND node_id = ?
+    `).get([sessionId, nodeId]);
+    
+    if (!existingMaintenance) {
+      // Create a maintenance entry for this node and session
+      await db.prepare(`
+        INSERT INTO session_node_maintenance (session_id, node_id, is_custom_node)
+        VALUES (?, ?, 1)
+      `).run([sessionId, nodeId]);
+      console.log('Created maintenance entry for node:', nodeId);
+    } else {
+      console.log('Maintenance entry already exists');
+    }
+    
+    // Return the node
+    const newNode = await db.prepare(`
+      SELECT * FROM nodes WHERE id = ?
+    `).get([nodeId]);
+    
+    console.log('Returning node:', newNode);
+    res.json(newNode);
+  } catch (error) {
+    console.error('Error adding custom node:', error);
+    res.status(500).json({ error: 'Failed to add custom node: ' + error.message });
+  }
+});
+
+// Delete custom node from session
+router.delete('/:sessionId/custom-node/:nodeId', requireAuth, async (req, res) => {
+  const { sessionId, nodeId } = req.params;
+  
+  try {
+    // Check if this is a custom node
+    const maintenance = await db.prepare(`
+      SELECT is_custom_node FROM session_node_maintenance 
+      WHERE session_id = ? AND node_id = ?
+    `).get([sessionId, nodeId]);
+    
+    if (!maintenance) {
+      return res.status(404).json({ error: 'Node not found in this session' });
+    }
+    
+    if (!maintenance.is_custom_node) {
+      return res.status(400).json({ error: 'Can only delete custom nodes' });
+    }
+    
+    // Delete the maintenance entry
+    await db.prepare(`
+      DELETE FROM session_node_maintenance WHERE session_id = ? AND node_id = ?
+    `).run([sessionId, nodeId]);
+    
+    // Check if this node is used in any other sessions
+    const otherSessions = await db.prepare(`
+      SELECT COUNT(*) as count FROM session_node_maintenance WHERE node_id = ?
+    `).get([nodeId]);
+    
+    // If not used elsewhere, delete the node itself
+    if (otherSessions.count === 0) {
+      await db.prepare(`
+        DELETE FROM nodes WHERE id = ?
+      `).run([nodeId]);
+    }
+    
+    res.json({ success: true, message: 'Custom node removed' });
+  } catch (error) {
+    console.error('Error deleting custom node:', error);
+    res.status(500).json({ error: 'Failed to delete custom node' });
   }
 });
 

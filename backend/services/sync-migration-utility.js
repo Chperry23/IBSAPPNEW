@@ -11,12 +11,11 @@ class SyncMigrationUtility {
     
     this.syncTables = [
       'users',
-      'customers', 
+      'customers',
       'sessions',
       'cabinets',
       'nodes',
       'session_node_maintenance',
-      'session_node_tracker',
       'cabinet_locations',
       'session_pm_notes',
       'session_ii_documents',

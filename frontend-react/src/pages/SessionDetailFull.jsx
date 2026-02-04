@@ -183,29 +183,19 @@ export default function SessionDetailFull() {
   };
 
   const handleExportAllPDFs = async () => {
-    if (cabinets.length === 0) {
-      showMessage('No cabinets to export', 'info');
-      return;
-    }
-
     try {
-      showMessage(`Generating ${cabinets.length} PDF reports...`, 'info');
-      let successCount = 0;
-      
-      for (const cabinet of cabinets) {
-        try {
-          const result = await api.generateCabinetPDF(cabinet.id);
-          if (result.success) successCount++;
-        } catch (error) {
-          console.error('Error generating PDF for cabinet:', cabinet.cabinet_name);
-        }
+      showMessage('Generating full session report (cabinets + diagnostics + notes)...', 'info');
+      const result = await api.generateSessionPDF(id);
+      if (result.success) {
+        soundSystem.playSuccess();
+        showMessage('Full session PDF downloaded!', 'success');
+      } else {
+        soundSystem.playError();
+        showMessage(result.error || 'Failed to generate PDF', 'error');
       }
-
-      soundSystem.playSuccess();
-      showMessage(`Successfully generated ${successCount} PDFs!`, 'success');
     } catch (error) {
       soundSystem.playError();
-      showMessage('Error exporting PDFs', 'error');
+      showMessage('Error generating PDF', 'error');
     }
   };
 
@@ -251,6 +241,24 @@ export default function SessionDetailFull() {
     }
   };
 
+  const handleCompleteSession = async () => {
+    if (!confirm(`Mark "${session.session_name}" as completed? This will lock the session and create a snapshot of nodes.`)) return;
+    try {
+      const result = await api.completeSession(id);
+      if (result.success) {
+        soundSystem.playSuccess();
+        loadSessionData();
+        showMessage('Session marked as completed', 'success');
+      } else {
+        soundSystem.playError();
+        showMessage(result.error || 'Error completing session', 'error');
+      }
+    } catch (error) {
+      soundSystem.playError();
+      showMessage('Error completing session', 'error');
+    }
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -291,6 +299,13 @@ export default function SessionDetailFull() {
         <span className="text-gray-200">{session.session_name}</span>
       </div>
 
+      {/* View-only banner for completed sessions */}
+      {session.status === 'completed' && (
+        <div className="mb-6 px-4 py-3 rounded-lg bg-green-900/30 text-green-200 border border-green-600">
+          ✅ This session is completed. You can view cabinets, diagnostics, and PM notes but cannot make changes.
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex justify-between items-start mb-8 animate-fadeIn">
         <div>
@@ -306,22 +321,31 @@ export default function SessionDetailFull() {
               <button onClick={handleGeneratePDF} className="btn btn-warning">
                 📄 Export PDF
               </button>
-              <button onClick={handleExportAllPDFs} className="btn btn-warning" title="Export all cabinets as PDFs">
+              <button onClick={handleExportAllPDFs} className="btn btn-warning" title="Download full session report (cabinets, diagnostics, node maintenance, PM notes)">
                 📄 Export All
               </button>
-              <button onClick={() => setShowBulkImportModal(true)} className="btn btn-success">
-                📤 Bulk Import
-              </button>
-              <button onClick={() => setShowNewCabinetModal(true)} className="btn btn-primary">
-                📦 Add Cabinet
-              </button>
-              <button onClick={() => setShowAddRackModal(true)} className="btn btn-primary">
-                🗄️ Add Rack
-              </button>
-              <button onClick={handleAddLocation} className="btn btn-secondary">
-                📍 Add Location
-              </button>
+              {session.status !== 'completed' && (
+                <>
+                  <button onClick={() => setShowBulkImportModal(true)} className="btn btn-success">
+                    📤 Bulk Import
+                  </button>
+                  <button onClick={() => setShowNewCabinetModal(true)} className="btn btn-primary">
+                    📦 Add Cabinet
+                  </button>
+                  <button onClick={() => setShowAddRackModal(true)} className="btn btn-primary">
+                    🗄️ Add Rack
+                  </button>
+                  <button onClick={handleAddLocation} className="btn btn-secondary">
+                    📍 Add Location
+                  </button>
+                </>
+              )}
             </>
+          )}
+          {session.status !== 'completed' && (
+            <button onClick={handleCompleteSession} className="btn btn-success" title="Lock session and create node snapshot">
+              ✅ Complete session
+            </button>
           )}
           {customer && (
             <button onClick={() => navigate(`/customer/${customer.id}`)} className="btn btn-secondary">
@@ -379,16 +403,27 @@ export default function SessionDetailFull() {
             <div className="text-4xl">⏳</div>
           </div>
         </div>
-        <div className="stats-card">
+        <div className="stats-card" title="Controllers/CIOCs assigned to cabinets in this session">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-3xl font-bold text-purple-400">0</div>
-              <div className="text-sm text-gray-400">Nodes</div>
+              <div className="text-3xl font-bold text-purple-400">
+                {session.controllerAssignmentStats
+                  ? `${session.controllerAssignmentStats.assigned} / ${session.controllerAssignmentStats.total}`
+                  : '—'}
+              </div>
+              <div className="text-sm text-gray-400">Controllers assigned</div>
             </div>
-            <div className="text-4xl">🖥️</div>
+            <div className="text-4xl">🎛️</div>
           </div>
         </div>
       </div>
+
+      {/* Pending vs Completed cabinets explainer (only when session has cabinets and is not completed) */}
+      {session.status !== 'completed' && cabinets.length > 0 && (
+        <div className="mb-6 px-4 py-3 rounded-lg bg-gray-700/40 text-gray-300 text-sm border border-gray-600">
+          <strong className="text-gray-200">Cabinets:</strong> <strong>Pending</strong> = cabinet not yet marked done (open Inspect, fill the form, then click <strong>Mark cabinet complete</strong>). <strong>Completed</strong> = cabinet marked complete for this PM. When all cabinets are done, click <strong>Complete session</strong> below to lock the session.
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="card mb-6">
@@ -468,21 +503,25 @@ export default function SessionDetailFull() {
             <div className="col-span-full card">
               <div className="card-body text-center py-12">
                 <div className="text-6xl mb-4">🗄️</div>
-                <p className="text-gray-400 mb-4">No cabinets yet. Add your first cabinet to get started.</p>
-                <div className="flex gap-3 justify-center">
-                  <button
-                    onClick={() => setShowNewCabinetModal(true)}
-                    className="btn btn-primary"
-                  >
-                    ➕ Add Cabinet
-                  </button>
-                  <button
-                    onClick={() => setShowBulkImportModal(true)}
-                    className="btn btn-success"
-                  >
-                    📤 Bulk Import
-                  </button>
-                </div>
+                <p className="text-gray-400 mb-4">
+                  {session.status === 'completed' ? 'No cabinets were recorded for this session.' : 'No cabinets yet. Add your first cabinet to get started.'}
+                </p>
+                {session.status !== 'completed' && (
+                  <div className="flex gap-3 justify-center">
+                    <button
+                      onClick={() => setShowNewCabinetModal(true)}
+                      className="btn btn-primary"
+                    >
+                      ➕ Add Cabinet
+                    </button>
+                    <button
+                      onClick={() => setShowBulkImportModal(true)}
+                      className="btn btn-success"
+                    >
+                      📤 Bulk Import
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -564,13 +603,15 @@ export default function SessionDetailFull() {
                     >
                       🔍 Inspect
                     </Link>
-                    <button
-                      onClick={() => handleDeleteCabinet(cabinet.id)}
-                      className="btn btn-danger text-sm py-2"
-                      title="Delete Cabinet"
-                    >
-                      🗑️
-                    </button>
+                    {session.status !== 'completed' && (
+                      <button
+                        onClick={() => handleDeleteCabinet(cabinet.id)}
+                        className="btn btn-danger text-sm py-2"
+                        title="Delete Cabinet"
+                      >
+                        🗑️
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

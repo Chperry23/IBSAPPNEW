@@ -77,12 +77,6 @@ function initializeDatabase() {
       FOREIGN KEY (user_id) REFERENCES users(id)
     )`);
 
-    // Add sync columns to sessions table if they don't exist (for existing databases)
-    addColumnIfNotExists(db, 'sessions', 'uuid', 'TEXT');
-    addColumnIfNotExists(db, 'sessions', 'synced', 'INTEGER DEFAULT 0');
-    addColumnIfNotExists(db, 'sessions', 'device_id', 'TEXT');
-    addColumnIfNotExists(db, 'sessions', 'deleted', 'INTEGER DEFAULT 0');
-    
     // Add completed_at column if it doesn't exist (for existing databases)
     db.run(`ALTER TABLE sessions ADD COLUMN completed_at DATETIME`, (err) => {
       // Column already exists, ignore error
@@ -191,6 +185,14 @@ function initializeDatabase() {
       performance_value TEXT,
       hf_updated BOOLEAN DEFAULT FALSE,
       firmware_updated_checked BOOLEAN DEFAULT FALSE,
+      notes TEXT,
+      dv_reason TEXT,
+      os_reason TEXT,
+      macafee_reason TEXT,
+      hf_reason TEXT,
+      firmware_reason TEXT,
+      is_custom_node BOOLEAN DEFAULT FALSE,
+      completed BOOLEAN DEFAULT FALSE,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (session_id) REFERENCES sessions(id),
@@ -214,6 +216,12 @@ function initializeDatabase() {
     db.run(`ALTER TABLE session_node_maintenance ADD COLUMN firmware_updated_checked BOOLEAN DEFAULT FALSE`, (err) => {
       // Column already exists, ignore error
     });
+    db.run(`ALTER TABLE session_node_maintenance ADD COLUMN notes TEXT`, (err) => {
+      // Column already exists, ignore error
+    });
+    db.run(`ALTER TABLE session_node_maintenance ADD COLUMN completed BOOLEAN DEFAULT FALSE`, (err) => {
+      // Column already exists, ignore error
+    });
 
     // Add sync columns to session_node_maintenance table
     db.run(`ALTER TABLE session_node_maintenance ADD COLUMN uuid TEXT`, (err) => {
@@ -226,6 +234,28 @@ function initializeDatabase() {
       // Column already exists, ignore error
     });
     db.run(`ALTER TABLE session_node_maintenance ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {
+      // Column already exists, ignore error
+    });
+    
+    // Add reason fields for unchecked items
+    db.run(`ALTER TABLE session_node_maintenance ADD COLUMN dv_reason TEXT`, (err) => {
+      // Column already exists, ignore error
+    });
+    db.run(`ALTER TABLE session_node_maintenance ADD COLUMN os_reason TEXT`, (err) => {
+      // Column already exists, ignore error
+    });
+    db.run(`ALTER TABLE session_node_maintenance ADD COLUMN macafee_reason TEXT`, (err) => {
+      // Column already exists, ignore error
+    });
+    db.run(`ALTER TABLE session_node_maintenance ADD COLUMN hf_reason TEXT`, (err) => {
+      // Column already exists, ignore error
+    });
+    db.run(`ALTER TABLE session_node_maintenance ADD COLUMN firmware_reason TEXT`, (err) => {
+      // Column already exists, ignore error
+    });
+    
+    // Add flag for custom nodes
+    db.run(`ALTER TABLE session_node_maintenance ADD COLUMN is_custom_node BOOLEAN DEFAULT FALSE`, (err) => {
       // Column already exists, ignore error
     });
 
@@ -338,6 +368,22 @@ function initializeDatabase() {
       db.run(`ALTER TABLE session_node_maintenance ADD COLUMN firmware_updated_checked BOOLEAN DEFAULT FALSE`, (err) => {
         // Column already exists, ignore error - for switches firmware updates
       });
+
+    // Cabinet names table (SQLite local; MongoDB sync uses cabinet_locations)
+    db.run(`CREATE TABLE IF NOT EXISTS cabinet_names (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      location_name TEXT NOT NULL,
+      description TEXT,
+      is_collapsed BOOLEAN DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      deleted INTEGER DEFAULT 0,
+      FOREIGN KEY (session_id) REFERENCES sessions(id),
+      UNIQUE(session_id, location_name)
+    )`);
+    db.run(`ALTER TABLE cabinet_names ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {});
 
     // Cabinet Locations table
     db.run(`CREATE TABLE IF NOT EXISTS cabinet_locations (
@@ -729,6 +775,13 @@ function initializeDatabase() {
     
     // Add workstations column for racks
     addColumnIfNotExists('cabinets', 'workstations', 'TEXT DEFAULT "[]"');
+    
+    // Add rack equipment flags and comments
+    addColumnIfNotExists('cabinets', 'rack_has_ups', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('cabinets', 'rack_has_hmi', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('cabinets', 'rack_has_kvm', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('cabinets', 'rack_has_monitor', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('cabinets', 'comments', 'TEXT');
 
     console.log('✅ Database tables initialized successfully');
     

@@ -162,6 +162,18 @@ export default function Sessions() {
     return `PM-${month}/${day}/${year}`;
   };
 
+  const generateDuplicateSessionName = (originalName) => {
+    const date = new Date();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    const year = date.getFullYear();
+    
+    // Remove any existing date pattern from the end of the name
+    const nameWithoutDate = originalName.replace(/[-_]?\d{1,2}\/\d{1,2}\/\d{2,4}$/g, '');
+    
+    return `${nameWithoutDate.trim()}-${month}/${day}/${year}`;
+  };
+
   const filteredSessions = sessions.filter((session) => {
     const matchesSearch =
       session.session_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -279,7 +291,14 @@ export default function Sessions() {
                     <td>
                       <div className="font-medium text-gray-200">{session.session_name}</div>
                     </td>
-                    <td>{session.customer_name}</td>
+                    <td>
+                      <Link
+                        to={`/customer/${session.customer_id}`}
+                        className="text-blue-400 hover:text-blue-300 hover:underline"
+                      >
+                        {session.customer_name}
+                      </Link>
+                    </td>
                     <td>
                       <span
                         className={`badge ${
@@ -429,7 +448,7 @@ export default function Sessions() {
                     type="text"
                     name="session_name"
                     required
-                    defaultValue={generateSessionName()}
+                    defaultValue={generateDuplicateSessionName(selectedSession.session_name)}
                     className="form-input"
                   />
                 </div>

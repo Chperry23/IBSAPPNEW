@@ -60,8 +60,8 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
       // Get unique controller names from existing diagnostics
       const controllersWithIOErrors = [...new Set(diagData.map(d => d.controller_name))];
       
-      // Load nodes
-      const nodesResponse = await fetch(`/api/customers/${customerId}/nodes`);
+      // Load nodes (pass sessionId for completed sessions to get snapshot data)
+      const nodesResponse = await fetch(`/api/customers/${customerId}/nodes${isCompleted ? `?sessionId=${sessionId}` : ''}`);
       if (nodesResponse.ok) {
         const nodesData = await nodesResponse.json();
         // Show controllers that either:
@@ -209,8 +209,12 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
         <div className="card">
           <div className="card-body text-center py-12">
             <div className="text-6xl mb-4">✅</div>
-            <p className="text-gray-400 mb-4">No I/O errors found</p>
-            <p className="text-gray-500 text-sm">Controllers with errors will appear here. All systems operating normally!</p>
+            <p className="text-gray-400 mb-4">
+              {isCompleted ? 'No diagnostics were recorded for this session.' : 'No I/O errors found'}
+            </p>
+            <p className="text-gray-500 text-sm">
+              {isCompleted ? 'This completed PM session has no I/O error data on file.' : 'Controllers with errors will appear here. All systems operating normally!'}
+            </p>
           </div>
         </div>
       ) : nodes.length === 0 && diagnostics.length > 0 ? (
@@ -218,7 +222,9 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
           <div className="card-body text-center py-12">
             <div className="text-6xl mb-4">⚠️</div>
             <p className="text-gray-400 mb-4">Errors exist but controller nodes not found</p>
-            <p className="text-gray-500 text-sm">Import nodes from customer profile to manage these errors</p>
+            <p className="text-gray-500 text-sm">
+              {isCompleted ? 'Diagnostic errors were recorded but node list was not saved for this session.' : 'Import nodes from customer profile to manage these errors'}
+            </p>
           </div>
         </div>
       ) : (

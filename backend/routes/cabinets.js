@@ -4,6 +4,9 @@ const { v4: uuidv4 } = require('uuid');
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
 const Logger = require('../utils/logger');
+const puppeteer = require('puppeteer');
+const { findChrome } = require('../utils/chrome');
+const { generatePDFHtml } = require('../services/pdf/cabinetReport');
 
 const logger = new Logger('Cabinets');
 
@@ -90,19 +93,18 @@ router.post('/', requireAuth, async (req, res) => {
     });
     
     const insertSQL = location_id 
-      ? `INSERT INTO cabinets (id, pm_session_id, cabinet_name, cabinet_location, cabinet_date, status, 
+      ? `INSERT INTO cabinets (id, pm_session_id, cabinet_name, cabinet_date, status, 
                            power_supplies, distribution_blocks, diodes, network_equipment, inspection_data, location_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
-      : `INSERT INTO cabinets (id, pm_session_id, cabinet_name, cabinet_location, cabinet_date, status, 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+      : `INSERT INTO cabinets (id, pm_session_id, cabinet_name, cabinet_date, status, 
                            power_supplies, distribution_blocks, diodes, network_equipment, inspection_data, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`;
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`;
     
     const params = location_id 
       ? [
           cabinetId,
           pm_session_id,
           cabinet_name.trim(),
-          cabinet_name.trim(), // Also set cabinet_location for backward compatibility
           cabinet_date,
           'active',
           JSON.stringify(power_supplies || []),
@@ -116,7 +118,6 @@ router.post('/', requireAuth, async (req, res) => {
           cabinetId,
           pm_session_id,
           cabinet_name.trim(),
-          cabinet_name.trim(), // Also set cabinet_location for backward compatibility
           cabinet_date,
           'active',
           JSON.stringify(power_supplies || []),
@@ -189,18 +190,115 @@ router.get('/:cabinetId', requireAuth, async (req, res) => {
     
     const result = {
       ...cabinet,
+      cabinet_type: cabinet.cabinet_type || 'cabinet',
       power_supplies: JSON.parse(cabinet.power_supplies || '[]'),
       distribution_blocks: JSON.parse(cabinet.distribution_blocks || '[]'),
       diodes: JSON.parse(cabinet.diodes || '[]'),
       network_equipment: JSON.parse(cabinet.network_equipment || '[]'),
       controllers: controllers,
-      inspection: JSON.parse(cabinet.inspection_data || '{}')
+      workstations: JSON.parse(cabinet.workstations || '[]'),
+      inspection_data: cabinet.inspection_data,
+      inspection: (() => {
+        try {
+          return typeof cabinet.inspection_data === 'string'
+            ? JSON.parse(cabinet.inspection_data || '{}')
+            : (cabinet.inspection_data || {});
+        } catch (_) {
+          return {};
+        }
+      })(),
+      comments: cabinet.comments || '',
+      rack_has_ups: Boolean(cabinet.rack_has_ups),
+      rack_has_hmi: Boolean(cabinet.rack_has_hmi),
+      rack_has_kvm: Boolean(cabinet.rack_has_kvm),
+      rack_has_monitor: Boolean(cabinet.rack_has_monitor),
     };
-    
     res.json(result);
   } catch (error) {
     console.error('Get cabinet details error:', error);
     res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Generate cabinet PDF
+router.post('/:cabinetId/pdf', requireAuth, async (req, res) => {
+  const cabinetId = req.params.cabinetId;
+  try {
+    const row = await db.prepare('SELECT * FROM cabinets WHERE id = ?').get([cabinetId]);
+    if (!row) {
+      return res.status(404).json({ error: 'Cabinet not found' });
+    }
+    let controllers = JSON.parse(row.controllers || '[]');
+    if (controllers.length > 0) {
+      for (let i = 0; i < controllers.length; i++) {
+        if (controllers[i].node_id) {
+          const nodeDetails = await db.prepare('SELECT * FROM nodes WHERE id = ?').get([controllers[i].node_id]);
+          if (nodeDetails) {
+            controllers[i] = {
+              ...controllers[i],
+              node_name: nodeDetails.node_name,
+              model: nodeDetails.model,
+              serial: nodeDetails.serial,
+              firmware: nodeDetails.firmware,
+              node_type: nodeDetails.node_type
+            };
+          }
+        }
+      }
+    }
+    const inspection = (() => {
+      try {
+        return typeof row.inspection_data === 'string'
+          ? JSON.parse(row.inspection_data || '{}')
+          : (row.inspection_data || {});
+      } catch (_) {
+        return {};
+      }
+    })();
+    const cabinet = {
+      ...row,
+      cabinet_type: row.cabinet_type || 'cabinet',
+      power_supplies: JSON.parse(row.power_supplies || '[]'),
+      distribution_blocks: JSON.parse(row.distribution_blocks || '[]'),
+      diodes: JSON.parse(row.diodes || '[]'),
+      network_equipment: JSON.parse(row.network_equipment || '[]'),
+      controllers,
+      workstations: JSON.parse(row.workstations || '[]'),
+      inspection,
+      comments: row.comments || '',
+      rack_has_ups: Boolean(row.rack_has_ups),
+      rack_has_hmi: Boolean(row.rack_has_hmi),
+      rack_has_kvm: Boolean(row.rack_has_kvm),
+      rack_has_monitor: Boolean(row.rack_has_monitor),
+    };
+    const sessionInfo = await db.prepare(`
+      SELECT s.id, s.session_name, s.status, c.name as customer_name
+      FROM sessions s
+      LEFT JOIN customers c ON s.customer_id = c.id
+      WHERE s.id = ?
+    `).get([row.pm_session_id]) || {};
+    const pdfContent = generatePDFHtml({ cabinet, sessionInfo });
+    const browser = await puppeteer.launch({
+      executablePath: await findChrome(),
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-web-security'],
+    });
+    const page = await browser.newPage();
+    page.setDefaultTimeout(60000);
+    await page.setContent(pdfContent, { waitUntil: 'networkidle0', timeout: 60000 });
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '0.5in', right: '0.5in', bottom: '0.5in', left: '0.5in' },
+    });
+    await browser.close();
+    const safeName = (cabinet.cabinet_name || 'Cabinet').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Cabinet-PM-${safeName}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Cabinet PDF error:', error);
+    res.status(500).json({ error: 'PDF generation failed' });
   }
 });
 
@@ -232,13 +330,15 @@ router.put('/:cabinetId', requireAuth, async (req, res) => {
     
     const result = await db.prepare(`
       UPDATE cabinets SET 
-        cabinet_name = ?, cabinet_location = ?, cabinet_date = ?, status = ?,
+        cabinet_name = ?, cabinet_date = ?, status = ?,
         power_supplies = ?, distribution_blocks = ?, diodes = ?,
-        network_equipment = ?, controllers = ?, inspection_data = ?, location_id = ?, updated_at = CURRENT_TIMESTAMP
+        network_equipment = ?, controllers = ?, workstations = ?, inspection_data = ?,
+        cabinet_type = ?, comments = ?, location_id = ?,
+        rack_has_ups = ?, rack_has_hmi = ?, rack_has_kvm = ?, rack_has_monitor = ?,
+        updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run([
       updateData.cabinet_name,
-      updateData.cabinet_name, // Keep both columns in sync
       updateData.cabinet_date,
       updateData.status || 'active',
       JSON.stringify(updateData.power_supplies || []),
@@ -246,8 +346,15 @@ router.put('/:cabinetId', requireAuth, async (req, res) => {
       JSON.stringify(updateData.diodes || []),
       JSON.stringify(updateData.network_equipment || []),
       JSON.stringify(updateData.controllers || []),
+      JSON.stringify(updateData.workstations || []),
       JSON.stringify(updateData.inspection || {}),
+      updateData.cabinet_type || 'cabinet',
+      updateData.comments || null,
       updateData.location_id || null,
+      updateData.rack_has_ups ? 1 : 0,
+      updateData.rack_has_hmi ? 1 : 0,
+      updateData.rack_has_kvm ? 1 : 0,
+      updateData.rack_has_monitor ? 1 : 0,
       cabinetId
     ]);
     

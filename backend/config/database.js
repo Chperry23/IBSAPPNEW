@@ -2,9 +2,8 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 
-// Determine database path
-// If running from backend/config, we go up to backend, then up to root, then to data
-const dbPath = path.resolve(__dirname, '../../data/cabinet_pm_tablet.db');
+// Determine database path: env DB_PATH (tablet/packaged) or default under project data/
+const dbPath = process.env.DB_PATH || path.resolve(__dirname, '../../data/cabinet_pm_tablet.db');
 console.log('📊 Initializing database at:', dbPath);
 
 // Ensure data directory exists

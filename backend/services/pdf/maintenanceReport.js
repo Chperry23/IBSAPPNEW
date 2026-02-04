@@ -107,15 +107,14 @@ function generateMaintenanceReportPage(nodeMaintenanceData) {
 
     let headers = ['Node Name', 'Serial'];
     if (includePerformance) {
-      headers.push('Type', 'Performance', 'HF Updated', 'Errors');
+      headers.push('Type', 'Performance', 'HF Updated', 'Errors', 'Notes/Reason');
     } else if (includeWorkstationColumns) {
-      headers.push('DeltaV HotFixes', 'OS Updates', 'McAfee Updates', 'HDD Replaced');
+      headers.push('DeltaV HotFixes', 'OS Updates', 'McAfee Updates', 'HDD Replaced', 'Notes/Reason');
     } else if (includeFirmware) {
-      headers.push('HF Updated', 'Firmware Updated');
+      headers.push('HF Updated', 'Firmware Updated', 'Notes/Reason');
     } else {
-      headers.push('HF Updated');
+      headers.push('HF Updated', 'Notes/Reason');
     }
-    headers.push('Notes');
 
     return `
       <div class="maintenance-section">
@@ -140,18 +139,21 @@ function generateMaintenanceReportPage(nodeMaintenanceData) {
                   <td>${formatPerformance(node)}</td>
                   <td class="${node.hf_updated ? 'checked-cell' : ''}">${node.hf_updated ? '✅' : ''}</td>
                   <td class="${node.no_errors_checked ? 'error-cell' : 'no-error-cell'}">${node.no_errors_checked ? 'Has Errors' : 'No Error'}</td>
+                  <td style="font-size: 10px; color: #666;">${node.notes || '—'}</td>
                 ` : includeWorkstationColumns ? `
                   <td class="${node.dv_checked ? 'checked-cell' : ''}">${node.dv_checked ? '✅' : ''}</td>
                   <td class="${node.os_checked ? 'checked-cell' : ''}">${node.os_checked ? '✅' : ''}</td>
                   <td class="${node.macafee_checked ? 'checked-cell' : ''}">${node.macafee_checked ? '✅' : ''}</td>
                   <td class="${node.hdd_replaced ? 'checked-cell' : ''}">${node.hdd_replaced ? '❌' : ''}</td>
+                  <td style="font-size: 10px; color: #666;">${node.notes || '—'}</td>
                 ` : includeFirmware ? `
                   <td class="${node.hf_updated ? 'checked-cell' : ''}">${node.hf_updated ? '✅' : ''}</td>
                   <td class="${node.firmware_updated_checked ? 'checked-cell' : ''}">${node.firmware_updated_checked ? '✅' : ''}</td>
+                  <td style="font-size: 10px; color: #666;">${node.notes || '—'}</td>
                 ` : `
                   <td class="${node.hf_updated ? 'checked-cell' : ''}">${node.hf_updated ? '✅' : ''}</td>
+                  <td style="font-size: 10px; color: #666;">${node.notes || '—'}</td>
                 `}
-                <td>${node.notes || ''}</td>
               </tr>
               `;
             }).join('')}
@@ -174,13 +176,7 @@ function generateMaintenanceReportPage(nodeMaintenanceData) {
 
   return `
     <div class="page-break">
-      <div class="header">
-        <div class="logo">
-          ECI
-          <div class="logo-subtitle">Emerson Impact Partner</div>
-        </div>
-        <div class="title">Node Maintenance Report</div>
-      </div>
+      <h2 style="text-align: center; color: #2563eb; font-size: 28px; margin: 20px 0; padding: 15px; border-bottom: 3px solid #2563eb;">Node Maintenance Report</h2>
       ${generateMaintenanceTable(controllers, 'Controllers', true, false, false)}
       ${generateMaintenanceTable(computers, 'Workstations/Computers', false, true, false)}
       ${generateMaintenanceTable(switches, 'Network Switches', false, false, true)}

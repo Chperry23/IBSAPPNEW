@@ -8,6 +8,14 @@ const db = require('../config/database');
 const isPackaged = typeof process.pkg !== 'undefined';
 const basePath = isPackaged ? path.dirname(process.execPath) : path.resolve(__dirname, '../..');
 
+// Session check (used by React app to verify localStorage user is still valid)
+router.get('/api/auth/check', (req, res) => {
+  if (req.session && req.session.userId) {
+    return res.json({ authenticated: true });
+  }
+  res.json({ authenticated: false });
+});
+
 // Login page - served as static file usually, but here as a route redirection
 router.get('/', (req, res) => {
   if (req.session && req.session.userId) {

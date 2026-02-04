@@ -15,15 +15,14 @@ class EnhancedMergeReplication {
     this.deviceId = null;
     this.deviceIdPromise = this.getOrCreateDeviceId();
     
-    // All tables that need to be synced
+    // All tables that need to be synced (session_node_tracker removed – no longer used)
     this.syncTables = [
       'users',
-      'customers', 
+      'customers',
       'sessions',
       'cabinets',
       'nodes',
       'session_node_maintenance',
-      'session_node_tracker',
       'cabinet_locations',
       'session_pm_notes',
       'session_ii_documents',
@@ -32,7 +31,7 @@ class EnhancedMergeReplication {
       'session_ii_equipment_used',
       'csv_import_history'
     ];
-    
+
     // Map table names to MongoDB models
     this.modelMap = {
       'users': models.User,
@@ -41,7 +40,6 @@ class EnhancedMergeReplication {
       'cabinets': models.Cabinet,
       'nodes': models.Node,
       'session_node_maintenance': models.SessionNodeMaintenance,
-      'session_node_tracker': models.SessionNodeTracker,
       'cabinet_locations': models.CabinetLocation,
       'session_pm_notes': models.SessionPMNotes,
       'session_ii_documents': models.SessionIIDocument,
@@ -310,6 +308,16 @@ class EnhancedMergeReplication {
       // Convert MongoDB record to SQLite format
       const masterData = this.convertMongoToSQLite(masterRecord);
       const recordId = masterData.id;
+
+      // cabinets.cabinet_name is NOT NULL - ensure we never insert null/empty
+      if (tableName === 'cabinets') {
+        const name = (masterData.cabinet_name != null && String(masterData.cabinet_name).trim())
+          ? String(masterData.cabinet_name).trim()
+          : (masterData.cabinet_location != null && String(masterData.cabinet_location).trim()
+            ? String(masterData.cabinet_location).trim()
+            : 'Unnamed Cabinet');
+        masterData.cabinet_name = name;
+      }
 
       // Check if this is a deletion tombstone
       if (masterData.deleted === 1) {
@@ -878,7 +886,6 @@ class EnhancedMergeReplication {
           'sessions': [
             { table: 'cabinets', foreignKey: 'pm_session_id' },
             { table: 'session_node_maintenance', foreignKey: 'session_id' },
-            { table: 'session_node_tracker', foreignKey: 'session_id' },
             { table: 'cabinet_locations', foreignKey: 'session_id' },
             { table: 'session_pm_notes', foreignKey: 'session_id' },
             { table: 'session_ii_documents', foreignKey: 'session_id' },
@@ -891,8 +898,7 @@ class EnhancedMergeReplication {
             { table: 'nodes', foreignKey: 'customer_id' }
           ],
           'nodes': [
-            { table: 'session_node_maintenance', foreignKey: 'node_id' },
-            { table: 'session_node_tracker', foreignKey: 'node_id' }
+            { table: 'session_node_maintenance', foreignKey: 'node_id' }
           ],
           'session_ii_documents': [
             { table: 'session_ii_equipment', foreignKey: 'document_id' },

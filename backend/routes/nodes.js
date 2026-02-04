@@ -43,7 +43,7 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
     
     // Return current nodes for active sessions or when no sessionId provided
     const nodes = await db.prepare(`
-      SELECT n.*, c.cabinet_location as assigned_cabinet_name
+      SELECT n.*, c.cabinet_name as assigned_cabinet_name
       FROM nodes n
       LEFT JOIN cabinets c ON n.assigned_cabinet_id = c.id
       WHERE n.customer_id = ?
@@ -71,7 +71,7 @@ router.get('/api/customers/:customerId/controller-usage', requireAuth, async (re
         n.serial,
         n.assigned_cabinet_id,
         n.assigned_at,
-        c.cabinet_location,
+        c.cabinet_name as cabinet_location,
         s.session_name,
         s.id as session_id
       FROM nodes n
@@ -113,7 +113,7 @@ router.get('/api/customers/:customerId/available-controllers', requireAuth, asyn
             WHEN n.assigned_cabinet_id IS NOT NULL THEN 'used_elsewhere'
             ELSE 'available'
           END as usage_status,
-          c.cabinet_location,
+          c.cabinet_name as cabinet_location,
           s.session_name
                  FROM nodes n
          LEFT JOIN cabinets c ON n.assigned_cabinet_id = c.id
@@ -496,27 +496,61 @@ router.post('/api/nodes/:nodeId/unassign', requireAuth, async (req, res) => {
   }
 });
 
-// Update node type
+// Update node (type, description, and other fields for categorization)
 router.put('/api/nodes/:nodeId', requireAuth, async (req, res) => {
   const nodeId = req.params.nodeId;
-  const { node_type } = req.body;
-  
-  if (!node_type) {
-    return res.status(400).json({ error: 'Node type is required' });
-  }
-  
+  const {
+    node_type,
+    model,
+    description,
+    serial,
+    firmware,
+    version,
+    status,
+    redundant,
+    os_name,
+    os_service_pack,
+    bios_version,
+    oem_type_description
+  } = req.body;
+
   try {
     const result = await db.prepare(`
       UPDATE nodes SET 
-        node_type = ?, 
+        node_type = COALESCE(?, node_type),
+        model = ?,
+        description = ?,
+        serial = ?,
+        firmware = ?,
+        version = ?,
+        status = ?,
+        redundant = ?,
+        os_name = ?,
+        os_service_pack = ?,
+        bios_version = ?,
+        oem_type_description = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run([node_type, nodeId]);
-    
+    `).run([
+      node_type ?? null,
+      model ?? null,
+      description ?? null,
+      serial ?? null,
+      firmware ?? null,
+      version ?? null,
+      status ?? null,
+      redundant ?? null,
+      os_name ?? null,
+      os_service_pack ?? null,
+      bios_version ?? null,
+      oem_type_description ?? null,
+      nodeId
+    ]);
+
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Node not found' });
     }
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Update node error:', error);

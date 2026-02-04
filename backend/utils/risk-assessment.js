@@ -1,3 +1,8 @@
+/**
+ * Risk assessment for PM session PDF: weighted score from cabinets (inspection, power, network)
+ * and node maintenance (performance index, free time). Level = CRITICAL if any critical issues,
+ * else MODERATE if any moderate, else LOW. Risk page prints in session PDF after cover.
+ */
 // Voltage range specifications
 const VOLTAGE_RANGES = {
   '24VDC': { min: 22.8, max: 25.2, type: 'DC' },
@@ -87,7 +92,7 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
   });
   
   cabinets.forEach((cabinet, cabinetIndex) => {
-    const cabinetName = cabinet.cabinet_location || `Cabinet ${cabinetIndex + 1}`;
+    const cabinetName = cabinet.cabinet_name || cabinet.cabinet_location || `Cabinet ${cabinetIndex + 1}`;
     
     // Check power supplies
     if (cabinet.power_supplies) {

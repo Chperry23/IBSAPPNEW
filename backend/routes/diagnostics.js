@@ -4,6 +4,30 @@ const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
 const { isSessionCompleted } = require('../utils/session');
 
+// Debug: check if diagnostics exist for a session (count + sample, no auth for easy check)
+router.get('/:sessionId/diagnostics/debug', async (req, res) => {
+  const sessionId = req.params.sessionId;
+  try {
+    const countRow = await db.prepare(`
+      SELECT COUNT(*) as count FROM session_diagnostics 
+      WHERE session_id = ? AND (deleted IS NULL OR deleted = 0)
+    `).get([sessionId]);
+    const sample = await db.prepare(`
+      SELECT id, session_id, controller_name, card_number, channel_number, error_type, deleted
+      FROM session_diagnostics WHERE session_id = ? LIMIT 5
+    `).all([sessionId]);
+    res.json({
+      sessionId,
+      count: countRow?.count ?? 0,
+      sample,
+      message: countRow?.count ? 'Diagnostics found in DB.' : 'No diagnostics rows for this session_id in DB.'
+    });
+  } catch (error) {
+    console.error('Diagnostics debug error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get diagnostics for a session
 router.get('/:sessionId/diagnostics', requireAuth, async (req, res) => {
   const sessionId = req.params.sessionId;
