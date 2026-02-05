@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export>
+  <!-- Sample Workstations -->
+  <Workstation>
+    <Name>WS-APPSERVER01</Name>
+    <Model>Dell Precision</Model>
+    <Type>Application Server</Type>
+    <Redundant>No</Redundant>
+    <SoftwareRevision>14.3.1</SoftwareRevision>
+    <DVHotFixes>HF-2023-001, HF-2023-005, HF-2024-002</DVHotFixes>
+    <OSName>Windows Server 2019</OSName>
+    <MSOfficeInstalled>Yes</MSOfficeInstalled>
+    <TerminalServer>No</TerminalServer>
+    <DomainController>No</DomainController>
+    <IDDC>No</IDDC>
+    <DellServiceTagNumber>5CD2345</DellServiceTagNumber>
+    <ComputerModel>Precision 5820 Tower</ComputerModel>
+    <BIOSVersion>2.15.0</BIOSVersion>
+    <Memory>64 GB</Memory>
+  </Workstation>
+  
+  <Workstation>
+    <Name>WS-OPSTATION01</Name>
+    <Model>Dell OptiPlex</Model>
+    <Type>Operator Workstation</Type>
+    <Redundant>No</Redundant>
+    <SoftwareRevision>14.3.1</SoftwareRevision>
+    <DVHotFixes>HF-2023-001, HF-2024-002</DVHotFixes>
+    <OSName>Windows 10 Enterprise</OSName>
+    <MSOfficeInstalled>Yes</MSOfficeInstalled>
+    <TerminalServer>No</TerminalServer>
+    <DomainController>No</DomainController>
+    <IDDC>No</IDDC>
+    <DellServiceTagNumber>7FG8901</DellServiceTagNumber>
+    <ComputerModel>OptiPlex 7080</ComputerModel>
+    <BIOSVersion>1.8.3</BIOSVersion>
+    <Memory>32 GB</Memory>
+  </Workstation>
+  
+  <Workstation>
+    <Name>WS-PROFPLUS01</Name>
+    <Model>HP Z4</Model>
+    <Type>Professional Plus</Type>
+    <Redundant>Yes</Redundant>
+    <SoftwareRevision>14.3.1</SoftwareRevision>
+    <DVHotFixes>HF-2023-001, HF-2023-005</DVHotFixes>
+    <OSName>Windows 10 Enterprise</OSName>
+    <MSOfficeInstalled>Yes</MSOfficeInstalled>
+    <TerminalServer>No</TerminalServer>
+    <DomainController>No</DomainController>
+    <IDDC>Yes</IDDC>
+    <DellServiceTagNumber>N/A</DellServiceTagNumber>
+    <ComputerModel>HP Z4 G4</ComputerModel>
+    <BIOSVersion>02.13.00</BIOSVersion>
+    <Memory>128 GB</Memory>
+  </Workstation>
+  
+  <!-- Sample Controllers -->
+  <Controller>
+    <Name>MD-CTRL-001</Name>
+    <Model>VE3007</Model>
+    <SoftwareRevision>15.1.1 LNP1</SoftwareRevision>
+    <HardwareRevision>2</HardwareRevision>
+    <SerialNumber>K245060181</SerialNumber>
+    <ControllerFreeMemory>524288000</ControllerFreeMemory>
+    <Redundant>Yes</Redundant>
+    <PartnerModel>VE3007</PartnerModel>
+    <PartnerSoftwareRevision>15.1.1 LNP1</PartnerSoftwareRevision>
+    <PartnerHardwareRevision>2</PartnerHardwareRevision>
+    <PartnerSerialNumber>K245060182</PartnerSerialNumber>
+  </Controller>
+  
+  <Controller>
+    <Name>MD-CTRL-002</Name>
+    <Model>VE3006</Model>
+    <SoftwareRevision>14.3.1 LNP2</SoftwareRevision>
+    <HardwareRevision>2</HardwareRevision>
+    <SerialNumber>K245060183</SerialNumber>
+    <ControllerFreeMemory>312428800</ControllerFreeMemory>
+    <Redundant>No</Redundant>
+    <PartnerModel></PartnerModel>
+    <PartnerSoftwareRevision></PartnerSoftwareRevision>
+    <PartnerHardwareRevision></PartnerHardwareRevision>
+    <PartnerSerialNumber></PartnerSerialNumber>
+  </Controller>
+  
+  <Controller>
+    <Name>REACTOR-CTRL-001</Name>
+    <Model>VE3008</Model>
+    <SoftwareRevision>15.1.1 LNP1</SoftwareRevision>
+    <HardwareRevision>3</HardwareRevision>
+    <SerialNumber>K245060185</SerialNumber>
+    <ControllerFreeMemory>786432000</ControllerFreeMemory>
+    <Redundant>Yes</Redundant>
+    <PartnerModel>VE3008</PartnerModel>
+    <PartnerSoftwareRevision>15.1.1 LNP1</PartnerSoftwareRevision>
+    <PartnerHardwareRevision>3</PartnerHardwareRevision>
+    <PartnerSerialNumber>K245060186</PartnerSerialNumber>
+  </Controller>
+  
+  <!-- Sample Smart Switches -->
+  <SmartSwitch>
+    <Name>SWITCH-CAB-001</Name>
+    <Model>SE4008</Model>
+    <SoftwareRevision>2.5.0</SoftwareRevision>
+    <HardwareRevision>1</HardwareRevision>
+    <SerialNumber>SW8800123</SerialNumber>
+  </SmartSwitch>
+  
+  <SmartSwitch>
+    <Name>SWITCH-CAB-002</Name>
+    <Model>SE4008</Model>
+    <SoftwareRevision>2.5.0</SoftwareRevision>
+    <HardwareRevision>1</HardwareRevision>
+    <SerialNumber>SW8800124</SerialNumber>
+  </SmartSwitch>
+  
+  <SmartSwitch>
+    <Name>SWITCH-RACK-001</Name>
+    <Model>SE4016</Model>
+    <SoftwareRevision>2.6.1</SoftwareRevision>
+    <HardwareRevision>2</HardwareRevision>
+    <SerialNumber>SW8800125</SerialNumber>
+  </SmartSwitch>
+  
+  <!-- Sample IO Devices -->
+  <IODevice>
+    <BusType>Ethernet</BusType>
+    <DeviceType>AI</DeviceType>
+    <Node>MD-CTRL-001</Node>
+    <Card>1</Card>
+    <DeviceName>TT-101</DeviceName>
+    <Channel>1</Channel>
+  </IODevice>
+  
+  <IODevice>
+    <BusType>Ethernet</BusType>
+    <DeviceType>AI</DeviceType>
+    <Node>MD-CTRL-001</Node>
+    <Card>1</Card>
+    <DeviceName>PT-201</DeviceName>
+    <Channel>2</Channel>
+  </IODevice>
+  
+  <IODevice>
+    <BusType>Ethernet</BusType>
+    <DeviceType>DO</DeviceType>
+    <Node>MD-CTRL-001</Node>
+    <Card>2</Card>
+    <DeviceName>XV-301</DeviceName>
+    <Channel>1</Channel>
+  </IODevice>
+  
+  <IODevice>
+    <BusType>Ethernet</BusType>
+    <DeviceType>AI</DeviceType>
+    <Node>REACTOR-CTRL-001</Node>
+    <Card>1</Card>
+    <DeviceName>TT-401</DeviceName>
+    <Channel>1</Channel>
+  </IODevice>
+  
+  <IODevice>
+    <BusType>Ethernet</BusType>
+    <DeviceType>AI</DeviceType>
+    <Node>REACTOR-CTRL-001</Node>
+    <Card>1</Card>
+    <DeviceName>FT-501</DeviceName>
+    <Channel>2</Channel>
+  </IODevice>
+  
+  <!-- Sample Charms IO Cards -->
+  <CharmsIOCard>
+    <Name>CIOC-001</Name>
+    <Model>VE3051</Model>
+    <SoftwareRevision>15.1.1</SoftwareRevision>
+    <HardwareRevision>2</HardwareRevision>
+    <SerialNumber>CH5060101</SerialNumber>
+    <Redundant>Yes</Redundant>
+    <PartnerModel>VE3051</PartnerModel>
+    <PartnerSoftwareRevision>15.1.1</PartnerSoftwareRevision>
+    <PartnerHardwareRevision>2</PartnerHardwareRevision>
+    <PartnerSerialNumber>CH5060102</PartnerSerialNumber>
+  </CharmsIOCard>
+  
+  <CharmsIOCard>
+    <Name>CIOC-002</Name>
+    <Model>VE3051</Model>
+    <SoftwareRevision>15.1.1</SoftwareRevision>
+    <HardwareRevision>2</HardwareRevision>
+    <SerialNumber>CH5060103</SerialNumber>
+    <Redundant>No</Redundant>
+    <PartnerModel></PartnerModel>
+    <PartnerSoftwareRevision></PartnerSoftwareRevision>
+    <PartnerHardwareRevision></PartnerHardwareRevision>
+    <PartnerSerialNumber></PartnerSerialNumber>
+  </CharmsIOCard>
+  
+  <!-- Sample Charms -->
+  <Charm>
+    <Name>CHARM-001</Name>
+    <Model>VE4003</Model>
+    <SoftwareRevision>15.1.1</SoftwareRevision>
+    <HardwareRevision>2</HardwareRevision>
+    <SerialNumber>CM4003001</SerialNumber>
+  </Charm>
+  
+  <Charm>
+    <Name>CHARM-002</Name>
+    <Model>VE4003</Model>
+    <SoftwareRevision>15.1.1</SoftwareRevision>
+    <HardwareRevision>2</HardwareRevision>
+    <SerialNumber>CM4003002</SerialNumber>
+  </Charm>
+  
+  <Charm>
+    <Name>CHARM-003</Name>
+    <Model>VE4004</Model>
+    <SoftwareRevision>14.3.1</SoftwareRevision>
+    <HardwareRevision>1</HardwareRevision>
+    <SerialNumber>CM4004001</SerialNumber>
+  </Charm>
+  
+  <!-- Sample AMS System -->
+  <AMSSystem>
+    <SoftwareRevision>14.8.0</SoftwareRevision>
+  </AMSSystem>
+</Export>

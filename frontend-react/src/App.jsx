@@ -11,6 +11,7 @@ import Customers from './pages/Customers';
 import CustomerDetail from './pages/CustomerDetail';
 import CabinetInspectionFull from './pages/CabinetInspectionFull';
 import Nodes from './pages/Nodes';
+import SystemRegistry from './pages/SystemRegistry';
 import Sync from './pages/Sync';
 import CSVTracking from './pages/CSVTracking';
 
@@ -92,6 +93,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Nodes />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/system-registry/:customerId"
+            element={
+              <ProtectedRoute>
+                <SystemRegistry />
               </ProtectedRoute>
             }
           />

@@ -16,9 +16,12 @@ export default function CustomerDetail() {
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
   const [showEditSessionModal, setShowEditSessionModal] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
+  const [showSystemRegModal, setShowSystemRegModal] = useState(false);
+  const [systemRegSummary, setSystemRegSummary] = useState(null);
 
   useEffect(() => {
     loadCustomerData();
+    loadSystemRegSummary();
   }, [id]);
 
   const loadCustomerData = async () => {
@@ -40,6 +43,113 @@ export default function CustomerDetail() {
   const showMessage = (text, type = 'info') => {
     setMessage({ text, type });
     setTimeout(() => setMessage(null), 5000);
+  };
+
+  const loadSystemRegSummary = async () => {
+    try {
+      console.log('🔍 Loading system registry summary for customer:', id);
+      const response = await api.request(`/api/customers/${id}/system-registry/summary`);
+      console.log('✅ System registry summary loaded:', response);
+      setSystemRegSummary(response);
+    } catch (error) {
+      console.error('❌ Error loading system registry summary:', error);
+    }
+  };
+
+  const handleSystemRegImport = async (e) => {
+    e.preventDefault();
+    
+    const fileInput = e.target.xml_file.files[0];
+    const textInput = e.target.xml_data.value;
+    
+    let xmlText = '';
+    
+    if (fileInput) {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        xmlText = event.target.result;
+        await processXMLImport(xmlText);
+      };
+      reader.readAsText(fileInput);
+      return;
+    } else if (textInput) {
+      xmlText = textInput;
+      await processXMLImport(xmlText);
+    } else {
+      showMessage('Please select a file or paste XML data', 'error');
+    }
+  };
+
+  const processXMLImport = async (xmlData) => {
+    try {
+      console.log('📤 Starting XML import...');
+      console.log('📤 XML data length:', xmlData.length, 'characters');
+      showMessage('Importing system registry data...', 'info');
+      
+      const result = await api.request(`/api/customers/${id}/system-registry/import`, {
+        method: 'POST',
+        body: JSON.stringify({ xmlData }),
+      });
+      
+      console.log('📥 Import result:', result);
+      
+      if (result.success) {
+        console.log('✅ Import successful, stats:', result.stats);
+        
+        const stats = result.stats;
+        const totalImported = Object.values(stats).reduce((a, b) => a + b, 0);
+        
+        if (totalImported === 0) {
+          soundSystem.playError();
+          showMessage('Import completed but no data was found. Please check your XML format matches the expected structure. See the sample file for reference.', 'error');
+          console.warn('⚠️ XML structure may not match expected format');
+          console.warn('⚠️ Expected elements: Workstation, Controller, SmartSwitch, IODevice, CharmsIOCard, Charm, AMSSystem');
+          // Don't close the modal so user can see the message and try again
+          return;
+        }
+        
+        soundSystem.playSuccess();
+        const summary = [
+          stats.workstations && `${stats.workstations} workstations`,
+          stats.controllers && `${stats.controllers} controllers`,
+          stats.smartSwitches && `${stats.smartSwitches} smart switches`,
+          stats.ioDevices && `${stats.ioDevices} I/O devices`,
+          stats.charmsIOCards && `${stats.charmsIOCards} Charms I/O cards`,
+          stats.charms && `${stats.charms} Charms`,
+          stats.amsSystems && `${stats.amsSystems} AMS system`
+        ].filter(Boolean).join(', ');
+        
+        showMessage(`Successfully imported: ${summary}`, 'success');
+        
+        // Reload summary to show new data
+        console.log('🔄 Reloading system registry summary...');
+        await loadSystemRegSummary();
+        
+        // Keep modal open for a moment to show the success message
+        setTimeout(() => {
+          setShowSystemRegModal(false);
+        }, 2000);
+      } else {
+        soundSystem.playError();
+        console.error('❌ Import failed:', result.error);
+        console.error('❌ Details:', result.details);
+        console.error('❌ Help:', result.help);
+        
+        let errorMsg = result.error || 'Error importing system registry';
+        if (result.lineNumber) {
+          errorMsg += ` (Line ${result.lineNumber})`;
+        }
+        if (result.help) {
+          errorMsg += '\n\n' + result.help;
+        }
+        
+        showMessage(errorMsg, 'error');
+      }
+    } catch (error) {
+      soundSystem.playError();
+      console.error('❌ Import exception:', error);
+      showMessage('Error importing system registry: ' + error.message, 'error');
+    }
   };
 
   const handleUpdateCustomer = async (e) => {
@@ -238,6 +348,42 @@ export default function CustomerDetail() {
                 <div className="text-xs text-gray-400">Active Sessions</div>
               </div>
             </div>
+            {systemRegSummary && (systemRegSummary.workstations > 0 || systemRegSummary.controllers > 0 || systemRegSummary.smartSwitches > 0) && (
+              <div className="mt-4 pt-4 border-t border-gray-600">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="text-sm text-gray-400">System Registry Data</div>
+                  <button
+                    onClick={() => navigate(`/system-registry/${customer.id}`)}
+                    className="text-xs text-blue-400 hover:text-blue-300"
+                  >
+                    View Details →
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  {systemRegSummary.workstations > 0 && (
+                    <div className="text-center bg-purple-900/30 rounded p-2 cursor-pointer hover:bg-purple-900/50"
+                         onClick={() => navigate(`/system-registry/${customer.id}`)}>
+                      <div className="font-bold text-purple-300">{systemRegSummary.workstations}</div>
+                      <div className="text-gray-400">Workstations</div>
+                    </div>
+                  )}
+                  {systemRegSummary.controllers > 0 && (
+                    <div className="text-center bg-blue-900/30 rounded p-2 cursor-pointer hover:bg-blue-900/50"
+                         onClick={() => navigate(`/system-registry/${customer.id}`)}>
+                      <div className="font-bold text-blue-300">{systemRegSummary.controllers}</div>
+                      <div className="text-gray-400">Controllers</div>
+                    </div>
+                  )}
+                  {systemRegSummary.smartSwitches > 0 && (
+                    <div className="text-center bg-green-900/30 rounded p-2 cursor-pointer hover:bg-green-900/50"
+                         onClick={() => navigate(`/system-registry/${customer.id}`)}>
+                      <div className="font-bold text-green-300">{systemRegSummary.smartSwitches}</div>
+                      <div className="text-gray-400">Switches</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -259,6 +405,20 @@ export default function CustomerDetail() {
             >
               📤 Import Nodes
             </button>
+            <button
+              onClick={() => setShowSystemRegModal(true)}
+              className="btn btn-info w-full text-white"
+            >
+              📋 Import System Reg
+            </button>
+            {systemRegSummary && (systemRegSummary.workstations > 0 || systemRegSummary.controllers > 0) && (
+              <button
+                onClick={() => navigate(`/system-registry/${customer.id}`)}
+                className="btn btn-success w-full"
+              >
+                👁️ View System Reg
+              </button>
+            )}
             <button
               onClick={() => navigate(`/nodes/${customer.id}`)}
               className="btn btn-secondary w-full"
@@ -600,6 +760,117 @@ export default function CustomerDetail() {
                 </button>
                 <button type="submit" className="btn btn-primary">
                   Create Session
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* System Registry Import Modal */}
+      {showSystemRegModal && (
+        <div className="modal-backdrop">
+          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-3xl w-full mx-4 border border-gray-700">
+            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-100">📋 Import System Registry (XML)</h3>
+              <button
+                onClick={() => setShowSystemRegModal(false)}
+                className="text-gray-400 hover:text-gray-200 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleSystemRegImport}>
+              <div className="px-6 py-4 space-y-4">
+                {systemRegSummary && (
+                  <div className={`border rounded-lg p-4 ${
+                    (systemRegSummary.workstations > 0 || systemRegSummary.controllers > 0 || systemRegSummary.smartSwitches > 0)
+                      ? 'bg-blue-900/30 border-blue-500'
+                      : 'bg-gray-700/30 border-gray-600'
+                  }`}>
+                    <h4 className={`font-semibold mb-2 ${
+                      (systemRegSummary.workstations > 0 || systemRegSummary.controllers > 0 || systemRegSummary.smartSwitches > 0)
+                        ? 'text-blue-300'
+                        : 'text-gray-400'
+                    }`}>
+                      {(systemRegSummary.workstations > 0 || systemRegSummary.controllers > 0 || systemRegSummary.smartSwitches > 0)
+                        ? '📊 Current System Registry Data'
+                        : '📋 No System Registry Data Yet'}
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2 text-sm text-gray-300">
+                      <div>Workstations: <strong>{systemRegSummary.workstations || 0}</strong></div>
+                      <div>Controllers: <strong>{systemRegSummary.controllers || 0}</strong></div>
+                      <div>Smart Switches: <strong>{systemRegSummary.smartSwitches || 0}</strong></div>
+                      <div>I/O Devices: <strong>{systemRegSummary.ioDevices || 0}</strong></div>
+                      <div>Charms I/O Cards: <strong>{systemRegSummary.charmsIOCards || 0}</strong></div>
+                      <div>Charms: <strong>{systemRegSummary.charms || 0}</strong></div>
+                    </div>
+                    {(systemRegSummary.workstations > 0 || systemRegSummary.controllers > 0) && (
+                      <div className="mt-3 pt-3 border-t border-blue-700">
+                        <p className="text-xs text-blue-200">
+                          💡 Importing will update existing records with the same names
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                <div>
+                  <label className="form-label">Upload XML File</label>
+                  <input
+                    type="file"
+                    name="xml_file"
+                    accept=".xml"
+                    className="form-input"
+                  />
+                  <p className="text-sm text-gray-400 mt-2">
+                    💡 Select your DeltaV System Registry XML export
+                  </p>
+                </div>
+                
+                <div className="text-center text-gray-500">OR</div>
+                
+                <div>
+                  <label className="form-label">Paste XML Data</label>
+                  <textarea
+                    name="xml_data"
+                    rows="10"
+                    placeholder="<?xml version=&quot;1.0&quot;?>&#10;<Export>&#10;  <Workstation>...</Workstation>&#10;  <Controller>...</Controller>&#10;</Export>"
+                    className="form-textarea font-mono text-sm"
+                  ></textarea>
+                  <p className="text-sm text-gray-400 mt-2">
+                    💡 Or paste XML data directly
+                  </p>
+                </div>
+
+                <div className="bg-yellow-900/30 border border-yellow-500 rounded-lg p-3">
+                  <p className="text-yellow-300 text-sm mb-2">
+                    <strong>Important:</strong> XML must use these exact element names (case-sensitive):
+                  </p>
+                  <div className="text-xs text-yellow-200 space-y-1 ml-4">
+                    <div>• <code className="bg-black/30 px-1 rounded">&lt;Workstation&gt;</code> - Workstation records</div>
+                    <div>• <code className="bg-black/30 px-1 rounded">&lt;Controller&gt;</code> - Controller records</div>
+                    <div>• <code className="bg-black/30 px-1 rounded">&lt;SmartSwitch&gt;</code> - Smart Switch records</div>
+                    <div>• <code className="bg-black/30 px-1 rounded">&lt;IODevice&gt;</code> - I/O Device records</div>
+                    <div>• <code className="bg-black/30 px-1 rounded">&lt;CharmsIOCard&gt;</code> - Charms I/O Card records</div>
+                    <div>• <code className="bg-black/30 px-1 rounded">&lt;Charm&gt;</code> - Charm records</div>
+                    <div>• <code className="bg-black/30 px-1 rounded">&lt;AMSSystem&gt;</code> - AMS System record</div>
+                  </div>
+                  <p className="text-yellow-200 text-xs mt-2">
+                    📄 See <code className="bg-black/30 px-1 rounded">sample-system-registry.xml</code> in the project root for the correct format.
+                  </p>
+                </div>
+              </div>
+              <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowSystemRegModal(false)}
+                  className="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  📋 Import System Registry
                 </button>
               </div>
             </form>

@@ -17,6 +17,7 @@ const nodeTrackerRoutes = require('./routes/nodeTracker');
 const diagnosticsRoutes = require('./routes/diagnostics');
 const pmNotesRoutes = require('./routes/pmNotes');
 const iiDocumentsRoutes = require('./routes/iiDocuments');
+const systemRegistryRoutes = require('./routes/systemRegistry');
 
 const PORT = process.env.PORT || 3000;
 
@@ -64,6 +65,7 @@ function createApp(options = {}) {
   app.use('/api/sessions', diagnosticsRoutes);
   app.use('/api/sessions', pmNotesRoutes);
   app.use('/', iiDocumentsRoutes);
+  app.use('/', systemRegistryRoutes);
 
   if (!catchAllPath) {
     app.get('/dashboard', requireAuth, (req, res) => {

@@ -783,6 +783,157 @@ function initializeDatabase() {
     addColumnIfNotExists('cabinets', 'rack_has_monitor', 'INTEGER DEFAULT 0');
     addColumnIfNotExists('cabinets', 'comments', 'TEXT');
 
+    // System Registry Tables (from XML import)
+    // Workstation table
+    db.run(`CREATE TABLE IF NOT EXISTS sys_workstations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      model TEXT,
+      type TEXT,
+      redundant TEXT,
+      software_revision TEXT,
+      dv_hotfixes TEXT,
+      os_name TEXT,
+      ms_office_installed TEXT,
+      terminal_server TEXT,
+      domain_controller TEXT,
+      iddc TEXT,
+      dell_service_tag_number TEXT,
+      computer_model TEXT,
+      bios_version TEXT,
+      memory TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (customer_id) REFERENCES customers(id),
+      UNIQUE(customer_id, name)
+    )`, (err) => {
+      if (err) console.error('❌ Error creating sys_workstations table:', err);
+      else console.log('✅ Created (or found) sys_workstations table');
+    });
+
+    // SmartSwitch table
+    db.run(`CREATE TABLE IF NOT EXISTS sys_smart_switches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      model TEXT,
+      software_revision TEXT,
+      hardware_revision TEXT,
+      serial_number TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (customer_id) REFERENCES customers(id),
+      UNIQUE(customer_id, name)
+    )`, (err) => {
+      if (err) console.error('❌ Error creating sys_smart_switches table:', err);
+      else console.log('✅ Created (or found) sys_smart_switches table');
+    });
+
+    // IODevice table
+    db.run(`CREATE TABLE IF NOT EXISTS sys_io_devices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      bus_type TEXT,
+      device_type TEXT,
+      node TEXT,
+      card TEXT,
+      device_name TEXT,
+      channel TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (customer_id) REFERENCES customers(id)
+    )`, (err) => {
+      if (err) console.error('❌ Error creating sys_io_devices table:', err);
+      else console.log('✅ Created (or found) sys_io_devices table');
+    });
+
+    // Controller table
+    db.run(`CREATE TABLE IF NOT EXISTS sys_controllers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      model TEXT,
+      software_revision TEXT,
+      hardware_revision TEXT,
+      serial_number TEXT,
+      controller_free_memory TEXT,
+      redundant TEXT,
+      partner_model TEXT,
+      partner_software_revision TEXT,
+      partner_hardware_revision TEXT,
+      partner_serial_number TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (customer_id) REFERENCES customers(id),
+      UNIQUE(customer_id, name)
+    )`, (err) => {
+      if (err) console.error('❌ Error creating sys_controllers table:', err);
+      else console.log('✅ Created (or found) sys_controllers table');
+    });
+
+    // CharmsIOCard table
+    db.run(`CREATE TABLE IF NOT EXISTS sys_charms_io_cards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      model TEXT,
+      software_revision TEXT,
+      hardware_revision TEXT,
+      serial_number TEXT,
+      redundant TEXT,
+      partner_model TEXT,
+      partner_software_revision TEXT,
+      partner_hardware_revision TEXT,
+      partner_serial_number TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (customer_id) REFERENCES customers(id),
+      UNIQUE(customer_id, name)
+    )`, (err) => {
+      if (err) console.error('❌ Error creating sys_charms_io_cards table:', err);
+      else console.log('✅ Created (or found) sys_charms_io_cards table');
+    });
+
+    // Charm table
+    // NOTE: UNIQUE constraint on (customer_id, charms_io_card_name, name) would be ideal
+    // but can't easily modify existing tables, so we clear and re-import charms
+    db.run(`CREATE TABLE IF NOT EXISTS sys_charms (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      charms_io_card_name TEXT,
+      name TEXT NOT NULL,
+      model TEXT,
+      software_revision TEXT,
+      hardware_revision TEXT,
+      serial_number TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (customer_id) REFERENCES customers(id)
+    )`, (err) => {
+      if (err) console.error('❌ Error creating sys_charms table:', err);
+      else console.log('✅ Created (or found) sys_charms table');
+    });
+    
+    // Add charms_io_card_name column if it doesn't exist
+    db.run(`ALTER TABLE sys_charms ADD COLUMN charms_io_card_name TEXT`, (err) => {
+      // Column already exists, ignore error
+    });
+
+    // AMSSystem table
+    db.run(`CREATE TABLE IF NOT EXISTS sys_ams_systems (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL,
+      software_revision TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (customer_id) REFERENCES customers(id),
+      UNIQUE(customer_id)
+    )`, (err) => {
+      if (err) console.error('❌ Error creating sys_ams_systems table:', err);
+      else console.log('✅ Created (or found) sys_ams_systems table');
+    });
+
     console.log('✅ Database tables initialized successfully');
     
     // Debug: Check cabinet data after initialization
