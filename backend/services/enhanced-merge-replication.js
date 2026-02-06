@@ -29,7 +29,15 @@ class EnhancedMergeReplication {
       'session_ii_equipment',
       'session_ii_checklist',
       'session_ii_equipment_used',
-      'csv_import_history'
+      'csv_import_history',
+      // System Registry tables (replaces CSV node imports)
+      'sys_workstations',
+      'sys_smart_switches',
+      'sys_io_devices',
+      'sys_controllers',
+      'sys_charms_io_cards',
+      'sys_charms',
+      'sys_ams_systems'
     ];
 
     // Map table names to MongoDB models
@@ -46,7 +54,15 @@ class EnhancedMergeReplication {
       'session_ii_equipment': models.SessionIIEquipment,
       'session_ii_checklist': models.SessionIIChecklist,
       'session_ii_equipment_used': models.SessionIIEquipmentUsed,
-      'csv_import_history': models.CSVImportHistory
+      'csv_import_history': models.CSVImportHistory,
+      // System Registry models (need to create these)
+      'sys_workstations': models.SysWorkstation,
+      'sys_smart_switches': models.SysSmartSwitch,
+      'sys_io_devices': models.SysIODevice,
+      'sys_controllers': models.SysController,
+      'sys_charms_io_cards': models.SysCharmsIOCard,
+      'sys_charms': models.SysCharm,
+      'sys_ams_systems': models.SysAMSSystem
     };
 
     // Conflict resolution strategy: 'local_wins', 'master_wins', 'latest_wins'
@@ -212,7 +228,7 @@ class EnhancedMergeReplication {
           console.log(`\n📥 Processing table: ${tableName}`);
           
           const Model = this.modelMap[tableName];
-          const lastSync = this.getLastSyncTime(tableName);
+          const lastSync = await this.getLastSyncTime(tableName);
           
           console.log(`   ⏰ Last sync: ${lastSync || 'never'}`);
 
@@ -267,13 +283,47 @@ class EnhancedMergeReplication {
             }
           }
 
+          // SECOND PASS: Check for records that exist on master but are missing/deleted locally
+          // This catches cases where local deleted a record but master has a newer/active version
+          if (lastSync) {
+            console.log(`   🔍 Checking for missing/deleted local records...`);
+            
+            // Get all active record IDs from master (limit to reasonable batch)
+            const activeMasterIds = await Model.find({ deleted: { $ne: 1 } }).select('_id').limit(10000).lean();
+            
+            let reconciledCount = 0;
+            for (const { _id } of activeMasterIds) {
+              try {
+                const localRecord = await this.getLocalRecord(tableName, _id);
+                
+                // If local doesn't exist OR local is deleted, pull from master
+                if (!localRecord || localRecord.deleted === 1) {
+                  const masterRecord = await Model.findById(_id).lean();
+                  if (masterRecord && masterRecord.deleted !== 1) {
+                    const result = await this.mergeRecordFromMaster(tableName, masterRecord);
+                    if (result.action === 'inserted' || result.action === 'updated') {
+                      reconciledCount++;
+                    }
+                  }
+                }
+              } catch (err) {
+                // Skip errors for individual records
+              }
+            }
+            
+            if (reconciledCount > 0) {
+              console.log(`   🔄 Reconciled ${reconciledCount} missing/deleted records from master`);
+              pulledCount += reconciledCount;
+            }
+          }
+
           console.log(`   ✅ Pulled: ${pulledCount}, Conflicts: ${conflictCount}, Deleted: ${deletedCount}`);
           results[tableName] = { pulled: pulledCount, conflicts: conflictCount, deleted: deletedCount };
           totalPulled += pulledCount;
           totalConflicts += conflictCount;
 
           // Update last sync time
-          this.setLastSyncTime(tableName, new Date().toISOString());
+          await this.setLastSyncTime(tableName, new Date().toISOString());
 
         } catch (error) {
           console.error(`   ❌ Error pulling ${tableName}:`, error.message);
@@ -390,13 +440,15 @@ class EnhancedMergeReplication {
               }))
               .catch(reject);
           } else {
-            // Local wins - keep local, don't update
-            console.log(`   🏠 Keeping local changes (will be pushed later)`);
-            resolve({ 
-              action: 'kept_local', 
-              conflict: true, 
-              resolution: 'local_wins' 
-            });
+            // Local wins - keep local BUT mark as synced to prevent re-pushing
+            console.log(`   🏠 Keeping local changes (marking as handled)`);
+            this.markRecordAsSynced(tableName, recordId)
+              .then(() => resolve({ 
+                action: 'kept_local', 
+                conflict: true, 
+                resolution: 'local_wins' 
+              }))
+              .catch(reject);
           }
         } else {
           // No conflict - local is synced, safe to update
@@ -413,6 +465,27 @@ class EnhancedMergeReplication {
   // ============================================================
 
   resolveConflict(localRecord, masterRecord) {
+    // CRITICAL: Always prefer master if local is deleted but master is active
+    if (localRecord.deleted === 1 && masterRecord.deleted === 0) {
+      return {
+        winner: 'master',
+        reason: 'Master has active record, local is deleted - master wins'
+      };
+    }
+    
+    // CRITICAL: Always prefer master if master is newer and local is deleted
+    if (localRecord.deleted === 1) {
+      const masterTime = new Date(masterRecord.updated_at || masterRecord.created_at).getTime();
+      const localTime = new Date(localRecord.updated_at || localRecord.created_at).getTime();
+      
+      if (masterTime > localTime) {
+        return {
+          winner: 'master',
+          reason: 'Master is newer than local deletion - master wins'
+        };
+      }
+    }
+    
     switch (this.conflictStrategy) {
       case 'master_wins':
         return { winner: 'master', reason: 'Master always wins policy' };
@@ -551,6 +624,22 @@ class EnhancedMergeReplication {
     });
   }
 
+  async getLocalRecord(tableName, recordId) {
+    return new Promise((resolve, reject) => {
+      this.localDb.get(
+        `SELECT * FROM ${tableName} WHERE id = ?`,
+        [recordId],
+        (err, row) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(row || null);
+          }
+        }
+      );
+    });
+  }
+
   async insertOrUpdateLocalRecord(tableName, record, markAsSynced = true) {
     return new Promise((resolve, reject) => {
       // Get table schema
@@ -658,24 +747,24 @@ class EnhancedMergeReplication {
   // SYNC METADATA
   // ============================================================
 
-  getLastSyncTime(tableName) {
+  async getLastSyncTime(tableName) {
     try {
-      const result = this.localDb.prepare('SELECT value FROM sync_metadata WHERE key = ?').get([`last_sync_${tableName}`]);
+      const result = await this.localDb.prepare('SELECT value FROM sync_metadata WHERE key = ?').get([`last_sync_${tableName}`]);
       return result ? result.value : null;
     } catch (error) {
       return null;
     }
   }
 
-  setLastSyncTime(tableName, timestamp) {
+  async setLastSyncTime(tableName, timestamp) {
     try {
-      this.localDb.prepare('CREATE TABLE IF NOT EXISTS sync_metadata (key TEXT PRIMARY KEY, value TEXT)').run();
-      const result = this.localDb.prepare('INSERT OR REPLACE INTO sync_metadata (key, value) VALUES (?, ?)').run([`last_sync_${tableName}`, timestamp]);
+      await this.localDb.prepare('CREATE TABLE IF NOT EXISTS sync_metadata (key TEXT PRIMARY KEY, value TEXT)').run();
+      const result = await this.localDb.prepare('INSERT OR REPLACE INTO sync_metadata (key, value) VALUES (?, ?)').run([`last_sync_${tableName}`, timestamp]);
       
       console.log(`   ⏰ Set last sync time for ${tableName}: ${timestamp} (changes: ${result.changes})`);
       
       // Verify it was saved
-      const verify = this.localDb.prepare('SELECT value FROM sync_metadata WHERE key = ?').get([`last_sync_${tableName}`]);
+      const verify = await this.localDb.prepare('SELECT value FROM sync_metadata WHERE key = ?').get([`last_sync_${tableName}`]);
       if (!verify) {
         console.error(`   ❌ Failed to verify last sync time for ${tableName}`);
       } else {
@@ -731,7 +820,7 @@ class EnhancedMergeReplication {
           
           status.localCounts[tableName] = localRecords.length;
           status.unsyncedCounts[tableName] = unsyncedRecords.length;
-          status.lastSyncTimes[tableName] = this.getLastSyncTime(tableName) || 'Never';
+          status.lastSyncTimes[tableName] = (await this.getLastSyncTime(tableName)) || 'Never';
         } catch (error) {
           status.localCounts[tableName] = `Error: ${error.message}`;
           status.unsyncedCounts[tableName] = 0;

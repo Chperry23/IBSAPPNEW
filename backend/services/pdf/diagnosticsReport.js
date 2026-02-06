@@ -333,60 +333,50 @@ function generateControllerBreakdown(diagnosticsData) {
 
   return `
     <div class="page-break" style="page-break-before: always;">
-      <h2 style="text-align: center; color: #2563eb; font-size: 28px; margin: 20px 0; padding: 15px; border-bottom: 3px solid #2563eb;">Affected Controllers Breakdown</h2>
+      <h2 style="text-align: center; color: #2563eb; font-size: 28px; margin: 20px 0; padding: 15px; border-bottom: 3px solid #2563eb;">I/O Errors - Detailed Error Log</h2>
       
-      <div class="controller-overview-section" style="margin: 30px 0; page-break-inside: avoid;">
-        <h3 class="section-title">Detailed Controller Issues</h3>
-        <table class="overview-table">
+      <div style="margin: 30px 0; page-break-inside: avoid;">
+        <h3 class="section-title">Complete Error Log</h3>
+        <table style="width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
           <thead>
-            <tr>
-              <th>Controller</th>
-              <th>Issue Type</th>
-              <th>Location</th>
-              <th>Count</th>
-              <th>Status</th>
+            <tr style="background: #2563eb; color: white;">
+              <th style="padding: 12px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Controller</th>
+              <th style="padding: 12px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Card</th>
+              <th style="padding: 12px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Channel</th>
+              <th style="padding: 12px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Error Type</th>
+              <th style="padding: 12px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Description</th>
             </tr>
           </thead>
           <tbody>
-            ${Object.entries(controllerGroups).flatMap(([name, errors]) => {
-              // Group errors by card for this controller
-              const cardGroups = {};
-              errors.forEach(error => {
-                const key = `${error.card_number}`;
-                if (!cardGroups[key]) cardGroups[key] = [];
-                cardGroups[key].push(error);
-              });
+            ${diagnosticsData.map((error, index) => {
+              const bgColor = index % 2 === 0 ? '#f8f9fa' : 'white';
+              const errorLabel = errorTypeLabels[error.error_type] || error.error_type;
+              const description = error.error_description || error.notes || 'No description provided';
               
-              return Object.entries(cardGroups).map(([cardKey, cardErrors]) => {
-                // Get unique error types for this card
-                const errorTypes = [...new Set(cardErrors.map(e => errorTypeLabels[e.error_type] || e.error_type))];
-                const channels = cardErrors.map(e => e.channel_number !== null ? `Ch${e.channel_number}` : 'N/A').filter((v, i, a) => a.indexOf(v) === i);
-                const severity = cardErrors.length > 10 ? 'Critical' : cardErrors.length > 5 ? 'Warning' : 'Monitor';
-                const severityColor = cardErrors.length > 10 ? '#dc3545' : cardErrors.length > 5 ? '#ffc107' : '#17a2b8';
-                
-                return `
-                <tr>
-                  <td class="controller-cell">${name}</td>
-                  <td class="error-type-cell">${errorTypes.join(', ')}</td>
-                  <td class="channel-cell">Card ${cardKey} (${channels.join(', ')})</td>
-                  <td><strong>${cardErrors.length}</strong></td>
-                  <td style="color: ${severityColor}; font-weight: bold;">${severity}</td>
-                </tr>
-                `;
-              }).join('');
+              return `
+              <tr style="background: ${bgColor};">
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: 600;">${error.controller_name}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${error.card_number}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${error.channel_number !== null ? error.channel_number : 'N/A'}</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">
+                  <span style="background: #dc3545; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">
+                    ${errorLabel.toUpperCase()}
+                  </span>
+                </td>
+                <td style="padding: 10px; border: 1px solid #ddd; font-size: 13px; color: #333;">${description}</td>
+              </tr>
+              `;
             }).join('')}
           </tbody>
         </table>
       </div>
       
-      <div style="background: #f0f8ff; padding: 20px; border-radius: 8px; border-left: 4px solid #17a2b8; margin-top: 30px;">
-        <h4 style="color: #17a2b8; margin: 0 0 10px 0;">💡 Next Steps</h4>
-        <ul style="margin: 10px 0; padding-left: 25px; line-height: 1.8;">
-          <li>Address Critical status controllers immediately</li>
-          <li>Schedule maintenance for Warning status controllers</li>
-          <li>Continue monitoring Monitor status controllers</li>
-          <li>Document all corrective actions taken</li>
-        </ul>
+      <div style="background: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107; margin-top: 30px;">
+        <h4 style="color: #856404; margin: 0 0 10px 0;">⚠️ Action Required</h4>
+        <p style="margin: 5px 0; color: #856404; line-height: 1.6;">
+          <strong>${diagnosticsData.length} error(s)</strong> detected across <strong>${Object.keys(controllerGroups).length} controller(s)</strong>. 
+          Review each error above and take appropriate corrective action. Verify all custom messages and descriptions for accuracy.
+        </p>
       </div>
     </div>
   `;

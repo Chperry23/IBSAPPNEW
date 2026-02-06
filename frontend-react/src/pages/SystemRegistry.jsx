@@ -181,6 +181,41 @@ export default function SystemRegistry() {
     }
   };
 
+  const handleSyncToNodes = async () => {
+    console.log('🔄 [UI] Manual sync triggered for customer:', customerId);
+    
+    if (!confirm('Sync System Registry data to Nodes? This will create/update nodes for this customer.')) return;
+    
+    try {
+      setLoading(true);
+      console.log('📤 Calling sync API endpoint...');
+      
+      const result = await api.request(`/api/customers/${customerId}/system-registry/sync-to-nodes`, {
+        method: 'POST'
+      });
+      
+      console.log('📥 Sync API response:', result);
+      
+      if (result.success) {
+        soundSystem.playSuccess();
+        console.log(`✅ Sync successful: ${result.stats.total} nodes (${result.stats.created} created, ${result.stats.updated} updated)`);
+        showMessage(`✅ Synced ${result.stats.total} nodes (${result.stats.created} created, ${result.stats.updated} updated)`, 'success');
+      } else {
+        soundSystem.playError();
+        console.error('❌ Sync failed:', result.error);
+        showMessage('Failed to sync to nodes: ' + (result.error || 'Unknown error'), 'error');
+      }
+    } catch (error) {
+      console.error('❌ Sync exception:', error);
+      console.error('❌ Error details:', error.message);
+      console.error('❌ Error stack:', error.stack);
+      soundSystem.playError();
+      showMessage('Error syncing to nodes: ' + error.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDeleteAll = async () => {
     if (!confirm('Delete ALL system registry data for this customer? This cannot be undone.')) return;
     
@@ -262,14 +297,14 @@ export default function SystemRegistry() {
           </>
         )}
         <span className="mx-2">›</span>
-        <span className="text-gray-200">System Registry</span>
+        <span className="text-gray-200">Nodes</span>
       </div>
 
       {/* Header */}
       <div className="flex justify-between items-start mb-8 animate-fadeIn">
         <div>
-          <h1 className="text-4xl font-bold gradient-text mb-2">📋 System Registry</h1>
-          {customer && <p className="text-gray-400 text-lg">{customer.name}</p>}
+          <h1 className="text-4xl font-bold gradient-text mb-2">📋 Nodes</h1>
+          {customer && <p className="text-gray-400 text-lg">{customer.name} (Imported from System Registry XML)</p>}
         </div>
         <div className="flex gap-3">
           {hasData && (
@@ -351,13 +386,13 @@ export default function SystemRegistry() {
         <div className="card">
           <div className="card-body text-center py-12">
             <div className="text-6xl mb-4">📋</div>
-            <p className="text-gray-400 mb-4">No system registry data imported yet</p>
-            <p className="text-gray-500 text-sm mb-6">Import system registry XML data from the customer profile page</p>
+            <p className="text-gray-400 mb-4">No nodes imported yet</p>
+            <p className="text-gray-500 text-sm mb-6">Import nodes via System Registry XML from the customer profile page</p>
             <button
               onClick={() => navigate(`/customer/${customerId}`)}
               className="btn btn-primary"
             >
-              Go to Customer Profile
+              📋 Import Nodes
             </button>
           </div>
         </div>

@@ -7,7 +7,7 @@ const puppeteer = require('puppeteer');
 const { findChrome } = require('../utils/chrome');
 const { getSharedStyles, generateSingleCabinetHtml, generateRiskAssessmentPage, generateCoverPage } = require('../services/pdf/cabinetReport');
 const { generateMaintenanceReportPage } = require('../services/pdf/maintenanceReport');
-const { generateDiagnosticsPage, generateDiagnosticsSummary, generateControllerBreakdown } = require('../services/pdf/diagnosticsReport');
+const { generateDiagnosticsSummary, generateControllerBreakdown } = require('../services/pdf/diagnosticsReport');
 const { generateRiskAssessment } = require('../utils/risk-assessment');
 
 // Helper function to check if session is completed
@@ -315,7 +315,7 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
         free_time: maintByNode[n.id]?.free_time || '',
         redundancy_checked: Boolean(maintByNode[n.id]?.redundancy_checked),
         cold_restart_checked: Boolean(maintByNode[n.id]?.cold_restart_checked),
-        no_errors_checked: Boolean(maintByNode[n.id]?.no_errors_checked),
+        no_errors_checked: maintByNode[n.id] !== undefined ? Boolean(maintByNode[n.id].no_errors_checked) : true,
         hdd_replaced: Boolean(maintByNode[n.id]?.hdd_replaced),
         performance_type: maintByNode[n.id]?.performance_type || 'free_time',
         performance_value: maintByNode[n.id]?.performance_value,
@@ -335,13 +335,11 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
     const riskResult = generateRiskAssessment(cabinets, nodeMaintenanceData);
     const riskAssessmentHtml = generateRiskAssessmentPage(riskResult, session.session_name);
     const maintenanceHtml = generateMaintenanceReportPage(nodeMaintenanceData);
-    const diagnosticsHtml = generateDiagnosticsPage(diagnostics);
-    const hasDiagnosticsErrors = diagnostics && diagnostics.length > 0;
     
-    // Generate comprehensive diagnostics summary with charts (replaces old simple summary)
+    // Generate I/O Errors Summary (appears before cabinets)
     const dvSummaryHtml = generateDiagnosticsSummary(diagnostics);
     
-    // Generate detailed controller breakdown (appears after cabinets)
+    // Generate Detailed Error Log (appears after cabinets at the end)
     const controllerBreakdownHtml = generateControllerBreakdown(diagnostics);
     
     const cabinetsHtml = cabinets.map((cab, i) => generateSingleCabinetHtml(cab, sessionInfo, i + 1)).join('');
@@ -433,7 +431,6 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
         ${pmNotesHtml}
         ${cabinetsHtml}
         ${controllerBreakdownHtml}
-        ${diagnosticsHtml}
       </body>
       </html>
     `;

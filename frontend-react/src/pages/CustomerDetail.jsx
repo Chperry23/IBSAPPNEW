@@ -119,7 +119,7 @@ export default function CustomerDetail() {
           stats.amsSystems && `${stats.amsSystems} AMS system`
         ].filter(Boolean).join(', ');
         
-        showMessage(`Successfully imported: ${summary}`, 'success');
+        showMessage(`Successfully imported: ${summary}. Ready for PM sessions!`, 'success');
         
         // Reload summary to show new data
         console.log('🔄 Reloading system registry summary...');
@@ -400,31 +400,19 @@ export default function CustomerDetail() {
               ➕ New PM Session
             </button>
             <button
-              onClick={() => navigate(`/nodes/${customer.id}`)}
-              className="btn btn-success w-full"
-            >
-              📤 Import Nodes
-            </button>
-            <button
               onClick={() => setShowSystemRegModal(true)}
               className="btn btn-info w-full text-white"
             >
-              📋 Import System Reg
+              📋 Import Nodes
             </button>
             {systemRegSummary && (systemRegSummary.workstations > 0 || systemRegSummary.controllers > 0) && (
               <button
                 onClick={() => navigate(`/system-registry/${customer.id}`)}
                 className="btn btn-success w-full"
               >
-                👁️ View System Reg
+                👁️ View Nodes
               </button>
             )}
-            <button
-              onClick={() => navigate(`/nodes/${customer.id}`)}
-              className="btn btn-secondary w-full"
-            >
-              👁️ View Nodes
-            </button>
             <button
               onClick={() => {
                 // Set the modal to I&I type
@@ -772,7 +760,7 @@ export default function CustomerDetail() {
         <div className="modal-backdrop">
           <div className="bg-gray-800 rounded-lg shadow-2xl max-w-3xl w-full mx-4 border border-gray-700">
             <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-100">📋 Import System Registry (XML)</h3>
+              <h3 className="text-lg font-semibold text-gray-100">📋 Import Nodes (System Registry XML)</h3>
               <button
                 onClick={() => setShowSystemRegModal(false)}
                 className="text-gray-400 hover:text-gray-200 text-2xl"
@@ -870,7 +858,7 @@ export default function CustomerDetail() {
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary">
-                  📋 Import System Registry
+                  📋 Import Nodes (XML)
                 </button>
               </div>
             </form>

@@ -368,6 +368,152 @@ csvImportHistorySchema.index({ uuid: 1 }, { unique: true, sparse: true });
 csvImportHistorySchema.index({ customer_id: 1 });
 csvImportHistorySchema.index({ import_date: -1 });
 
+// System Registry Schemas (replaces CSV node imports)
+const sysWorkstationSchema = new mongoose.Schema({
+  _id: { type: Number, required: true },
+  customer_id: { type: Number, required: true },
+  name: { type: String, required: true },
+  model: { type: String },
+  type: { type: String },
+  redundant: { type: String },
+  software_revision: { type: String },
+  dv_hotfixes: { type: String },
+  os_name: { type: String },
+  ms_office_installed: { type: String },
+  terminal_server: { type: String },
+  domain_controller: { type: String },
+  iddc: { type: String },
+  dell_service_tag_number: { type: String },
+  computer_model: { type: String },
+  bios_version: { type: String },
+  memory: { type: String },
+  uuid: { type: String },
+  synced: { type: Number, default: 0 },
+  device_id: { type: String },
+  deleted: { type: Number, default: 0 },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now }
+}, { collection: 'sys_workstations', versionKey: false });
+sysWorkstationSchema.index({ updated_at: 1, deleted: 1 });
+sysWorkstationSchema.index({ customer_id: 1, name: 1 }, { unique: true });
+
+const sysSmartSwitchSchema = new mongoose.Schema({
+  _id: { type: Number, required: true },
+  customer_id: { type: Number, required: true },
+  name: { type: String, required: true },
+  model: { type: String },
+  software_revision: { type: String },
+  hardware_revision: { type: String },
+  serial_number: { type: String },
+  uuid: { type: String },
+  synced: { type: Number, default: 0 },
+  device_id: { type: String },
+  deleted: { type: Number, default: 0 },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now }
+}, { collection: 'sys_smart_switches', versionKey: false });
+sysSmartSwitchSchema.index({ updated_at: 1, deleted: 1 });
+sysSmartSwitchSchema.index({ customer_id: 1, name: 1 }, { unique: true });
+
+const sysIODeviceSchema = new mongoose.Schema({
+  _id: { type: Number, required: true },
+  customer_id: { type: Number, required: true },
+  bus_type: { type: String },
+  device_type: { type: String },
+  node: { type: String },
+  card: { type: String },
+  device_name: { type: String },
+  channel: { type: String },
+  uuid: { type: String },
+  synced: { type: Number, default: 0 },
+  device_id: { type: String },
+  deleted: { type: Number, default: 0 },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now }
+}, { collection: 'sys_io_devices', versionKey: false });
+sysIODeviceSchema.index({ updated_at: 1, deleted: 1 });
+sysIODeviceSchema.index({ customer_id: 1, node: 1, card: 1, channel: 1 });
+
+const sysControllerSchema = new mongoose.Schema({
+  _id: { type: Number, required: true },
+  customer_id: { type: Number, required: true },
+  name: { type: String, required: true },
+  model: { type: String },
+  software_revision: { type: String },
+  hardware_revision: { type: String },
+  serial_number: { type: String },
+  controller_free_memory: { type: String },
+  redundant: { type: String },
+  partner_model: { type: String },
+  partner_software_revision: { type: String },
+  partner_hardware_revision: { type: String },
+  partner_serial_number: { type: String },
+  uuid: { type: String },
+  synced: { type: Number, default: 0 },
+  device_id: { type: String },
+  deleted: { type: Number, default: 0 },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now }
+}, { collection: 'sys_controllers', versionKey: false });
+sysControllerSchema.index({ updated_at: 1, deleted: 1 });
+sysControllerSchema.index({ customer_id: 1, name: 1 }, { unique: true });
+
+const sysCharmsIOCardSchema = new mongoose.Schema({
+  _id: { type: Number, required: true },
+  customer_id: { type: Number, required: true },
+  name: { type: String, required: true },
+  model: { type: String },
+  software_revision: { type: String },
+  hardware_revision: { type: String },
+  serial_number: { type: String },
+  redundant: { type: String },
+  partner_model: { type: String },
+  partner_software_revision: { type: String },
+  partner_hardware_revision: { type: String },
+  partner_serial_number: { type: String },
+  uuid: { type: String },
+  synced: { type: Number, default: 0 },
+  device_id: { type: String },
+  deleted: { type: Number, default: 0 },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now }
+}, { collection: 'sys_charms_io_cards', versionKey: false });
+sysCharmsIOCardSchema.index({ updated_at: 1, deleted: 1 });
+sysCharmsIOCardSchema.index({ customer_id: 1, name: 1 }, { unique: true });
+
+const sysCharmSchema = new mongoose.Schema({
+  _id: { type: Number, required: true },
+  customer_id: { type: Number, required: true },
+  charms_io_card_name: { type: String },
+  name: { type: String, required: true },
+  model: { type: String },
+  software_revision: { type: String },
+  hardware_revision: { type: String },
+  serial_number: { type: String },
+  uuid: { type: String },
+  synced: { type: Number, default: 0 },
+  device_id: { type: String },
+  deleted: { type: Number, default: 0 },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now }
+}, { collection: 'sys_charms', versionKey: false });
+sysCharmSchema.index({ updated_at: 1, deleted: 1 });
+sysCharmSchema.index({ customer_id: 1 });
+
+const sysAMSSystemSchema = new mongoose.Schema({
+  _id: { type: Number, required: true },
+  customer_id: { type: Number, required: true },
+  software_revision: { type: String },
+  uuid: { type: String },
+  synced: { type: Number, default: 0 },
+  device_id: { type: String },
+  deleted: { type: Number, default: 0 },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now }
+}, { collection: 'sys_ams_systems', versionKey: false });
+sysAMSSystemSchema.index({ updated_at: 1, deleted: 1 });
+sysAMSSystemSchema.index({ customer_id: 1 }, { unique: true });
+
 // Export all models
 module.exports = {
   User: mongoose.model('User', userSchema),
@@ -383,5 +529,13 @@ module.exports = {
   SessionIIEquipment: mongoose.model('SessionIIEquipment', sessionIIEquipmentSchema),
   SessionIIChecklist: mongoose.model('SessionIIChecklist', sessionIIChecklistSchema),
   SessionIIEquipmentUsed: mongoose.model('SessionIIEquipmentUsed', sessionIIEquipmentUsedSchema),
-  CSVImportHistory: mongoose.model('CSVImportHistory', csvImportHistorySchema)
+  CSVImportHistory: mongoose.model('CSVImportHistory', csvImportHistorySchema),
+  // System Registry models (replaces CSV node imports)
+  SysWorkstation: mongoose.model('SysWorkstation', sysWorkstationSchema),
+  SysSmartSwitch: mongoose.model('SysSmartSwitch', sysSmartSwitchSchema),
+  SysIODevice: mongoose.model('SysIODevice', sysIODeviceSchema),
+  SysController: mongoose.model('SysController', sysControllerSchema),
+  SysCharmsIOCard: mongoose.model('SysCharmsIOCard', sysCharmsIOCardSchema),
+  SysCharm: mongoose.model('SysCharm', sysCharmSchema),
+  SysAMSSystem: mongoose.model('SysAMSSystem', sysAMSSystemSchema)
 };

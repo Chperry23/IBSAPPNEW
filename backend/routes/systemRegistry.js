@@ -413,10 +413,11 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
     
     console.log('✅ [SYSTEM REGISTRY] Import completed successfully');
     console.log('✅ [SYSTEM REGISTRY] Stats:', JSON.stringify(stats, null, 2));
+    console.log('💡 [SYSTEM REGISTRY] PM Sessions will now read directly from System Registry tables');
     
     res.json({
       success: true,
-      message: 'System registry imported successfully',
+      message: 'System registry imported successfully - ready for PM sessions',
       stats
     });
   } catch (error) {
@@ -637,5 +638,154 @@ router.post('/api/system-registry/rebuild-charms-table', requireAuth, async (req
     res.status(500).json({ error: 'Database error' });
   }
 });
+
+// Helper function to sync System Registry to nodes table (auto-called after import)
+async function syncSystemRegistryToNodes(customerId) {
+  console.log('🔄 [SYNC] Starting sync for customer:', customerId);
+  let totalCreated = 0;
+  let totalUpdated = 0;
+  
+  // Sync Workstations
+  const workstations = await db.prepare('SELECT * FROM sys_workstations WHERE customer_id = ?').all([customerId]);
+  console.log(`🔄 [SYNC] Processing ${workstations.length} workstations...`);
+  for (const ws of workstations) {
+    const existing = await db.prepare('SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?').get([customerId, ws.name]);
+    if (existing) {
+      await db.prepare(`
+        UPDATE nodes SET node_type = ?, model = ?, serial = ?, firmware = ?, version = ?, 
+        os_name = ?, bios_version = ?, updated_at = CURRENT_TIMESTAMP, synced = 0
+        WHERE id = ?
+      `).run([ws.type || 'Workstation', ws.model, ws.dell_service_tag_number, ws.software_revision,
+        ws.dv_hotfixes, ws.os_name, ws.bios_version, existing.id]);
+      totalUpdated++;
+    } else {
+      await db.prepare(`
+        INSERT INTO nodes (customer_id, node_name, node_type, model, serial, firmware, version, 
+        os_name, bios_version, status, synced)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0)
+      `).run([customerId, ws.name, ws.type || 'Workstation', ws.model, ws.dell_service_tag_number,
+        ws.software_revision, ws.dv_hotfixes, ws.os_name, ws.bios_version]);
+      totalCreated++;
+    }
+  }
+  
+  console.log(`✅ [SYNC] Workstations: ${totalCreated} created, ${totalUpdated} updated`);
+  
+  // Sync Controllers
+  const controllers = await db.prepare('SELECT * FROM sys_controllers WHERE customer_id = ?').all([customerId]);
+  console.log(`🔄 [SYNC] Processing ${controllers.length} controllers...`);
+  const ctrlCreatedBefore = totalCreated;
+  const ctrlUpdatedBefore = totalUpdated;
+  for (const ctrl of controllers) {
+    const existing = await db.prepare('SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?').get([customerId, ctrl.name]);
+    if (existing) {
+      await db.prepare(`
+        UPDATE nodes SET node_type = ?, model = ?, serial = ?, firmware = ?, version = ?, 
+        redundant = ?, updated_at = CURRENT_TIMESTAMP, synced = 0
+        WHERE id = ?
+      `).run([ctrl.model || 'Controller', ctrl.model, ctrl.serial_number, ctrl.software_revision,
+        ctrl.hardware_revision, ctrl.redundant, existing.id]);
+      totalUpdated++;
+    } else {
+      await db.prepare(`
+        INSERT INTO nodes (customer_id, node_name, node_type, model, serial, firmware, version, 
+        redundant, status, synced)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 0)
+      `).run([customerId, ctrl.name, ctrl.model || 'Controller', ctrl.model, ctrl.serial_number,
+        ctrl.software_revision, ctrl.hardware_revision, ctrl.redundant]);
+      totalCreated++;
+    }
+    
+    // Create partner if redundant
+    if (ctrl.redundant && ctrl.redundant.toLowerCase() === 'yes' && ctrl.partner_serial_number) {
+      const partnerName = `${ctrl.name}-partner`;
+      const partnerExists = await db.prepare('SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?').get([customerId, partnerName]);
+      if (!partnerExists) {
+        await db.prepare(`
+          INSERT INTO nodes (customer_id, node_name, node_type, model, serial, firmware, version, 
+          redundant, status, synced)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'yes', 'active', 0)
+        `).run([customerId, partnerName, ctrl.partner_model || 'Controller', ctrl.partner_model,
+          ctrl.partner_serial_number, ctrl.partner_software_revision, ctrl.partner_hardware_revision]);
+        totalCreated++;
+      }
+    }
+  }
+  
+  console.log(`✅ [SYNC] Controllers: ${totalCreated - ctrlCreatedBefore} created, ${totalUpdated - ctrlUpdatedBefore} updated`);
+  
+  // Sync Smart Switches
+  const switches = await db.prepare('SELECT * FROM sys_smart_switches WHERE customer_id = ?').all([customerId]);
+  console.log(`🔄 [SYNC] Processing ${switches.length} smart switches...`);
+  const swCreatedBefore = totalCreated;
+  const swUpdatedBefore = totalUpdated;
+  for (const sw of switches) {
+    const existing = await db.prepare('SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?').get([customerId, sw.name]);
+    if (existing) {
+      await db.prepare(`
+        UPDATE nodes SET node_type = ?, model = ?, serial = ?, firmware = ?, version = ?, 
+        updated_at = CURRENT_TIMESTAMP, synced = 0
+        WHERE id = ?
+      `).run([sw.model || 'Smart Switch', sw.model, sw.serial_number, sw.software_revision,
+        sw.hardware_revision, existing.id]);
+      totalUpdated++;
+    } else {
+      await db.prepare(`
+        INSERT INTO nodes (customer_id, node_name, node_type, model, serial, firmware, version, status, synced)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 0)
+      `).run([customerId, sw.name, sw.model || 'Smart Switch', sw.model, sw.serial_number,
+        sw.software_revision, sw.hardware_revision]);
+      totalCreated++;
+    }
+  }
+  
+  console.log(`✅ [SYNC] Smart Switches: ${totalCreated - swCreatedBefore} created, ${totalUpdated - swUpdatedBefore} updated`);
+  
+  // Sync Charms I/O Cards
+  const ciocs = await db.prepare('SELECT * FROM sys_charms_io_cards WHERE customer_id = ?').all([customerId]);
+  console.log(`🔄 [SYNC] Processing ${ciocs.length} Charms I/O cards...`);
+  const ciocCreatedBefore = totalCreated;
+  const ciocUpdatedBefore = totalUpdated;
+  for (const cioc of ciocs) {
+    const existing = await db.prepare('SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?').get([customerId, cioc.name]);
+    if (existing) {
+      await db.prepare(`
+        UPDATE nodes SET node_type = ?, model = ?, serial = ?, firmware = ?, version = ?, 
+        redundant = ?, updated_at = CURRENT_TIMESTAMP, synced = 0
+        WHERE id = ?
+      `).run([cioc.model || 'Charms I/O Card', cioc.model, cioc.serial_number, cioc.software_revision,
+        cioc.hardware_revision, cioc.redundant, existing.id]);
+      totalUpdated++;
+    } else {
+      await db.prepare(`
+        INSERT INTO nodes (customer_id, node_name, node_type, model, serial, firmware, version, 
+        redundant, status, synced)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 0)
+      `).run([customerId, cioc.name, cioc.model || 'Charms I/O Card', cioc.model, cioc.serial_number,
+        cioc.software_revision, cioc.hardware_revision, cioc.redundant]);
+      totalCreated++;
+    }
+    
+    // Create partner if redundant
+    if (cioc.redundant && cioc.redundant.toLowerCase() === 'yes' && cioc.partner_serial_number) {
+      const partnerName = `${cioc.name}-partner`;
+      const partnerExists = await db.prepare('SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?').get([customerId, partnerName]);
+      if (!partnerExists) {
+        await db.prepare(`
+          INSERT INTO nodes (customer_id, node_name, node_type, model, serial, firmware, version, 
+          redundant, status, synced)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'yes', 'active', 0)
+        `).run([customerId, partnerName, cioc.partner_model || 'Charms I/O Card', cioc.partner_model,
+          cioc.partner_serial_number, cioc.partner_software_revision, cioc.partner_hardware_revision]);
+        totalCreated++;
+      }
+    }
+  }
+  
+  console.log(`✅ [SYNC] Charms I/O Cards: ${totalCreated - ciocCreatedBefore} created, ${totalUpdated - ciocUpdatedBefore} updated`);
+  console.log(`✅ [SYNC] TOTAL: ${totalCreated} created, ${totalUpdated} updated, ${totalCreated + totalUpdated} total`);
+  
+  return { total: totalCreated + totalUpdated, created: totalCreated, updated: totalUpdated };
+}
 
 module.exports = router;

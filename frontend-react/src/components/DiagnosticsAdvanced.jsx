@@ -204,7 +204,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
         card_number: currentCard.cardNumber,
         channel_number: channel,
         error_type: selectedErrorType,
-        description: errorDescription || errorTypes.find((t) => t.value === selectedErrorType)?.description || '',
+        error_description: errorDescription || errorTypes.find((t) => t.value === selectedErrorType)?.description || '',
       }));
 
       for (const error of errors) {
@@ -378,7 +378,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                         {error.error_type.replace(/_/g, ' ').toUpperCase()}
                       </span>
                     </td>
-                    <td className="text-sm">{error.description}</td>
+                    <td className="text-sm">{error.error_description || error.notes || 'No description'}</td>
                     {!isCompleted && (
                       <td>
                         <button

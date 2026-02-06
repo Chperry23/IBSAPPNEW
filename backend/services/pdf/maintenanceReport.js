@@ -138,7 +138,7 @@ function generateMaintenanceReportPage(nodeMaintenanceData) {
                   <td><span class="controller-type ${controllerType.toLowerCase()}">${controllerType}</span></td>
                   <td>${formatPerformance(node)}</td>
                   <td class="${node.hf_updated ? 'checked-cell' : ''}">${node.hf_updated ? '✅' : ''}</td>
-                  <td class="${node.no_errors_checked ? 'error-cell' : 'no-error-cell'}">${node.no_errors_checked ? 'Has Errors' : 'No Error'}</td>
+                  <td class="${(node.no_errors_checked ?? true) ? 'no-error-cell' : 'error-cell'}">${(node.no_errors_checked ?? true) ? 'No Error' : 'Has Errors'}</td>
                   <td style="font-size: 10px; color: #666;">${node.notes || '—'}</td>
                 ` : includeWorkstationColumns ? `
                   <td class="${node.dv_checked ? 'checked-cell' : ''}">${node.dv_checked ? '✅' : ''}</td>

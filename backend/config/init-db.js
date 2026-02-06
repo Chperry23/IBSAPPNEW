@@ -821,6 +821,10 @@ function initializeDatabase() {
       software_revision TEXT,
       hardware_revision TEXT,
       serial_number TEXT,
+      uuid TEXT,
+      synced INTEGER DEFAULT 0,
+      device_id TEXT,
+      deleted INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (customer_id) REFERENCES customers(id),
@@ -829,6 +833,10 @@ function initializeDatabase() {
       if (err) console.error('❌ Error creating sys_smart_switches table:', err);
       else console.log('✅ Created (or found) sys_smart_switches table');
     });
+    addColumnIfNotExists('sys_smart_switches', 'uuid', 'TEXT');
+    addColumnIfNotExists('sys_smart_switches', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('sys_smart_switches', 'device_id', 'TEXT');
+    addColumnIfNotExists('sys_smart_switches', 'deleted', 'INTEGER DEFAULT 0');
 
     // IODevice table
     db.run(`CREATE TABLE IF NOT EXISTS sys_io_devices (
@@ -840,6 +848,10 @@ function initializeDatabase() {
       card TEXT,
       device_name TEXT,
       channel TEXT,
+      uuid TEXT,
+      synced INTEGER DEFAULT 0,
+      device_id TEXT,
+      deleted INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (customer_id) REFERENCES customers(id)
@@ -847,6 +859,10 @@ function initializeDatabase() {
       if (err) console.error('❌ Error creating sys_io_devices table:', err);
       else console.log('✅ Created (or found) sys_io_devices table');
     });
+    addColumnIfNotExists('sys_io_devices', 'uuid', 'TEXT');
+    addColumnIfNotExists('sys_io_devices', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('sys_io_devices', 'device_id', 'TEXT');
+    addColumnIfNotExists('sys_io_devices', 'deleted', 'INTEGER DEFAULT 0');
 
     // Controller table
     db.run(`CREATE TABLE IF NOT EXISTS sys_controllers (
@@ -863,6 +879,10 @@ function initializeDatabase() {
       partner_software_revision TEXT,
       partner_hardware_revision TEXT,
       partner_serial_number TEXT,
+      uuid TEXT,
+      synced INTEGER DEFAULT 0,
+      device_id TEXT,
+      deleted INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (customer_id) REFERENCES customers(id),
@@ -871,6 +891,10 @@ function initializeDatabase() {
       if (err) console.error('❌ Error creating sys_controllers table:', err);
       else console.log('✅ Created (or found) sys_controllers table');
     });
+    addColumnIfNotExists('sys_controllers', 'uuid', 'TEXT');
+    addColumnIfNotExists('sys_controllers', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('sys_controllers', 'device_id', 'TEXT');
+    addColumnIfNotExists('sys_controllers', 'deleted', 'INTEGER DEFAULT 0');
 
     // CharmsIOCard table
     db.run(`CREATE TABLE IF NOT EXISTS sys_charms_io_cards (
@@ -886,6 +910,10 @@ function initializeDatabase() {
       partner_software_revision TEXT,
       partner_hardware_revision TEXT,
       partner_serial_number TEXT,
+      uuid TEXT,
+      synced INTEGER DEFAULT 0,
+      device_id TEXT,
+      deleted INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (customer_id) REFERENCES customers(id),
@@ -894,6 +922,10 @@ function initializeDatabase() {
       if (err) console.error('❌ Error creating sys_charms_io_cards table:', err);
       else console.log('✅ Created (or found) sys_charms_io_cards table');
     });
+    addColumnIfNotExists('sys_charms_io_cards', 'uuid', 'TEXT');
+    addColumnIfNotExists('sys_charms_io_cards', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('sys_charms_io_cards', 'device_id', 'TEXT');
+    addColumnIfNotExists('sys_charms_io_cards', 'deleted', 'INTEGER DEFAULT 0');
 
     // Charm table
     // NOTE: UNIQUE constraint on (customer_id, charms_io_card_name, name) would be ideal
@@ -907,6 +939,10 @@ function initializeDatabase() {
       software_revision TEXT,
       hardware_revision TEXT,
       serial_number TEXT,
+      uuid TEXT,
+      synced INTEGER DEFAULT 0,
+      device_id TEXT,
+      deleted INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (customer_id) REFERENCES customers(id)
@@ -914,17 +950,21 @@ function initializeDatabase() {
       if (err) console.error('❌ Error creating sys_charms table:', err);
       else console.log('✅ Created (or found) sys_charms table');
     });
-    
-    // Add charms_io_card_name column if it doesn't exist
-    db.run(`ALTER TABLE sys_charms ADD COLUMN charms_io_card_name TEXT`, (err) => {
-      // Column already exists, ignore error
-    });
+    addColumnIfNotExists('sys_charms', 'charms_io_card_name', 'TEXT');
+    addColumnIfNotExists('sys_charms', 'uuid', 'TEXT');
+    addColumnIfNotExists('sys_charms', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('sys_charms', 'device_id', 'TEXT');
+    addColumnIfNotExists('sys_charms', 'deleted', 'INTEGER DEFAULT 0');
 
     // AMSSystem table
     db.run(`CREATE TABLE IF NOT EXISTS sys_ams_systems (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       customer_id INTEGER NOT NULL,
       software_revision TEXT,
+      uuid TEXT,
+      synced INTEGER DEFAULT 0,
+      device_id TEXT,
+      deleted INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (customer_id) REFERENCES customers(id),
@@ -933,6 +973,10 @@ function initializeDatabase() {
       if (err) console.error('❌ Error creating sys_ams_systems table:', err);
       else console.log('✅ Created (or found) sys_ams_systems table');
     });
+    addColumnIfNotExists('sys_ams_systems', 'uuid', 'TEXT');
+    addColumnIfNotExists('sys_ams_systems', 'synced', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('sys_ams_systems', 'device_id', 'TEXT');
+    addColumnIfNotExists('sys_ams_systems', 'deleted', 'INTEGER DEFAULT 0');
 
     console.log('✅ Database tables initialized successfully');
     

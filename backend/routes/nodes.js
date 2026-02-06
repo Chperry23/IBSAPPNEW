@@ -8,12 +8,16 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
   const customerId = req.params.customerId;
   const sessionId = req.query.sessionId;
   
+  console.log('🔍 [NODES] GET request:', { customerId, sessionId });
+  
   try {
     // If sessionId is provided and the session is completed, return snapshot data
     if (sessionId) {
       const session = await db.prepare('SELECT status FROM sessions WHERE id = ?').get([sessionId]);
+      console.log('🔍 [NODES] Session status:', session?.status);
       
       if (session && session.status === 'completed') {
+        console.log('🔍 [NODES] Loading snapshots for completed session...');
         // Return node snapshot data for completed sessions
         const snapshots = await db.prepare(`
           SELECT 
@@ -37,22 +41,198 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
           ORDER BY sns.node_type, sns.node_name
         `).all([sessionId]);
         
+        console.log(`🔍 [NODES] Found ${snapshots.length} snapshots`);
         return res.json(snapshots);
       }
     }
     
-    // Return current nodes for active sessions or when no sessionId provided
-    const nodes = await db.prepare(`
-      SELECT n.*, c.cabinet_name as assigned_cabinet_name
-      FROM nodes n
-      LEFT JOIN cabinets c ON n.assigned_cabinet_id = c.id
-      WHERE n.customer_id = ?
-      ORDER BY n.node_type, n.node_name
+    // Return nodes from System Registry (replaces CSV import)
+    console.log('🔍 [NODES] Loading nodes from System Registry tables...');
+    
+    const nodes = [];
+    
+    // Load Workstations from sys_workstations
+    const workstations = await db.prepare(`
+      SELECT 
+        id,
+        name as node_name,
+        type as node_type,
+        model,
+        dell_service_tag_number as serial,
+        software_revision as firmware,
+        dv_hotfixes as version,
+        os_name,
+        bios_version,
+        'active' as status,
+        redundant,
+        customer_id
+      FROM sys_workstations
+      WHERE customer_id = ?
     `).all([customerId]);
+    
+    nodes.push(...workstations);
+    console.log(`   📋 Loaded ${workstations.length} workstations from sys_workstations`);
+    
+    // Load Controllers from sys_controllers
+    const controllers = await db.prepare(`
+      SELECT 
+        id,
+        name as node_name,
+        model as node_type,
+        model,
+        serial_number as serial,
+        software_revision as firmware,
+        hardware_revision as version,
+        'active' as status,
+        redundant,
+        customer_id
+      FROM sys_controllers
+      WHERE customer_id = ?
+    `).all([customerId]);
+    
+    nodes.push(...controllers);
+    console.log(`   🎮 Loaded ${controllers.length} controllers from sys_controllers`);
+    
+    // Add partner nodes for redundant controllers
+    for (const ctrl of controllers) {
+      if (ctrl.redundant && ctrl.redundant.toLowerCase() === 'yes') {
+        nodes.push({
+          id: `${ctrl.id}-partner`,
+          node_name: `${ctrl.node_name}-partner`,
+          node_type: ctrl.node_type,
+          model: ctrl.model,
+          serial: null,
+          firmware: ctrl.firmware,
+          version: ctrl.version,
+          status: 'active',
+          redundant: 'yes',
+          customer_id: ctrl.customer_id
+        });
+      }
+    }
+    
+    // Load Smart Switches from sys_smart_switches
+    const switches = await db.prepare(`
+      SELECT 
+        id,
+        name as node_name,
+        model as node_type,
+        model,
+        serial_number as serial,
+        software_revision as firmware,
+        hardware_revision as version,
+        'active' as status,
+        customer_id
+      FROM sys_smart_switches
+      WHERE customer_id = ?
+    `).all([customerId]);
+    
+    nodes.push(...switches);
+    console.log(`   🔀 Loaded ${switches.length} smart switches from sys_smart_switches`);
+    
+    // Load Charms I/O Cards from sys_charms_io_cards
+    const ciocs = await db.prepare(`
+      SELECT 
+        id,
+        name as node_name,
+        model as node_type,
+        model,
+        serial_number as serial,
+        software_revision as firmware,
+        hardware_revision as version,
+        'active' as status,
+        redundant,
+        customer_id
+      FROM sys_charms_io_cards
+      WHERE customer_id = ?
+    `).all([customerId]);
+    
+    nodes.push(...ciocs);
+    console.log(`   📟 Loaded ${ciocs.length} Charms I/O cards from sys_charms_io_cards`);
+    
+    // Add partner nodes for redundant CIOCs
+    for (const cioc of ciocs) {
+      if (cioc.redundant && cioc.redundant.toLowerCase() === 'yes') {
+        nodes.push({
+          id: `${cioc.id}-partner`,
+          node_name: `${cioc.node_name}-partner`,
+          node_type: cioc.node_type,
+          model: cioc.model,
+          serial: null,
+          firmware: cioc.firmware,
+          version: cioc.version,
+          status: 'active',
+          redundant: 'yes',
+          customer_id: cioc.customer_id
+        });
+      }
+    }
+    
+    // If this is an active session, merge with maintenance data
+    if (sessionId) {
+      console.log(`🔍 [NODES] Merging with maintenance data for session ${sessionId}`);
+      const maintenanceData = await db.prepare(`
+        SELECT * FROM session_node_maintenance WHERE session_id = ?
+      `).all([sessionId]);
+      
+      console.log(`   📊 Found ${maintenanceData.length} maintenance records`);
+      
+      // Create a map of maintenance data by node_name
+      const maintMap = {};
+      maintenanceData.forEach(m => {
+        maintMap[m.node_name] = m;
+      });
+      
+      // Merge maintenance data into nodes
+      nodes.forEach(node => {
+        const maint = maintMap[node.node_name];
+        if (maint) {
+          console.log(`   ✅ [NODES] Found maintenance for ${node.node_name}, no_errors_checked=${maint.no_errors_checked}`);
+          node.dv_checked = Boolean(maint.dv_checked);
+          node.dv_version = maint.dv_version;
+          node.hf_checked = Boolean(maint.hf_checked);
+          node.hf_updated = Boolean(maint.hf_updated);
+          node.windows_update_checked = Boolean(maint.windows_update_checked);
+          node.macafee_checked = Boolean(maint.macafee_checked);
+          node.free_time = maint.free_time || '';
+          node.redundancy_checked = Boolean(maint.redundancy_checked);
+          node.cold_restart_checked = Boolean(maint.cold_restart_checked);
+          node.no_errors_checked = Boolean(maint.no_errors_checked);
+          node.hdd_replaced = Boolean(maint.hdd_replaced);
+          node.performance_type = maint.performance_type || 'free_time';
+          node.performance_value = maint.performance_value;
+          node.notes = maint.notes || '';
+        } else {
+          // Default values for nodes without maintenance records
+          node.dv_checked = false;
+          node.hf_checked = false;
+          node.hf_updated = false;
+          node.windows_update_checked = false;
+          node.macafee_checked = false;
+          node.free_time = '';
+          node.redundancy_checked = false;
+          node.cold_restart_checked = false;
+          node.no_errors_checked = true; // Default to "No Error"
+          node.hdd_replaced = false;
+          node.performance_type = 'free_time';
+          node.performance_value = null;
+          node.notes = '';
+        }
+      });
+    }
+    
+    console.log(`✅ [NODES] Returning ${nodes.length} nodes from System Registry for customer ${customerId}`);
+    if (nodes.length === 0) {
+      console.warn('⚠️  [NODES] NO NODES FOUND IN SYSTEM REGISTRY!');
+      console.warn('   💡 Import System Registry XML first: Customer Profile → Import Nodes');
+    } else {
+      console.log(`   First 5 nodes: ${nodes.slice(0, 5).map(n => n.node_name).join(', ')}`);
+    }
     
     res.json(nodes);
   } catch (error) {
-    console.error('Get nodes error:', error);
+    console.error('❌ [NODES] Get nodes error:', error);
+    console.error('❌ [NODES] Error stack:', error.stack);
     res.status(500).json({ error: 'Database error' });
   }
 });
@@ -93,71 +273,50 @@ router.get('/api/customers/:customerId/controller-usage', requireAuth, async (re
 // Get available controllers for a customer with usage status
 router.get('/api/customers/:customerId/available-controllers', requireAuth, async (req, res) => {
   const customerId = req.params.customerId;
-  const sessionId = req.query.sessionId; // Get session ID from query parameter
+  const sessionId = req.query.sessionId;
   
   try {
-    let controllers;
+    console.log('🎮 [CONTROLLERS] Loading from System Registry for customer:', customerId);
     
-    if (sessionId) {
-      // Get all controllers with their usage status in the current session
-      controllers = await db.prepare(`
-        SELECT 
-          n.*,
-          CASE 
-            WHEN n.id IN (
-              SELECT DISTINCT n2.id 
-              FROM nodes n2
-              JOIN cabinets c ON n2.assigned_cabinet_id = c.id
-              WHERE c.pm_session_id = ?
-            ) THEN 'used_in_session'
-            WHEN n.assigned_cabinet_id IS NOT NULL THEN 'used_elsewhere'
-            ELSE 'available'
-          END as usage_status,
-          c.cabinet_name as cabinet_location,
-          s.session_name
-                 FROM nodes n
-         LEFT JOIN cabinets c ON n.assigned_cabinet_id = c.id
-         LEFT JOIN sessions s ON c.pm_session_id = s.id
-        WHERE n.customer_id = ? 
-        AND n.node_type IN ('Controller', 'CIOC', 'SZ Controller', 'Charms Smart Logic Solver', 'DeltaV EIOC', 'SIS')
-        AND n.node_name NOT LIKE '%-partner'
-        ORDER BY 
-          CASE 
-            WHEN n.id IN (
-              SELECT DISTINCT n2.id 
-              FROM nodes n2
-              JOIN cabinets c ON n2.assigned_cabinet_id = c.id
-              WHERE c.pm_session_id = ?
-            ) THEN 1
-            WHEN n.assigned_cabinet_id IS NOT NULL THEN 2
-            ELSE 0
-          END,
-          n.node_type, n.node_name
-      `).all([sessionId, customerId, sessionId]);
-      
-      console.log('DEBUG: Found', controllers.length, 'controllers for customer with usage status');
-    } else {
-      // If no session ID provided, return all controllers (fallback)
-      controllers = await db.prepare(`
-        SELECT 
-          *,
-          CASE 
-            WHEN assigned_cabinet_id IS NOT NULL THEN 'used_elsewhere'
-            ELSE 'available'
-          END as usage_status,
-          NULL as cabinet_location,
-          NULL as session_name
-        FROM nodes 
-      WHERE customer_id = ? 
-        AND node_type IN ('Controller', 'CIOC', 'SZ Controller', 'Charms Smart Logic Solver', 'DeltaV EIOC', 'SIS')
-      AND node_name NOT LIKE '%-partner'
-        ORDER BY assigned_cabinet_id IS NOT NULL, node_type, node_name
-      `).all([customerId]);
-      
-      console.log('DEBUG: Found', controllers.length, 'total controllers for customer (no session filter)');
-    }
+    // Load controllers from sys_controllers and sys_charms_io_cards
+    const controllers = await db.prepare(`
+      SELECT 
+        id,
+        name as node_name,
+        model as node_type,
+        model,
+        serial_number as serial,
+        software_revision as firmware,
+        hardware_revision as version,
+        redundant,
+        'available' as usage_status,
+        customer_id
+      FROM sys_controllers
+      WHERE customer_id = ?
+      ORDER BY name
+    `).all([customerId]);
     
-    res.json(controllers);
+    const ciocs = await db.prepare(`
+      SELECT 
+        id,
+        name as node_name,
+        model as node_type,
+        model,
+        serial_number as serial,
+        software_revision as firmware,
+        hardware_revision as version,
+        redundant,
+        'available' as usage_status,
+        customer_id
+      FROM sys_charms_io_cards
+      WHERE customer_id = ?
+      ORDER BY name
+    `).all([customerId]);
+    
+    const allControllers = [...controllers, ...ciocs];
+    console.log(`✅ [CONTROLLERS] Found ${allControllers.length} controllers (${controllers.length} controllers + ${ciocs.length} CIOCs)`);
+    
+    res.json(allControllers);
   } catch (error) {
     console.error('Get available controllers error:', error);
     res.status(500).json({ error: 'Database error' });
@@ -167,50 +326,27 @@ router.get('/api/customers/:customerId/available-controllers', requireAuth, asyn
 // Get available smart switches for a customer
 router.get('/api/customers/:customerId/available-switches', requireAuth, async (req, res) => {
   const customerId = req.params.customerId;
-  const sessionId = req.query.sessionId;
   
   try {
-    let switches;
+    console.log('🔀 [SWITCHES] Loading from System Registry for customer:', customerId);
     
-    if (sessionId) {
-      switches = await db.prepare(`
-        SELECT 
-          n.*,
-          CASE 
-            WHEN n.id IN (
-              SELECT DISTINCT n2.id 
-              FROM nodes n2
-              JOIN cabinets c ON n2.assigned_cabinet_id = c.id
-              WHERE c.pm_session_id = ?
-            ) THEN 'used_in_session'
-            WHEN n.assigned_cabinet_id IS NOT NULL THEN 'used_elsewhere'
-            ELSE 'available'
-          END as usage_status,
-          c.cabinet_name,
-          s.session_name
-        FROM nodes n
-        LEFT JOIN cabinets c ON n.assigned_cabinet_id = c.id
-        LEFT JOIN sessions s ON c.pm_session_id = s.id
-        WHERE n.customer_id = ? 
-        AND (n.node_type = 'Smart Network Devices' OR n.description = 'Smart Network Devices')
-        ORDER BY n.node_name
-      `).all([sessionId, customerId]);
-    } else {
-      switches = await db.prepare(`
-        SELECT 
-          *,
-          CASE 
-            WHEN assigned_cabinet_id IS NOT NULL THEN 'used_elsewhere'
-            ELSE 'available'
-          END as usage_status,
-          NULL as cabinet_name,
-          NULL as session_name
-        FROM nodes 
-        WHERE customer_id = ? 
-        AND (node_type = 'Smart Network Devices' OR description = 'Smart Network Devices')
-        ORDER BY node_name
-      `).all([customerId]);
-    }
+    const switches = await db.prepare(`
+      SELECT 
+        id,
+        name as node_name,
+        model as node_type,
+        model,
+        serial_number as serial,
+        software_revision as firmware,
+        hardware_revision as version,
+        'available' as usage_status,
+        customer_id
+      FROM sys_smart_switches
+      WHERE customer_id = ?
+      ORDER BY name
+    `).all([customerId]);
+    
+    console.log(`✅ [SWITCHES] Found ${switches.length} smart switches from sys_smart_switches`);
     
     res.json(switches);
   } catch (error) {

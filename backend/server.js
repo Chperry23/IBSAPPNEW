@@ -18,6 +18,7 @@ const diagnosticsRoutes = require('./routes/diagnostics');
 const pmNotesRoutes = require('./routes/pmNotes');
 const iiDocumentsRoutes = require('./routes/iiDocuments');
 const systemRegistryRoutes = require('./routes/systemRegistry');
+const systemRegistrySyncRoutes = require('./routes/systemRegistrySync');
 
 const PORT = process.env.PORT || 3000;
 
@@ -66,6 +67,7 @@ function createApp(options = {}) {
   app.use('/api/sessions', pmNotesRoutes);
   app.use('/', iiDocumentsRoutes);
   app.use('/', systemRegistryRoutes);
+  app.use('/api/customers', systemRegistrySyncRoutes);
 
   if (!catchAllPath) {
     app.get('/dashboard', requireAuth, (req, res) => {
