@@ -27,7 +27,7 @@ router.get('/sessions/:sessionId/locations', requireAuth, async (req, res) => {
   
   try {
     const locations = await db.prepare(`
-      SELECT * FROM cabinet_locations 
+      SELECT * FROM cabinet_names 
       WHERE session_id = ? 
       ORDER BY sort_order, location_name
     `).all([sessionId]);
@@ -60,7 +60,7 @@ router.post('/sessions/:sessionId/locations', requireAuth, async (req, res) => {
     }
     
     await db.prepare(`
-      INSERT INTO cabinet_locations (id, session_id, location_name, description, sort_order)
+      INSERT INTO cabinet_names (id, session_id, location_name, description, sort_order)
       VALUES (?, ?, ?, ?, ?)
     `).run([
       locationId,
@@ -98,7 +98,7 @@ router.put('/locations/:locationId', requireAuth, async (req, res) => {
   
   try {
     const result = await db.prepare(`
-      UPDATE cabinet_locations SET 
+      UPDATE cabinet_names SET 
         location_name = ?, description = ?, is_collapsed = ?, sort_order = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run([
@@ -129,7 +129,7 @@ router.delete('/locations/:locationId', requireAuth, async (req, res) => {
     await db.prepare('UPDATE cabinets SET location_id = NULL WHERE location_id = ?').run([locationId]);
     
     // Delete the location
-    const result = await db.prepare('DELETE FROM cabinet_locations WHERE id = ?').run([locationId]);
+    const result = await db.prepare('DELETE FROM cabinet_names WHERE id = ?').run([locationId]);
     
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Location not found' });

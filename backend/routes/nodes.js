@@ -51,43 +51,53 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
     
     const nodes = [];
     
-    // Load Workstations from sys_workstations
+    // Load Workstations from sys_workstations (with assignment status)
     const workstations = await db.prepare(`
       SELECT 
-        id,
-        name as node_name,
-        type as node_type,
-        model,
-        dell_service_tag_number as serial,
-        software_revision as firmware,
-        dv_hotfixes as version,
-        os_name,
-        bios_version,
+        w.id,
+        w.name as node_name,
+        w.type as node_type,
+        w.model,
+        w.dell_service_tag_number as serial,
+        w.software_revision as firmware,
+        w.dv_hotfixes as version,
+        w.os_name,
+        w.bios_version,
         'active' as status,
-        redundant,
-        customer_id
-      FROM sys_workstations
-      WHERE customer_id = ?
+        w.redundant,
+        w.customer_id,
+        'workstation' as node_category,
+        w.assigned_cabinet_id,
+        w.assigned_at,
+        c.cabinet_name as assigned_cabinet_name
+      FROM sys_workstations w
+      LEFT JOIN cabinets c ON w.assigned_cabinet_id = c.id
+      WHERE w.customer_id = ?
     `).all([customerId]);
     
     nodes.push(...workstations);
     console.log(`   📋 Loaded ${workstations.length} workstations from sys_workstations`);
     
-    // Load Controllers from sys_controllers
+    // Load Controllers from sys_controllers (with assignment status)
     const controllers = await db.prepare(`
       SELECT 
-        id,
-        name as node_name,
-        model as node_type,
-        model,
-        serial_number as serial,
-        software_revision as firmware,
-        hardware_revision as version,
+        ctrl.id,
+        ctrl.name as node_name,
+        'Controller' as node_type,
+        ctrl.model,
+        ctrl.serial_number as serial,
+        ctrl.software_revision as firmware,
+        ctrl.hardware_revision as version,
         'active' as status,
-        redundant,
-        customer_id
-      FROM sys_controllers
-      WHERE customer_id = ?
+        ctrl.redundant,
+        ctrl.customer_id,
+        'controller' as node_category,
+        ctrl.assigned_cabinet_id,
+        ctrl.assigned_at,
+        c.cabinet_name as assigned_cabinet_name
+      FROM sys_controllers ctrl
+      LEFT JOIN cabinets c ON ctrl.assigned_cabinet_id = c.id
+      WHERE ctrl.customer_id = ?
     `).all([customerId]);
     
     nodes.push(...controllers);
@@ -99,52 +109,66 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
         nodes.push({
           id: `${ctrl.id}-partner`,
           node_name: `${ctrl.node_name}-partner`,
-          node_type: ctrl.node_type,
+          node_type: 'Controller',
+          node_category: 'controller',
           model: ctrl.model,
           serial: null,
           firmware: ctrl.firmware,
           version: ctrl.version,
           status: 'active',
           redundant: 'yes',
-          customer_id: ctrl.customer_id
+          customer_id: ctrl.customer_id,
+          assigned_cabinet_id: ctrl.assigned_cabinet_id,
+          assigned_at: ctrl.assigned_at,
+          assigned_cabinet_name: ctrl.assigned_cabinet_name
         });
       }
     }
     
-    // Load Smart Switches from sys_smart_switches
+    // Load Smart Switches from sys_smart_switches (with assignment status)
     const switches = await db.prepare(`
       SELECT 
-        id,
-        name as node_name,
-        model as node_type,
-        model,
-        serial_number as serial,
-        software_revision as firmware,
-        hardware_revision as version,
+        sw.id,
+        sw.name as node_name,
+        'Smart Network Devices' as node_type,
+        sw.model,
+        sw.serial_number as serial,
+        sw.software_revision as firmware,
+        sw.hardware_revision as version,
         'active' as status,
-        customer_id
-      FROM sys_smart_switches
-      WHERE customer_id = ?
+        sw.customer_id,
+        'switch' as node_category,
+        sw.assigned_cabinet_id,
+        sw.assigned_at,
+        c.cabinet_name as assigned_cabinet_name
+      FROM sys_smart_switches sw
+      LEFT JOIN cabinets c ON sw.assigned_cabinet_id = c.id
+      WHERE sw.customer_id = ?
     `).all([customerId]);
     
     nodes.push(...switches);
     console.log(`   🔀 Loaded ${switches.length} smart switches from sys_smart_switches`);
     
-    // Load Charms I/O Cards from sys_charms_io_cards
+    // Load Charms I/O Cards from sys_charms_io_cards (with assignment status)
     const ciocs = await db.prepare(`
       SELECT 
-        id,
-        name as node_name,
-        model as node_type,
-        model,
-        serial_number as serial,
-        software_revision as firmware,
-        hardware_revision as version,
+        cio.id,
+        cio.name as node_name,
+        'CIOC' as node_type,
+        cio.model,
+        cio.serial_number as serial,
+        cio.software_revision as firmware,
+        cio.hardware_revision as version,
         'active' as status,
-        redundant,
-        customer_id
-      FROM sys_charms_io_cards
-      WHERE customer_id = ?
+        cio.redundant,
+        cio.customer_id,
+        'cioc' as node_category,
+        cio.assigned_cabinet_id,
+        cio.assigned_at,
+        c.cabinet_name as assigned_cabinet_name
+      FROM sys_charms_io_cards cio
+      LEFT JOIN cabinets c ON cio.assigned_cabinet_id = c.id
+      WHERE cio.customer_id = ?
     `).all([customerId]);
     
     nodes.push(...ciocs);
@@ -156,14 +180,18 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
         nodes.push({
           id: `${cioc.id}-partner`,
           node_name: `${cioc.node_name}-partner`,
-          node_type: cioc.node_type,
+          node_type: 'CIOC',
+          node_category: 'cioc',
           model: cioc.model,
           serial: null,
           firmware: cioc.firmware,
           version: cioc.version,
           status: 'active',
           redundant: 'yes',
-          customer_id: cioc.customer_id
+          customer_id: cioc.customer_id,
+          assigned_cabinet_id: cioc.assigned_cabinet_id,
+          assigned_at: cioc.assigned_at,
+          assigned_cabinet_name: cioc.assigned_cabinet_name
         });
       }
     }
@@ -283,14 +311,15 @@ router.get('/api/customers/:customerId/available-controllers', requireAuth, asyn
       SELECT 
         id,
         name as node_name,
-        model as node_type,
+        'Controller' as node_type,
         model,
         serial_number as serial,
         software_revision as firmware,
         hardware_revision as version,
         redundant,
         'available' as usage_status,
-        customer_id
+        customer_id,
+        'controller' as node_category
       FROM sys_controllers
       WHERE customer_id = ?
       ORDER BY name
@@ -300,14 +329,15 @@ router.get('/api/customers/:customerId/available-controllers', requireAuth, asyn
       SELECT 
         id,
         name as node_name,
-        model as node_type,
+        'CIOC' as node_type,
         model,
         serial_number as serial,
         software_revision as firmware,
         hardware_revision as version,
         redundant,
         'available' as usage_status,
-        customer_id
+        customer_id,
+        'cioc' as node_category
       FROM sys_charms_io_cards
       WHERE customer_id = ?
       ORDER BY name
@@ -334,13 +364,14 @@ router.get('/api/customers/:customerId/available-switches', requireAuth, async (
       SELECT 
         id,
         name as node_name,
-        model as node_type,
+        'Smart Network Devices' as node_type,
         model,
         serial_number as serial,
         software_revision as firmware,
         hardware_revision as version,
         'available' as usage_status,
-        customer_id
+        customer_id,
+        'switch' as node_category
       FROM sys_smart_switches
       WHERE customer_id = ?
       ORDER BY name
@@ -560,24 +591,100 @@ router.delete('/api/customers/:customerId/nodes', requireAuth, async (req, res) 
   }
 });
 
-// Assign controller to cabinet
-router.post('/api/nodes/:nodeId/assign', requireAuth, async (req, res) => {
-  const nodeId = req.params.nodeId;
-  const { cabinet_id } = req.body;
+// Helper: map node_category to the correct sys_* table
+function getSysTable(nodeCategory) {
+  const tableMap = {
+    'controller': 'sys_controllers',
+    'cioc': 'sys_charms_io_cards',
+    'switch': 'sys_smart_switches',
+    'workstation': 'sys_workstations',
+  };
+  return tableMap[nodeCategory] || null;
+}
+
+// Helper: try to assign in the correct sys_* table, fallback to trying all tables
+async function assignNodeInSysTables(nodeId, cabinetId, nodeCategory) {
+  // If we know the category, update directly
+  if (nodeCategory) {
+    const table = getSysTable(nodeCategory);
+    if (table) {
+      const result = await db.prepare(`
+        UPDATE ${table} SET assigned_cabinet_id = ?, assigned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+      `).run([cabinetId, nodeId]);
+      if (result.changes > 0) return true;
+    }
+  }
   
+  // Fallback: try all sys_* tables (handles cases where category wasn't passed)
+  const tables = ['sys_controllers', 'sys_charms_io_cards', 'sys_smart_switches', 'sys_workstations'];
+  for (const table of tables) {
+    try {
+      const result = await db.prepare(`
+        UPDATE ${table} SET assigned_cabinet_id = ?, assigned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+      `).run([cabinetId, nodeId]);
+      if (result.changes > 0) return true;
+    } catch (e) { /* table might not have the column yet, skip */ }
+  }
+  
+  // Also try legacy nodes table
   try {
     const result = await db.prepare(`
-      UPDATE nodes SET 
-        assigned_cabinet_id = ?, 
-        assigned_at = CURRENT_TIMESTAMP,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run([cabinet_id, nodeId]);
+      UPDATE nodes SET assigned_cabinet_id = ?, assigned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    `).run([cabinetId, nodeId]);
+    if (result.changes > 0) return true;
+  } catch (e) { /* ignore */ }
+  
+  return false;
+}
+
+// Helper: try to unassign from the correct sys_* table
+async function unassignNodeInSysTables(nodeId, nodeCategory) {
+  if (nodeCategory) {
+    const table = getSysTable(nodeCategory);
+    if (table) {
+      const result = await db.prepare(`
+        UPDATE ${table} SET assigned_cabinet_id = NULL, assigned_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+      `).run([nodeId]);
+      if (result.changes > 0) return true;
+    }
+  }
+  
+  const tables = ['sys_controllers', 'sys_charms_io_cards', 'sys_smart_switches', 'sys_workstations'];
+  for (const table of tables) {
+    try {
+      const result = await db.prepare(`
+        UPDATE ${table} SET assigned_cabinet_id = NULL, assigned_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+      `).run([nodeId]);
+      if (result.changes > 0) return true;
+    } catch (e) { /* skip */ }
+  }
+  
+  // Also try legacy nodes table
+  try {
+    const result = await db.prepare(`
+      UPDATE nodes SET assigned_cabinet_id = NULL, assigned_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    `).run([nodeId]);
+    if (result.changes > 0) return true;
+  } catch (e) { /* ignore */ }
+  
+  return false;
+}
+
+// Assign node to cabinet
+router.post('/api/nodes/:nodeId/assign', requireAuth, async (req, res) => {
+  const nodeId = req.params.nodeId;
+  const { cabinet_id, node_category } = req.body;
+  
+  try {
+    console.log(`🔗 Assigning node ${nodeId} (category: ${node_category || 'unknown'}) to cabinet ${cabinet_id}`);
+    const success = await assignNodeInSysTables(nodeId, cabinet_id, node_category);
     
-    if (result.changes === 0) {
+    if (!success) {
+      console.warn(`⚠️ Node ${nodeId} not found in any table`);
       return res.status(404).json({ error: 'Node not found' });
     }
     
+    console.log(`✅ Node ${nodeId} assigned to cabinet ${cabinet_id}`);
     res.json({ success: true });
   } catch (error) {
     console.error('Assign node error:', error);
@@ -585,22 +692,35 @@ router.post('/api/nodes/:nodeId/assign', requireAuth, async (req, res) => {
   }
 });
 
-// Unassign controllers from a specific cabinet
+// Unassign all nodes from a specific cabinet
 router.post('/api/cabinets/:cabinetId/unassign-controllers', requireAuth, async (req, res) => {
   const cabinetId = req.params.cabinetId;
   
   try {
-    const result = await db.prepare(`
-      UPDATE nodes SET 
-        assigned_cabinet_id = NULL, 
-        assigned_at = NULL,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE assigned_cabinet_id = ?
-    `).run([cabinetId]);
+    let totalChanges = 0;
+    
+    // Unassign from all sys_* tables
+    const tables = ['sys_controllers', 'sys_charms_io_cards', 'sys_smart_switches', 'sys_workstations'];
+    for (const table of tables) {
+      try {
+        const result = await db.prepare(`
+          UPDATE ${table} SET assigned_cabinet_id = NULL, assigned_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE assigned_cabinet_id = ?
+        `).run([cabinetId]);
+        totalChanges += result.changes;
+      } catch (e) { /* skip */ }
+    }
+    
+    // Also try legacy nodes table
+    try {
+      const result = await db.prepare(`
+        UPDATE nodes SET assigned_cabinet_id = NULL, assigned_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE assigned_cabinet_id = ?
+      `).run([cabinetId]);
+      totalChanges += result.changes;
+    } catch (e) { /* ignore */ }
     
     res.json({ 
       success: true, 
-      message: `Unassigned ${result.changes} controllers from cabinet`
+      message: `Unassigned ${totalChanges} nodes from cabinet`
     });
   } catch (error) {
     console.error('Unassign cabinet controllers error:', error);
@@ -608,23 +728,21 @@ router.post('/api/cabinets/:cabinetId/unassign-controllers', requireAuth, async 
   }
 });
 
-// Unassign controller from cabinet
+// Unassign single node from cabinet
 router.post('/api/nodes/:nodeId/unassign', requireAuth, async (req, res) => {
   const nodeId = req.params.nodeId;
+  const { node_category } = req.body;
   
   try {
-    const result = await db.prepare(`
-      UPDATE nodes SET 
-        assigned_cabinet_id = NULL, 
-        assigned_at = NULL,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run([nodeId]);
+    console.log(`🔓 Unassigning node ${nodeId} (category: ${node_category || 'unknown'})`);
+    const success = await unassignNodeInSysTables(nodeId, node_category);
     
-    if (result.changes === 0) {
+    if (!success) {
+      console.warn(`⚠️ Node ${nodeId} not found in any table for unassign`);
       return res.status(404).json({ error: 'Node not found' });
     }
     
+    console.log(`✅ Node ${nodeId} unassigned`);
     res.json({ success: true });
   } catch (error) {
     console.error('Unassign node error:', error);

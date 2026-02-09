@@ -97,14 +97,149 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
           console.log('🔵 [SYSTEM REGISTRY] Found AMSSystem section');
           root.AMSSystem = ams;
         }
+        
+        // Extract UserInfo (can be under AutoData or DeltaVSystem)
+        const uInfo = autoData.UserInfo || autoData.USERINFO || autoData.userinfo || autoData.Userinfo;
+        if (uInfo) {
+          console.log('🔵 [SYSTEM REGISTRY] Found UserInfo under AutoData');
+          root.UserInfo = uInfo;
+        }
       } else {
         console.warn('⚠️ [SYSTEM REGISTRY] AutoData section not found in REGISTRATION');
         console.warn('⚠️ [SYSTEM REGISTRY] Available keys:', Object.keys(reg));
         console.warn('⚠️ [SYSTEM REGISTRY] First few chars of reg:', JSON.stringify(reg).substring(0, 500));
       }
+      
+      // Also check for UserInfo directly under registration (not nested in AutoData)
+      if (!root.UserInfo) {
+        const uInfoReg = reg.UserInfo || reg.USERINFO || reg.userinfo || reg.Userinfo;
+        if (uInfoReg) {
+          console.log('🔵 [SYSTEM REGISTRY] Found UserInfo directly under registration');
+          root.UserInfo = uInfoReg;
+        }
+      }
     }
     
     console.log('🔵 [SYSTEM REGISTRY] Using root element with keys:', Object.keys(root));
+    
+    // ─── Extract UserInfo and update customer record ───
+    // Search EVERYWHERE in the parsed XML tree for the UserInfo table
+    function findUserInfo(obj, depth = 0) {
+      if (!obj || typeof obj !== 'object' || depth > 5) return null;
+      // Direct match at this level
+      const found = obj.UserInfo || obj.USERINFO || obj.userinfo || obj.Userinfo;
+      if (found) return found;
+      // Search one level deeper in known container keys
+      for (const key of Object.keys(obj)) {
+        if (typeof obj[key] === 'object' && obj[key] !== null) {
+          const nested = obj[key].UserInfo || obj[key].USERINFO || obj[key].userinfo || obj[key].Userinfo;
+          if (nested) return nested;
+        }
+      }
+      return null;
+    }
+    
+    let userInfo = findUserInfo(result);
+    console.log('🔵 [SYSTEM REGISTRY] UserInfo search result:', userInfo ? 'FOUND' : 'not found at result level');
+    
+    // If not found at top level, search deeper in known DeltaV structures
+    if (!userInfo) {
+      const reg = result.registration || result.REGISTRATION;
+      if (reg) {
+        userInfo = findUserInfo(reg);
+        console.log('🔵 [SYSTEM REGISTRY] UserInfo in registration:', userInfo ? 'FOUND' : 'not found');
+      }
+    }
+    
+    // Also check the root we built (in case it was in DeltaVSystem)
+    if (!userInfo) {
+      userInfo = findUserInfo(root);
+    }
+    
+    // Debug: log all keys at each level to help diagnose
+    if (!userInfo) {
+      console.log('⚠️ [SYSTEM REGISTRY] UserInfo NOT found. Dumping XML structure for debugging:');
+      console.log('  result keys:', Object.keys(result));
+      for (const k of Object.keys(result)) {
+        if (typeof result[k] === 'object' && result[k] !== null) {
+          console.log(`  result.${k} keys:`, Object.keys(result[k]));
+          for (const k2 of Object.keys(result[k])) {
+            if (typeof result[k][k2] === 'object' && result[k][k2] !== null && !Array.isArray(result[k][k2])) {
+              console.log(`    result.${k}.${k2} keys:`, Object.keys(result[k][k2]));
+            }
+          }
+        }
+      }
+    }
+    
+    if (userInfo) {
+      // If it's an array, take the first one
+      const ui = Array.isArray(userInfo) ? userInfo[0] : userInfo;
+      console.log('🔵 [SYSTEM REGISTRY] Found UserInfo with keys:', Object.keys(ui));
+      
+      // Flexible field getter - checks exact name, UPPER, lower, and common variations
+      const getField = (obj, ...fieldNames) => {
+        for (const fieldName of fieldNames) {
+          const val = obj[fieldName] || obj[fieldName.toUpperCase()] || obj[fieldName.toLowerCase()];
+          if (val) return val;
+        }
+        return null;
+      };
+      
+      // Match exact Access DB column names: CompanyName, StreetAddress, City, State, ZipCode, 
+      // Country, First, Middle, Last, Phone, Fax, Email, Mobile, DongleId
+      const companyName = getField(ui, 'CompanyName', 'CompanyNa', 'Company');
+      const streetAddr1 = getField(ui, 'StreetAddress', 'StreetAddress1', 'StreetAddre', 'Street', 'Address');
+      const streetAddr2 = getField(ui, 'StreetAddress2');
+      const streetAddress = [streetAddr1, streetAddr2].filter(Boolean).join(', ');
+      const city = getField(ui, 'City');
+      const state = getField(ui, 'State');
+      const zip = getField(ui, 'ZipCode', 'Zip', 'PostalCode');
+      const country = getField(ui, 'Country');
+      const firstName = getField(ui, 'First', 'FirstName', 'ContactFirstName');
+      const middleName = getField(ui, 'Middle', 'MiddleName');
+      const lastName = getField(ui, 'Last', 'LastName', 'ContactLastName');
+      const phone = getField(ui, 'Phone', 'PhoneNumber');
+      const contactEmail = getField(ui, 'Email', 'ContactEmail');
+      const mobile = getField(ui, 'Mobile', 'MobilePhone');
+      const dongleId = getField(ui, 'DongleId', 'DongleID', 'Dongle');
+      
+      const contactPerson = [firstName, middleName, lastName].filter(Boolean).join(' ') || null;
+      const contactPhone = phone || mobile || null;
+      
+      console.log('🔵 [SYSTEM REGISTRY] Extracted UserInfo:', {
+        companyName, streetAddress, city, state, zip, country, contactPerson, contactPhone, contactEmail, dongleId
+      });
+      
+      // Build dynamic UPDATE that only sets non-null fields (won't overwrite manually entered data with nulls)
+      const updates = [];
+      const values = [];
+      
+      if (companyName) { updates.push('company_name = ?'); values.push(companyName); }
+      if (streetAddress) { updates.push('street_address = ?'); values.push(streetAddress); }
+      if (city) { updates.push('city = ?'); values.push(city); }
+      if (state) { updates.push('state = ?'); values.push(state); }
+      if (zip) { updates.push('zip = ?'); values.push(zip); }
+      if (country) { updates.push('country = ?'); values.push(country); }
+      if (dongleId) { updates.push('dongle_id = ?'); values.push(dongleId); }
+      if (contactPerson) { updates.push('contact_person = ?'); values.push(contactPerson); }
+      if (contactEmail) { updates.push('email = ?'); values.push(contactEmail); }
+      if (contactPhone) { updates.push('phone = ?'); values.push(contactPhone); }
+      
+      if (updates.length > 0) {
+        updates.push('updated_at = CURRENT_TIMESTAMP');
+        values.push(customerId);
+        try {
+          await db.prepare(`UPDATE customers SET ${updates.join(', ')} WHERE id = ?`).run(values);
+          console.log(`✅ [SYSTEM REGISTRY] Updated customer with UserInfo: ${updates.length - 1} fields`);
+        } catch (err) {
+          console.error('⚠️ [SYSTEM REGISTRY] Error updating customer with UserInfo:', err.message);
+        }
+      }
+    } else {
+      console.log('⚠️ [SYSTEM REGISTRY] No UserInfo table found in XML (searched all levels)');
+    }
+    // ─── End UserInfo extraction ───
     
     // Check what table names are present
     const availableTables = Object.keys(root).filter(key => 
@@ -128,6 +263,33 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       amsSystems: 0
     };
     
+    // Helper: upsert that preserves assigned_cabinet_id and assigned_at
+    async function upsertPreservingAssignment(table, customerId, name, dataFields, dataValues) {
+      const existing = await db.prepare(
+        `SELECT id FROM ${table} WHERE customer_id = ? AND name = ?`
+      ).get([customerId, name]);
+      
+      if (existing) {
+        // UPDATE only data fields, preserve assignment columns
+        const setClauses = dataFields.map(f => `${f} = ?`).join(', ');
+        await db.prepare(
+          `UPDATE ${table} SET ${setClauses}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+        ).run([...dataValues, existing.id]);
+        return 'updated';
+      } else {
+        // INSERT new record
+        const allFields = ['customer_id', 'name', ...dataFields];
+        const placeholders = allFields.map(() => '?').join(', ');
+        await db.prepare(
+          `INSERT INTO ${table} (${allFields.join(', ')}, updated_at) VALUES (${placeholders}, CURRENT_TIMESTAMP)`
+        ).run([customerId, name, ...dataValues]);
+        return 'created';
+      }
+    }
+
+    let newCount = 0;
+    let updatedCount = 0;
+
     // Parse Workstation table
     if (root.Workstation) {
       const workstations = Array.isArray(root.Workstation) ? root.Workstation : [root.Workstation];
@@ -135,37 +297,16 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       
       for (const ws of workstations) {
         try {
-          // Helper to get field value regardless of case
           const getField = (obj, fieldName) => {
             return obj[fieldName] || obj[fieldName.toUpperCase()] || obj[fieldName.toLowerCase()] || null;
           };
           
-          await db.prepare(`
-            INSERT OR REPLACE INTO sys_workstations (
-              customer_id, name, model, type, redundant, software_revision,
-              dv_hotfixes, os_name, ms_office_installed, terminal_server,
-              domain_controller, iddc, dell_service_tag_number, computer_model,
-              bios_version, memory, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-          `).run([
-            customerId,
-            getField(ws, 'Name') || '',
-            getField(ws, 'Model'),
-            getField(ws, 'Type'),
-            getField(ws, 'Redundant'),
-            getField(ws, 'SoftwareRevision'),
-            getField(ws, 'DVHotFixes'),
-            getField(ws, 'OSName'),
-            getField(ws, 'MSOfficeInstalled'),
-            getField(ws, 'TerminalServer'),
-            getField(ws, 'DomainController'),
-            getField(ws, 'IDDC'),
-            getField(ws, 'DellServiceTagNumber'),
-            getField(ws, 'ComputerModel'),
-            getField(ws, 'BIOSVersion'),
-            getField(ws, 'Memory')
-          ]);
+          const result = await upsertPreservingAssignment('sys_workstations', customerId, getField(ws, 'Name') || '',
+            ['model', 'type', 'redundant', 'software_revision', 'dv_hotfixes', 'os_name', 'ms_office_installed', 'terminal_server', 'domain_controller', 'iddc', 'dell_service_tag_number', 'computer_model', 'bios_version', 'memory'],
+            [getField(ws, 'Model'), getField(ws, 'Type'), getField(ws, 'Redundant'), getField(ws, 'SoftwareRevision'), getField(ws, 'DVHotFixes'), getField(ws, 'OSName'), getField(ws, 'MSOfficeInstalled'), getField(ws, 'TerminalServer'), getField(ws, 'DomainController'), getField(ws, 'IDDC'), getField(ws, 'DellServiceTagNumber'), getField(ws, 'ComputerModel'), getField(ws, 'BIOSVersion'), getField(ws, 'Memory')]
+          );
           stats.workstations++;
+          if (result === 'created') newCount++; else updatedCount++;
         } catch (err) {
           console.error('Error inserting workstation:', err);
         }
@@ -183,20 +324,12 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
             return obj[fieldName] || obj[fieldName.toUpperCase()] || obj[fieldName.toLowerCase()] || null;
           };
           
-          await db.prepare(`
-            INSERT OR REPLACE INTO sys_smart_switches (
-              customer_id, name, model, software_revision, hardware_revision,
-              serial_number, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-          `).run([
-            customerId,
-            getField(sw, 'Name') || '',
-            getField(sw, 'Model'),
-            getField(sw, 'SoftwareRevision'),
-            getField(sw, 'HardwareRevision'),
-            getField(sw, 'SerialNumber')
-          ]);
+          const result = await upsertPreservingAssignment('sys_smart_switches', customerId, getField(sw, 'Name') || '',
+            ['model', 'software_revision', 'hardware_revision', 'serial_number'],
+            [getField(sw, 'Model'), getField(sw, 'SoftwareRevision'), getField(sw, 'HardwareRevision'), getField(sw, 'SerialNumber')]
+          );
           stats.smartSwitches++;
+          if (result === 'created') newCount++; else updatedCount++;
         } catch (err) {
           console.error('Error inserting smart switch:', err);
         }
@@ -249,28 +382,12 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
             return obj[fieldName] || obj[fieldName.toUpperCase()] || obj[fieldName.toLowerCase()] || null;
           };
           
-          await db.prepare(`
-            INSERT OR REPLACE INTO sys_controllers (
-              customer_id, name, model, software_revision, hardware_revision,
-              serial_number, controller_free_memory, redundant, partner_model,
-              partner_software_revision, partner_hardware_revision,
-              partner_serial_number, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-          `).run([
-            customerId,
-            getField(ctrl, 'Name') || '',
-            getField(ctrl, 'Model'),
-            getField(ctrl, 'SoftwareRevision'),
-            getField(ctrl, 'HardwareRevision'),
-            getField(ctrl, 'SerialNumber'),
-            getField(ctrl, 'ControllerFreeMemory'),
-            getField(ctrl, 'Redundant'),
-            getField(ctrl, 'PartnerModel'),
-            getField(ctrl, 'PartnerSoftwareRevision'),
-            getField(ctrl, 'PartnerHardwareRevision'),
-            getField(ctrl, 'PartnerSerialNumber')
-          ]);
+          const result = await upsertPreservingAssignment('sys_controllers', customerId, getField(ctrl, 'Name') || '',
+            ['model', 'software_revision', 'hardware_revision', 'serial_number', 'controller_free_memory', 'redundant', 'partner_model', 'partner_software_revision', 'partner_hardware_revision', 'partner_serial_number'],
+            [getField(ctrl, 'Model'), getField(ctrl, 'SoftwareRevision'), getField(ctrl, 'HardwareRevision'), getField(ctrl, 'SerialNumber'), getField(ctrl, 'ControllerFreeMemory'), getField(ctrl, 'Redundant'), getField(ctrl, 'PartnerModel'), getField(ctrl, 'PartnerSoftwareRevision'), getField(ctrl, 'PartnerHardwareRevision'), getField(ctrl, 'PartnerSerialNumber')]
+          );
           stats.controllers++;
+          if (result === 'created') newCount++; else updatedCount++;
         } catch (err) {
           console.error('Error inserting controller:', err);
         }
@@ -292,26 +409,12 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
             return obj[fieldName] || obj[fieldName.toUpperCase()] || obj[fieldName.toLowerCase()] || null;
           };
           
-          await db.prepare(`
-            INSERT OR REPLACE INTO sys_charms_io_cards (
-              customer_id, name, model, software_revision, hardware_revision,
-              serial_number, redundant, partner_model, partner_software_revision,
-              partner_hardware_revision, partner_serial_number, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-          `).run([
-            customerId,
-            getField(card, 'Name') || '',
-            getField(card, 'Model'),
-            getField(card, 'SoftwareRevision'),
-            getField(card, 'HardwareRevision'),
-            getField(card, 'SerialNumber'),
-            getField(card, 'Redundant'),
-            getField(card, 'PartnerModel'),
-            getField(card, 'PartnerSoftwareRevision'),
-            getField(card, 'PartnerHardwareRevision'),
-            getField(card, 'PartnerSerialNumber')
-          ]);
+          const result = await upsertPreservingAssignment('sys_charms_io_cards', customerId, getField(card, 'Name') || '',
+            ['model', 'software_revision', 'hardware_revision', 'serial_number', 'redundant', 'partner_model', 'partner_software_revision', 'partner_hardware_revision', 'partner_serial_number'],
+            [getField(card, 'Model'), getField(card, 'SoftwareRevision'), getField(card, 'HardwareRevision'), getField(card, 'SerialNumber'), getField(card, 'Redundant'), getField(card, 'PartnerModel'), getField(card, 'PartnerSoftwareRevision'), getField(card, 'PartnerHardwareRevision'), getField(card, 'PartnerSerialNumber')]
+          );
           stats.charmsIOCards++;
+          if (result === 'created') newCount++; else updatedCount++;
           
           // Extract nested Charm elements from within this CharmsIOCard (check case variations)
           const nestedCharms = card.Charm || card.CHARM || card.charm;
@@ -389,14 +492,15 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
           return obj[fieldName] || obj[fieldName.toUpperCase()] || obj[fieldName.toLowerCase()] || null;
         };
         
-        await db.prepare(`
-          INSERT OR REPLACE INTO sys_ams_systems (
-            customer_id, software_revision, updated_at
-          ) VALUES (?, ?, CURRENT_TIMESTAMP)
-        `).run([
-          customerId,
-          getField(ams, 'SoftwareRevision')
-        ]);
+        // AMS doesn't have assignment tracking, safe to use INSERT OR REPLACE
+        const existingAms = await db.prepare('SELECT id FROM sys_ams_systems WHERE customer_id = ?').get([customerId]);
+        if (existingAms) {
+          await db.prepare(`UPDATE sys_ams_systems SET software_revision = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run([getField(ams, 'SoftwareRevision'), existingAms.id]);
+          updatedCount++;
+        } else {
+          await db.prepare(`INSERT INTO sys_ams_systems (customer_id, software_revision, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)`).run([customerId, getField(ams, 'SoftwareRevision')]);
+          newCount++;
+        }
         stats.amsSystems++;
       } catch (err) {
         console.error('Error inserting AMS system:', err);
@@ -413,12 +517,15 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
     
     console.log('✅ [SYSTEM REGISTRY] Import completed successfully');
     console.log('✅ [SYSTEM REGISTRY] Stats:', JSON.stringify(stats, null, 2));
+    console.log(`✅ [SYSTEM REGISTRY] New: ${newCount}, Updated: ${updatedCount}`);
     console.log('💡 [SYSTEM REGISTRY] PM Sessions will now read directly from System Registry tables');
     
     res.json({
       success: true,
       message: 'System registry imported successfully - ready for PM sessions',
-      stats
+      stats,
+      newCount,
+      updatedCount
     });
   } catch (error) {
     console.error('❌ [SYSTEM REGISTRY] Import error:', error);
@@ -451,6 +558,54 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       help: helpText,
       lineNumber: error.message.match(/Line: (\d+)/) ? error.message.match(/Line: (\d+)/)[1] : null
     });
+  }
+});
+
+// Get system registry import overview for ALL customers
+router.get('/api/system-registry/imports', requireAuth, async (req, res) => {
+  try {
+    const customers = await db.prepare('SELECT id, name, location FROM customers WHERE deleted = 0 OR deleted IS NULL ORDER BY name').all([]);
+    
+    const imports = [];
+    for (const customer of customers) {
+      // Get counts from each sys_* table
+      const ws = await db.prepare('SELECT COUNT(*) as count, MAX(updated_at) as last_update FROM sys_workstations WHERE customer_id = ?').get([customer.id]);
+      const ctrl = await db.prepare('SELECT COUNT(*) as count, MAX(updated_at) as last_update FROM sys_controllers WHERE customer_id = ?').get([customer.id]);
+      const sw = await db.prepare('SELECT COUNT(*) as count, MAX(updated_at) as last_update FROM sys_smart_switches WHERE customer_id = ?').get([customer.id]);
+      const cioc = await db.prepare('SELECT COUNT(*) as count, MAX(updated_at) as last_update FROM sys_charms_io_cards WHERE customer_id = ?').get([customer.id]);
+      const io = await db.prepare('SELECT COUNT(*) as count, MAX(updated_at) as last_update FROM sys_io_devices WHERE customer_id = ?').get([customer.id]);
+      const ch = await db.prepare('SELECT COUNT(*) as count, MAX(updated_at) as last_update FROM sys_charms WHERE customer_id = ?').get([customer.id]);
+      const ams = await db.prepare('SELECT COUNT(*) as count, MAX(updated_at) as last_update FROM sys_ams_systems WHERE customer_id = ?').get([customer.id]);
+      
+      const totalNodes = (ws?.count || 0) + (ctrl?.count || 0) + (sw?.count || 0) + (cioc?.count || 0);
+      const totalAll = totalNodes + (io?.count || 0) + (ch?.count || 0) + (ams?.count || 0);
+      
+      // Find the most recent update across all tables
+      const dates = [ws?.last_update, ctrl?.last_update, sw?.last_update, cioc?.last_update, io?.last_update, ch?.last_update, ams?.last_update].filter(Boolean);
+      const lastImport = dates.length > 0 ? dates.sort().reverse()[0] : null;
+      
+      imports.push({
+        customer_id: customer.id,
+        customer_name: customer.name,
+        customer_location: customer.location,
+        has_import: totalAll > 0,
+        workstations: ws?.count || 0,
+        controllers: ctrl?.count || 0,
+        smart_switches: sw?.count || 0,
+        charms_io_cards: cioc?.count || 0,
+        io_devices: io?.count || 0,
+        charms: ch?.count || 0,
+        ams_systems: ams?.count || 0,
+        total_assignable: totalNodes,
+        total_all: totalAll,
+        last_import: lastImport
+      });
+    }
+    
+    res.json(imports);
+  } catch (error) {
+    console.error('Get system registry imports error:', error);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 

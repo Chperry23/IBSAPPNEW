@@ -78,10 +78,27 @@ router.post('/', requireAuth, async (req, res) => {
 // Update customer
 router.put('/:customerId', requireAuth, async (req, res) => {
   const customerId = parseInt(req.params.customerId);
-  const { name, location, contact_info } = req.body;
+  const { 
+    name, location, contact_info, contact_person, email, phone, address,
+    system_username, system_password, company_name, street_address, city, state, zip, country, dongle_id
+  } = req.body;
   
   try {
-    const result = await db.prepare('UPDATE customers SET name = ?, location = ?, contact_info = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run([name, location, contact_info, customerId]);
+    const result = await db.prepare(`
+      UPDATE customers SET 
+        name = ?, location = ?, contact_info = ?, 
+        contact_person = ?, email = ?, phone = ?, address = ?,
+        system_username = ?, system_password = ?,
+        company_name = ?, street_address = ?, city = ?, state = ?, zip = ?, country = ?, dongle_id = ?,
+        updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `).run([
+      name, location, contact_info, 
+      contact_person, email, phone, address,
+      system_username, system_password,
+      company_name, street_address, city, state, zip, country, dongle_id,
+      customerId
+    ]);
     
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Customer not found' });

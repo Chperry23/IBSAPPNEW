@@ -97,10 +97,15 @@ router.delete('/:sessionId', requireAuth, async (req, res) => {
     // 1. First, get all cabinet IDs for this session
     const cabinetIds = await db.prepare('SELECT id FROM cabinets WHERE pm_session_id = ?').all([sessionId]);
     
-    // 2. Clear node assignments for cabinets in this session
+    // 2. Clear node assignments for cabinets in this session (across all sys_* tables + legacy nodes)
     if (cabinetIds.length > 0) {
+      const sysTablesWithAssignment = ['sys_controllers', 'sys_charms_io_cards', 'sys_smart_switches', 'sys_workstations', 'nodes'];
       for (const cabinet of cabinetIds) {
-        await db.prepare('UPDATE nodes SET assigned_cabinet_id = NULL, assigned_at = NULL WHERE assigned_cabinet_id = ?').run([cabinet.id]);
+        for (const table of sysTablesWithAssignment) {
+          try {
+            await db.prepare(`UPDATE ${table} SET assigned_cabinet_id = NULL, assigned_at = NULL WHERE assigned_cabinet_id = ?`).run([cabinet.id]);
+          } catch (e) { /* column may not exist yet, skip */ }
+        }
       }
     }
     
@@ -186,33 +191,36 @@ router.get('/:sessionId', requireAuth, async (req, res) => {
     // Parse JSON fields for cabinets
     const cabinets = sessionCabinets.map(cabinet => ({
       ...cabinet,
+      cabinet_type: cabinet.cabinet_type || 'cabinet',
       power_supplies: JSON.parse(cabinet.power_supplies || '[]'),
       distribution_blocks: JSON.parse(cabinet.distribution_blocks || '[]'),
       diodes: JSON.parse(cabinet.diodes || '[]'),
       network_equipment: JSON.parse(cabinet.network_equipment || '[]'),
       controllers: JSON.parse(cabinet.controllers || '[]'),
+      workstations: JSON.parse(cabinet.workstations || '[]'),
       inspection: JSON.parse(cabinet.inspection_data || '{}')
     }));
 
-    // Controller/CIOC assignment stats: how many assigned to session cabinets vs total for customer
-    const controllerTypes = ['Controller', 'CIOC', 'SZ Controller', 'Charms Smart Logic Solver', 'DeltaV EIOC', 'SIS'];
+    // Controller/CIOC assignment stats from sys_* tables
     const cabinetIds = sessionCabinets.map(c => c.id);
-    const placeholders = cabinetIds.length ? cabinetIds.map(() => '?').join(',') : 'NULL';
     const customerId = session.customer_id;
     let controllerAssignmentStats = { assigned: 0, total: 0 };
     if (customerId) {
-      const totalRow = await db.prepare(`
-        SELECT COUNT(*) as count FROM nodes
-        WHERE customer_id = ? AND node_type IN (?, ?, ?, ?, ?, ?) AND node_name NOT LIKE '%-partner'
-      `).get([customerId, ...controllerTypes]);
-      controllerAssignmentStats.total = totalRow?.count ?? 0;
+      // Count total controllers + CIOCs for this customer (exclude partner nodes)
+      try {
+        const ctrlTotal = await db.prepare(`SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ?`).get([customerId]);
+        const ciocTotal = await db.prepare(`SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ?`).get([customerId]);
+        controllerAssignmentStats.total = (ctrlTotal?.count ?? 0) + (ciocTotal?.count ?? 0);
+      } catch (e) { console.error('Error counting controllers:', e); }
+      
+      // Count how many are assigned to cabinets in THIS session
       if (cabinetIds.length > 0) {
-        const assignedRow = await db.prepare(`
-          SELECT COUNT(*) as count FROM nodes
-          WHERE customer_id = ? AND node_type IN (?, ?, ?, ?, ?, ?) AND node_name NOT LIKE '%-partner'
-          AND assigned_cabinet_id IN (${placeholders})
-        `).get([customerId, ...controllerTypes, ...cabinetIds]);
-        controllerAssignmentStats.assigned = assignedRow?.count ?? 0;
+        const placeholders = cabinetIds.map(() => '?').join(',');
+        try {
+          const ctrlAssigned = await db.prepare(`SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ? AND assigned_cabinet_id IN (${placeholders})`).get([customerId, ...cabinetIds]);
+          const ciocAssigned = await db.prepare(`SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ? AND assigned_cabinet_id IN (${placeholders})`).get([customerId, ...cabinetIds]);
+          controllerAssignmentStats.assigned = (ctrlAssigned?.count ?? 0) + (ciocAssigned?.count ?? 0);
+        } catch (e) { console.error('Error counting assigned controllers:', e); }
       }
     }
 

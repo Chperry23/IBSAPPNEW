@@ -25,6 +25,7 @@ router.post('/', requireAuth, async (req, res) => {
     pm_session_id, 
     cabinet_name, 
     cabinet_date,
+    cabinet_type = 'cabinet',
     power_supplies = [],
     distribution_blocks = [],
     diodes = [],
@@ -93,12 +94,12 @@ router.post('/', requireAuth, async (req, res) => {
     });
     
     const insertSQL = location_id 
-      ? `INSERT INTO cabinets (id, pm_session_id, cabinet_name, cabinet_date, status, 
+      ? `INSERT INTO cabinets (id, pm_session_id, cabinet_name, cabinet_date, cabinet_type, status, 
                            power_supplies, distribution_blocks, diodes, network_equipment, inspection_data, location_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
-      : `INSERT INTO cabinets (id, pm_session_id, cabinet_name, cabinet_date, status, 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+      : `INSERT INTO cabinets (id, pm_session_id, cabinet_name, cabinet_date, cabinet_type, status, 
                            power_supplies, distribution_blocks, diodes, network_equipment, inspection_data, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`;
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`;
     
     const params = location_id 
       ? [
@@ -106,6 +107,7 @@ router.post('/', requireAuth, async (req, res) => {
           pm_session_id,
           cabinet_name.trim(),
           cabinet_date,
+          cabinet_type || 'cabinet',
           'active',
           JSON.stringify(power_supplies || []),
           JSON.stringify(distribution_blocks || []),
@@ -119,6 +121,7 @@ router.post('/', requireAuth, async (req, res) => {
           pm_session_id,
           cabinet_name.trim(),
           cabinet_date,
+          cabinet_type || 'cabinet',
           'active',
           JSON.stringify(power_supplies || []),
           JSON.stringify(distribution_blocks || []),
@@ -136,6 +139,7 @@ router.post('/', requireAuth, async (req, res) => {
       pm_session_id,
       cabinet_name: cabinet_name.trim(),
       cabinet_date,
+      cabinet_type: cabinet_type || 'cabinet',
       status: 'active',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -394,16 +398,17 @@ router.delete('/:cabinetId', requireAuth, async (req, res) => {
       });
     }
     
-    // First, unassign any controllers assigned to this cabinet
-    const controllersData = await db.prepare('SELECT controllers FROM cabinets WHERE id = ?').get(cabinetId);
-    if (controllersData && controllersData.controllers) {
-      const controllers = JSON.parse(controllersData.controllers);
-      for (const controller of controllers) {
-        if (controller.node_id) {
-          await db.prepare('UPDATE nodes SET assigned_cabinet_id = NULL, assigned_at = NULL WHERE id = ?').run([controller.node_id]);
-        }
-      }
+    // Unassign ALL nodes assigned to this cabinet across all sys_* tables
+    const sysTablesWithAssignment = ['sys_controllers', 'sys_charms_io_cards', 'sys_smart_switches', 'sys_workstations'];
+    for (const table of sysTablesWithAssignment) {
+      try {
+        await db.prepare(`UPDATE ${table} SET assigned_cabinet_id = NULL, assigned_at = NULL WHERE assigned_cabinet_id = ?`).run([cabinetId]);
+      } catch (e) { /* column may not exist yet, skip */ }
     }
+    // Also clear from legacy nodes table
+    try {
+      await db.prepare('UPDATE nodes SET assigned_cabinet_id = NULL, assigned_at = NULL WHERE assigned_cabinet_id = ?').run([cabinetId]);
+    } catch (e) { /* ignore */ }
     
     // Delete the cabinet
     const result = await db.prepare('DELETE FROM cabinets WHERE id = ?').run([cabinetId]);

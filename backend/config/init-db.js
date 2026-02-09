@@ -653,6 +653,21 @@ function initializeDatabase() {
     addColumnIfNotExists('customers', 'synced', 'INTEGER DEFAULT 0');
     addColumnIfNotExists('customers', 'device_id', 'TEXT');
     addColumnIfNotExists('customers', 'deleted', 'INTEGER DEFAULT 0');
+    // Customer detail fields (used by Edit Customer form)
+    addColumnIfNotExists('customers', 'contact_person', 'TEXT');
+    addColumnIfNotExists('customers', 'email', 'TEXT');
+    addColumnIfNotExists('customers', 'phone', 'TEXT');
+    addColumnIfNotExists('customers', 'address', 'TEXT');
+    addColumnIfNotExists('customers', 'system_username', 'TEXT');
+    addColumnIfNotExists('customers', 'system_password', 'TEXT');
+    // System Registry UserInfo fields (auto-populated from XML import)
+    addColumnIfNotExists('customers', 'company_name', 'TEXT');
+    addColumnIfNotExists('customers', 'street_address', 'TEXT');
+    addColumnIfNotExists('customers', 'city', 'TEXT');
+    addColumnIfNotExists('customers', 'state', 'TEXT');
+    addColumnIfNotExists('customers', 'zip', 'TEXT');
+    addColumnIfNotExists('customers', 'country', 'TEXT');
+    addColumnIfNotExists('customers', 'dongle_id', 'TEXT');
     
     // Sessions table
     addColumnIfNotExists('sessions', 'uuid', 'TEXT');
@@ -811,6 +826,8 @@ function initializeDatabase() {
       if (err) console.error('❌ Error creating sys_workstations table:', err);
       else console.log('✅ Created (or found) sys_workstations table');
     });
+    addColumnIfNotExists('sys_workstations', 'assigned_cabinet_id', 'TEXT');
+    addColumnIfNotExists('sys_workstations', 'assigned_at', 'DATETIME');
 
     // SmartSwitch table
     db.run(`CREATE TABLE IF NOT EXISTS sys_smart_switches (
@@ -837,6 +854,8 @@ function initializeDatabase() {
     addColumnIfNotExists('sys_smart_switches', 'synced', 'INTEGER DEFAULT 0');
     addColumnIfNotExists('sys_smart_switches', 'device_id', 'TEXT');
     addColumnIfNotExists('sys_smart_switches', 'deleted', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('sys_smart_switches', 'assigned_cabinet_id', 'TEXT');
+    addColumnIfNotExists('sys_smart_switches', 'assigned_at', 'DATETIME');
 
     // IODevice table
     db.run(`CREATE TABLE IF NOT EXISTS sys_io_devices (
@@ -895,6 +914,8 @@ function initializeDatabase() {
     addColumnIfNotExists('sys_controllers', 'synced', 'INTEGER DEFAULT 0');
     addColumnIfNotExists('sys_controllers', 'device_id', 'TEXT');
     addColumnIfNotExists('sys_controllers', 'deleted', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('sys_controllers', 'assigned_cabinet_id', 'TEXT');
+    addColumnIfNotExists('sys_controllers', 'assigned_at', 'DATETIME');
 
     // CharmsIOCard table
     db.run(`CREATE TABLE IF NOT EXISTS sys_charms_io_cards (
@@ -926,6 +947,8 @@ function initializeDatabase() {
     addColumnIfNotExists('sys_charms_io_cards', 'synced', 'INTEGER DEFAULT 0');
     addColumnIfNotExists('sys_charms_io_cards', 'device_id', 'TEXT');
     addColumnIfNotExists('sys_charms_io_cards', 'deleted', 'INTEGER DEFAULT 0');
+    addColumnIfNotExists('sys_charms_io_cards', 'assigned_cabinet_id', 'TEXT');
+    addColumnIfNotExists('sys_charms_io_cards', 'assigned_at', 'DATETIME');
 
     // Charm table
     // NOTE: UNIQUE constraint on (customer_id, charms_io_card_name, name) would be ideal

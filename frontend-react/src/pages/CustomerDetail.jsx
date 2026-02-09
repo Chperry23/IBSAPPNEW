@@ -119,7 +119,11 @@ export default function CustomerDetail() {
           stats.amsSystems && `${stats.amsSystems} AMS system`
         ].filter(Boolean).join(', ');
         
-        showMessage(`Successfully imported: ${summary}. Ready for PM sessions!`, 'success');
+        const mergeInfo = (result.updatedCount > 0) 
+          ? ` (${result.newCount || 0} new, ${result.updatedCount} updated - assignments preserved)`
+          : '';
+        
+        showMessage(`Successfully imported: ${summary}${mergeInfo}. Ready for PM sessions!`, 'success');
         
         // Reload summary to show new data
         console.log('🔄 Reloading system registry summary...');
@@ -282,6 +286,12 @@ export default function CustomerDetail() {
             <h3 className="text-lg font-semibold text-gray-100">ℹ️ Customer Information</h3>
           </div>
           <div className="card-body space-y-3">
+            {customer.company_name && (
+              <div>
+                <div className="text-xs text-gray-500 uppercase">Company Name</div>
+                <div className="text-gray-200">{customer.company_name}</div>
+              </div>
+            )}
             {customer.contact_person && (
               <div>
                 <div className="text-xs text-gray-500 uppercase">Contact Person</div>
@@ -300,10 +310,30 @@ export default function CustomerDetail() {
                 <div className="text-gray-200">{customer.phone}</div>
               </div>
             )}
-            {customer.address && (
+            {(customer.street_address || customer.city || customer.state || customer.zip || customer.country) ? (
+              <div>
+                <div className="text-xs text-gray-500 uppercase">Address</div>
+                <div className="text-gray-200 text-sm">
+                  {customer.street_address && <div>{customer.street_address}</div>}
+                  {(customer.city || customer.state || customer.zip) && (
+                    <div>
+                      {[customer.city, customer.state].filter(Boolean).join(', ')}
+                      {customer.zip ? ` ${customer.zip}` : ''}
+                    </div>
+                  )}
+                  {customer.country && <div>{customer.country}</div>}
+                </div>
+              </div>
+            ) : customer.address ? (
               <div>
                 <div className="text-xs text-gray-500 uppercase">Address</div>
                 <div className="text-gray-200">{customer.address}</div>
+              </div>
+            ) : null}
+            {customer.dongle_id && (
+              <div>
+                <div className="text-xs text-gray-500 uppercase">Dongle ID</div>
+                <div className="text-gray-200 font-mono text-sm">{customer.dongle_id}</div>
               </div>
             )}
             {customer.contact_info && (
@@ -314,7 +344,7 @@ export default function CustomerDetail() {
             )}
             {(customer.system_username || customer.system_password) && (
               <div className="pt-3 border-t border-gray-700">
-                <div className="text-xs text-gray-500 uppercase mb-2">🔐 System Credentials</div>
+                <div className="text-xs text-gray-500 uppercase mb-2">System Credentials</div>
                 {customer.system_username && (
                   <div className="mb-2">
                     <div className="text-xs text-gray-400">Username</div>
@@ -324,7 +354,7 @@ export default function CustomerDetail() {
                 {customer.system_password && (
                   <div>
                     <div className="text-xs text-gray-400">Password</div>
-                    <div className="text-gray-200 font-mono text-sm">{'•'.repeat(8)}</div>
+                    <div className="text-gray-200 font-mono text-sm">{'*'.repeat(8)}</div>
                   </div>
                 )}
               </div>
@@ -578,7 +608,7 @@ export default function CustomerDetail() {
               </button>
             </div>
             <form onSubmit={handleUpdateCustomer}>
-              <div className="px-6 py-4 space-y-4 max-h-96 overflow-y-auto">
+              <div className="px-6 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
                 <div>
                   <label className="form-label">Customer Name *</label>
                   <input
@@ -635,7 +665,7 @@ export default function CustomerDetail() {
                   />
                 </div>
                 <div>
-                  <label className="form-label">Address</label>
+                  <label className="form-label">Address (general)</label>
                   <textarea
                     name="address"
                     rows="2"
@@ -644,9 +674,49 @@ export default function CustomerDetail() {
                   ></textarea>
                 </div>
 
+                {/* System Registry Address Fields */}
+                <div className="pt-4 border-t border-gray-600">
+                  <h4 className="text-gray-300 font-medium mb-3">System Registry Info</h4>
+                  <p className="text-xs text-gray-500 mb-3">These fields are auto-populated from System Registry XML imports, but can be edited manually.</p>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="form-label">Company Name</label>
+                      <input type="text" name="company_name" defaultValue={customer.company_name} className="form-input" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="form-label">Street Address</label>
+                        <input type="text" name="street_address" defaultValue={customer.street_address} className="form-input" />
+                      </div>
+                      <div>
+                        <label className="form-label">City</label>
+                        <input type="text" name="city" defaultValue={customer.city} className="form-input" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="form-label">State</label>
+                        <input type="text" name="state" defaultValue={customer.state} className="form-input" />
+                      </div>
+                      <div>
+                        <label className="form-label">Zip</label>
+                        <input type="text" name="zip" defaultValue={customer.zip} className="form-input" />
+                      </div>
+                      <div>
+                        <label className="form-label">Country</label>
+                        <input type="text" name="country" defaultValue={customer.country} className="form-input" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="form-label">Dongle ID</label>
+                      <input type="text" name="dongle_id" defaultValue={customer.dongle_id} className="form-input font-mono" />
+                    </div>
+                  </div>
+                </div>
+
                 {/* System Credentials Section */}
                 <div className="pt-4 border-t border-gray-600">
-                  <h4 className="text-gray-300 font-medium mb-3">🔐 System Login Credentials</h4>
+                  <h4 className="text-gray-300 font-medium mb-3">System Login Credentials</h4>
                   <div className="space-y-4">
                     <div>
                       <label className="form-label">System Username</label>

@@ -166,8 +166,8 @@ export default function Dashboard() {
               <div className="flex items-center gap-3">
                 <div className="text-2xl">📈</div>
                 <div>
-                  <div className="font-medium text-gray-200">CSV History</div>
-                  <div className="text-xs text-gray-400">Track node imports</div>
+                  <div className="font-medium text-gray-200">System Registry</div>
+                  <div className="text-xs text-gray-400">View & manage imports</div>
                 </div>
               </div>
             </Link>

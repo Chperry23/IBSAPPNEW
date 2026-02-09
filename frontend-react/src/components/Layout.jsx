@@ -75,7 +75,7 @@ export default function Layout({ children }) {
                       : 'text-gray-300 hover:text-white hover:bg-gray-700'
                   }`}
                 >
-                  📊 CSV History
+                  📊 System Registry
                 </Link>
               </div>
             </div>

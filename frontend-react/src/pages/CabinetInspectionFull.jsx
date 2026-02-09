@@ -223,18 +223,18 @@ export default function CabinetInspectionFull() {
           // Load available nodes for this customer
           try {
             console.log('Loading nodes for customer:', sessionData.customer_id);
-            const response = await fetch(`/api/customers/${sessionData.customer_id}/nodes${sessionData.id ? `?sessionId=${sessionData.id}` : ''}`);
-            console.log('Nodes API response status:', response.status);
+            const nodesUrl = `/api/customers/${sessionData.customer_id}/nodes${sessionData.id ? `?sessionId=${sessionData.id}` : ''}`;
+            const nodesData = await api.request(nodesUrl);
+            console.log('Nodes loaded:', Array.isArray(nodesData) ? nodesData.length : 'not array');
             
-            if (response.ok) {
-              const nodesData = await response.json();
-              console.log('Nodes loaded:', nodesData.length);
-              console.log('Sample node types:', nodesData.slice(0, 5).map(n => n.node_type));
+            if (Array.isArray(nodesData) && nodesData.length > 0) {
+              console.log('Sample node types:', nodesData.slice(0, 5).map(n => `${n.node_type} (${n.node_category || 'no-cat'})`));
               
-              // Filter controllers (Controller, CIOC, CSLS types)
+              // Filter controllers (by node_category from sys_controllers, or by known node_type values)
               // EXCLUDE "-partner" controllers - only show primary controllers
-              const controllers = (nodesData || []).filter((n) =>
-                ['Controller', 'CIOC', 'CSLS', 'SZ Controller', 'Charms Smart Logic Solver', 'DeltaV EIOC', 'SIS'].includes(n.node_type) &&
+              const controllers = nodesData.filter((n) =>
+                (n.node_category === 'controller' || n.node_category === 'cioc' ||
+                 ['Controller', 'CIOC', 'CSLS', 'SZ Controller', 'Charms Smart Logic Solver', 'DeltaV EIOC', 'SIS'].includes(n.node_type)) &&
                 !n.node_name.endsWith('-partner')
               );
               
@@ -253,23 +253,25 @@ export default function CabinetInspectionFull() {
               
               setAvailableControllers(controllersWithRedundancy);
               
-              // Filter workstations
-              const workstations = (nodesData || []).filter((n) =>
+              // Filter workstations (by node_category from sys_workstations, or by known node_type values)
+              const workstations = nodesData.filter((n) =>
+                n.node_category === 'workstation' ||
                 ['Local Operator', 'Professional Plus', 'Application Station', 'Local ProfessionalPlus', 'Local Application'].includes(n.node_type)
               );
               console.log('Filtered workstations:', workstations.length);
               
               setAvailableWorkstations(workstations);
               
-              // Filter smart switches
-              const switches = (nodesData || []).filter((n) =>
+              // Filter smart switches (by node_category from sys_smart_switches, or by known node_type)
+              const switches = nodesData.filter((n) =>
+                n.node_category === 'switch' ||
                 n.node_type === 'Smart Network Devices'
               );
               console.log('Filtered switches:', switches.length);
               
               setAvailableSwitches(switches);
             } else {
-              console.error('Failed to load nodes:', response.status);
+              console.log('No nodes data returned or empty array');
             }
           } catch (error) {
             console.error('Error loading nodes:', error);
@@ -463,6 +465,7 @@ export default function CabinetInspectionFull() {
       model: selectedWS.model,
       serial: selectedWS.serial,
       node_type: selectedWS.node_type,
+      node_category: selectedWS.node_category,
     };
     
     const newFormData = { ...formData, workstations: updated };
@@ -497,14 +500,17 @@ export default function CabinetInspectionFull() {
     const ws = formData.workstations[index];
     if (ws.node_id) {
       try {
-        await api.request(`/api/nodes/${ws.node_id}/unassign`, { method: 'POST' });
+        await api.request(`/api/nodes/${ws.node_id}/unassign`, { 
+          method: 'POST',
+          body: JSON.stringify({ node_category: ws.node_category }),
+        });
       } catch (error) {
         console.error('Error unassigning workstation:', error);
       }
     }
     const updated = formData.workstations.filter((_, i) => i !== index);
     setFormData({ ...formData, workstations: updated });
-    await loadCabinetData();
+    // Note: don't call loadCabinetData() here - it would overwrite unsaved local form changes.
   };
 
   const removeNetworkEquipment = (index) => {
@@ -538,14 +544,18 @@ export default function CabinetInspectionFull() {
     // Unassign the node if it was assigned
     if (controller.node_id) {
       try {
-        await api.request(`/api/nodes/${controller.node_id}/unassign`, { method: 'POST' });
+        await api.request(`/api/nodes/${controller.node_id}/unassign`, { 
+          method: 'POST',
+          body: JSON.stringify({ node_category: controller.node_category }),
+        });
       } catch (error) {
         console.error('Error unassigning controller:', error);
       }
     }
     const updated = formData.controllers.filter((_, i) => i !== index);
     setFormData({ ...formData, controllers: updated });
-    await loadCabinetData(); // Reload to refresh available controllers
+    // Note: don't call loadCabinetData() here - it would overwrite unsaved local form changes.
+    // The available controllers list updates automatically via usedControllerIds tracking.
   };
 
   const openControllerModal = (index) => {
@@ -568,6 +578,7 @@ export default function CabinetInspectionFull() {
       node_id: selectedController.id,
       node_name: selectedController.node_name,
       controller_type: selectedController.node_type,
+      node_category: selectedController.node_category,
       model: selectedController.model,
       serial: selectedController.serial,
       firmware: selectedController.firmware,
@@ -596,6 +607,7 @@ export default function CabinetInspectionFull() {
       ...updated[currentSwitchIndex],
       node_id: selectedSwitch.id,
       node_name: selectedSwitch.node_name,
+      node_category: selectedSwitch.node_category,
       equipment_type: 'Switch',
       model_number: selectedSwitch.model || '',
       serial: selectedSwitch.serial || '',
@@ -613,13 +625,30 @@ export default function CabinetInspectionFull() {
     await autoSaveCabinet(newFormData);
   };
 
+  // Collect all node IDs already used in the current form (controllers, workstations, network equipment)
+  // so we can mark them as "used in this cabinet" even before saving
+  const usedControllerIds = new Set(
+    (formData.controllers || []).filter(c => c.node_id).map(c => c.node_id)
+  );
+  const usedWorkstationIds = new Set(
+    (formData.workstations || []).filter(w => w.node_id).map(w => w.node_id)
+  );
+  const usedSwitchIds = new Set(
+    (formData.network_equipment || []).filter(e => e.node_id).map(e => e.node_id)
+  );
+
   const filteredSwitchesForModal = availableSwitches.filter((s) => {
     return (
       s.node_name?.toLowerCase().includes(switchSearchTerm.toLowerCase()) ||
       s.model?.toLowerCase().includes(switchSearchTerm.toLowerCase()) ||
       s.serial?.toLowerCase().includes(switchSearchTerm.toLowerCase())
     );
-  });
+  }).map((s) => ({
+    ...s,
+    // Mark as used if already assigned in DB or selected in this form
+    _isUsedInForm: usedSwitchIds.has(s.id),
+    _effectivelyUsed: !!s.assigned_cabinet_id || usedSwitchIds.has(s.id),
+  }));
 
   const filteredControllersForModal = availableControllers.filter((c) => {
     const matchesSearch =
@@ -627,13 +656,20 @@ export default function CabinetInspectionFull() {
       c.model?.toLowerCase().includes(controllerSearchTerm.toLowerCase()) ||
       c.serial?.toLowerCase().includes(controllerSearchTerm.toLowerCase());
     
+    // Check if this controller is used: either in the DB or already selected in this form
+    const isEffectivelyUsed = !!c.assigned_cabinet_id || usedControllerIds.has(c.id);
+    
     const matchesFilter =
       controllerFilter === 'all' ||
-      (controllerFilter === 'available' && !c.assigned_cabinet_id) ||
-      (controllerFilter === 'used' && c.assigned_cabinet_id);
+      (controllerFilter === 'available' && !isEffectivelyUsed) ||
+      (controllerFilter === 'used' && isEffectivelyUsed);
     
     return matchesSearch && matchesFilter;
-  });
+  }).map((c) => ({
+    ...c,
+    _isUsedInForm: usedControllerIds.has(c.id),
+    _effectivelyUsed: !!c.assigned_cabinet_id || usedControllerIds.has(c.id),
+  }));
 
   const handleMarkCabinetComplete = async () => {
     if (session?.status === 'completed') return;
@@ -704,11 +740,11 @@ export default function CabinetInspectionFull() {
           console.log('🎛️ Assigning controllers:', formData.controllers.length);
           for (const controller of formData.controllers) {
             if (controller.node_id) {
-              console.log('  Assigning controller:', controller.node_name, 'to cabinet:', id);
+              console.log('  Assigning controller:', controller.node_name, 'to cabinet:', id, 'category:', controller.node_category);
               try {
                 await api.request(`/api/nodes/${controller.node_id}/assign`, {
                   method: 'POST',
-                  body: JSON.stringify({ cabinet_id: id }),
+                  body: JSON.stringify({ cabinet_id: id, node_category: controller.node_category }),
                 });
                 console.log('  ✅ Controller assigned');
               } catch (error) {
@@ -723,15 +759,33 @@ export default function CabinetInspectionFull() {
           console.log('🖥️ Assigning workstations:', formData.workstations.length);
           for (const workstation of formData.workstations) {
             if (workstation.node_id) {
-              console.log('  Assigning workstation:', workstation.node_name, 'to cabinet:', id);
+              console.log('  Assigning workstation:', workstation.node_name, 'to cabinet:', id, 'category:', workstation.node_category);
               try {
                 await api.request(`/api/nodes/${workstation.node_id}/assign`, {
                   method: 'POST',
-                  body: JSON.stringify({ cabinet_id: id }),
+                  body: JSON.stringify({ cabinet_id: id, node_category: workstation.node_category }),
                 });
                 console.log('  ✅ Workstation assigned');
               } catch (error) {
                 console.error('  ❌ Error assigning workstation:', error);
+              }
+            }
+          }
+        }
+
+        // Handle switch/network equipment assignments if any
+        if (formData.network_equipment && formData.network_equipment.length > 0) {
+          for (const equip of formData.network_equipment) {
+            if (equip.node_id) {
+              console.log('  Assigning switch:', equip.node_name, 'to cabinet:', id, 'category:', equip.node_category);
+              try {
+                await api.request(`/api/nodes/${equip.node_id}/assign`, {
+                  method: 'POST',
+                  body: JSON.stringify({ cabinet_id: id, node_category: equip.node_category }),
+                });
+                console.log('  ✅ Switch assigned');
+              } catch (error) {
+                console.error('  ❌ Error assigning switch:', error);
               }
             }
           }
@@ -1247,13 +1301,23 @@ export default function CabinetInspectionFull() {
                               {controller.node_id && (
                                 <button
                                   type="button"
-                                  onClick={() => {
+                                  onClick={async () => {
+                                    // Unassign from backend
+                                    try {
+                                      await api.request(`/api/nodes/${controller.node_id}/unassign`, {
+                                        method: 'POST',
+                                        body: JSON.stringify({ node_category: controller.node_category }),
+                                      });
+                                    } catch (error) {
+                                      console.error('Error unassigning controller:', error);
+                                    }
                                     const updated = [...formData.controllers];
                                     updated[index].node_id = '';
                                     updated[index].node_name = '';
                                     updated[index].model = '';
                                     updated[index].serial = '';
                                     updated[index].firmware = '';
+                                    updated[index].node_category = '';
                                     setFormData({ ...formData, controllers: updated });
                                   }}
                                   className="btn btn-secondary"
@@ -1875,10 +1939,20 @@ export default function CabinetInspectionFull() {
                               {equipment.node_id && (
                                 <button
                                   type="button"
-                                  onClick={() => {
+                                  onClick={async () => {
+                                    // Unassign from backend
+                                    try {
+                                      await api.request(`/api/nodes/${equipment.node_id}/unassign`, {
+                                        method: 'POST',
+                                        body: JSON.stringify({ node_category: equipment.node_category }),
+                                      });
+                                    } catch (error) {
+                                      console.error('Error unassigning switch:', error);
+                                    }
                                     const updated = [...formData.network_equipment];
                                     updated[index].node_id = '';
                                     updated[index].node_name = '';
+                                    updated[index].node_category = '';
                                     setFormData({ ...formData, network_equipment: updated });
                                   }}
                                   disabled={isViewOnly}
@@ -2268,12 +2342,20 @@ export default function CabinetInspectionFull() {
                   filteredControllersForModal.map((controller) => (
                     <div
                       key={controller.id}
-                      onClick={() => setSelectedControllerId(controller.id)}
-                      className={`p-4 rounded-lg border cursor-pointer transition-all ${
-                        selectedControllerId === controller.id
+                      onClick={() => {
+                        if (!controller._effectivelyUsed) {
+                          setSelectedControllerId(controller.id);
+                        }
+                      }}
+                      className={`p-4 rounded-lg border transition-all ${
+                        controller._effectivelyUsed
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'cursor-pointer'
+                      } ${
+                        selectedControllerId === controller.id && !controller._effectivelyUsed
                           ? 'bg-blue-900/50 border-blue-500'
                           : 'bg-gray-700/30 border-gray-600 hover:border-gray-500'
-                      } ${controller.assigned_cabinet_id ? 'opacity-60' : ''}`}
+                      }`}
                     >
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
@@ -2296,12 +2378,17 @@ export default function CabinetInspectionFull() {
                           )}
                           {controller.assigned_cabinet_name && (
                             <div className="text-sm text-yellow-400 mt-1">
-                              Currently in: {controller.assigned_cabinet_name}
+                              Assigned to: {controller.assigned_cabinet_name}
+                            </div>
+                          )}
+                          {controller._isUsedInForm && !controller.assigned_cabinet_name && (
+                            <div className="text-sm text-yellow-400 mt-1">
+                              Already selected in this cabinet
                             </div>
                           )}
                         </div>
                         <div className="ml-4">
-                          {controller.assigned_cabinet_id ? (
+                          {controller._effectivelyUsed ? (
                             <span className="badge badge-yellow text-xs">Used</span>
                           ) : (
                             <span className="badge badge-green text-xs">Available</span>
@@ -2379,12 +2466,20 @@ export default function CabinetInspectionFull() {
                   filteredSwitchesForModal.map((switchNode) => (
                     <div
                       key={switchNode.id}
-                      onClick={() => setSelectedSwitchId(switchNode.id)}
-                      className={`cursor-pointer p-4 rounded-lg border transition-all ${
-                        selectedSwitchId === switchNode.id
+                      onClick={() => {
+                        if (!switchNode._effectivelyUsed) {
+                          setSelectedSwitchId(switchNode.id);
+                        }
+                      }}
+                      className={`p-4 rounded-lg border transition-all ${
+                        switchNode._effectivelyUsed
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'cursor-pointer'
+                      } ${
+                        selectedSwitchId === switchNode.id && !switchNode._effectivelyUsed
                           ? 'bg-blue-900/50 border-blue-500'
                           : 'bg-gray-700/30 border-gray-600 hover:border-gray-500'
-                      } ${switchNode.assigned_cabinet_id ? 'opacity-60' : ''}`}
+                      }`}
                     >
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
@@ -2396,13 +2491,25 @@ export default function CabinetInspectionFull() {
                           </div>
                           {switchNode.assigned_cabinet_name && (
                             <div className="text-sm text-yellow-400 mt-1">
-                              Currently in: {switchNode.assigned_cabinet_name}
+                              Assigned to: {switchNode.assigned_cabinet_name}
+                            </div>
+                          )}
+                          {switchNode._isUsedInForm && !switchNode.assigned_cabinet_name && (
+                            <div className="text-sm text-yellow-400 mt-1">
+                              Already selected in this cabinet
                             </div>
                           )}
                         </div>
-                        {selectedSwitchId === switchNode.id && (
-                          <span className="text-green-400 text-xl ml-3">✓</span>
-                        )}
+                        <div className="ml-4 flex flex-col items-end gap-1">
+                          {switchNode._effectivelyUsed ? (
+                            <span className="badge badge-yellow text-xs">Used</span>
+                          ) : (
+                            <span className="badge badge-green text-xs">Available</span>
+                          )}
+                          {selectedSwitchId === switchNode.id && !switchNode._effectivelyUsed && (
+                            <span className="text-green-400 text-xl">✓</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))
@@ -2465,34 +2572,40 @@ export default function CabinetInspectionFull() {
 
             <div className="flex-1 overflow-y-auto px-6 py-4">
               <div className="space-y-3">
-                {availableWorkstations.filter((ws) => {
-                  return (
+                {(() => {
+                  const filtered = availableWorkstations.filter((ws) =>
                     ws.node_name?.toLowerCase().includes(workstationSearchTerm.toLowerCase()) ||
                     ws.model?.toLowerCase().includes(workstationSearchTerm.toLowerCase()) ||
                     ws.serial?.toLowerCase().includes(workstationSearchTerm.toLowerCase())
-                  );
-                }).length === 0 ? (
+                  ).map((ws) => ({
+                    ...ws,
+                    _isUsedInForm: usedWorkstationIds.has(ws.id),
+                    _effectivelyUsed: !!ws.assigned_cabinet_id || usedWorkstationIds.has(ws.id),
+                  }));
+                  return filtered.length === 0 ? (
                   <div className="text-center py-8 text-gray-400">
                     {workstationSearchTerm
                       ? 'No workstations match your search'
                       : 'No available workstations found'}
                   </div>
                 ) : (
-                  availableWorkstations.filter((ws) => {
-                    return (
-                      ws.node_name?.toLowerCase().includes(workstationSearchTerm.toLowerCase()) ||
-                      ws.model?.toLowerCase().includes(workstationSearchTerm.toLowerCase()) ||
-                      ws.serial?.toLowerCase().includes(workstationSearchTerm.toLowerCase())
-                    );
-                  }).map((ws) => (
+                  filtered.map((ws) => (
                     <div
                       key={ws.id}
-                      onClick={() => setSelectedWorkstationId(ws.id)}
-                      className={`cursor-pointer p-4 rounded-lg border transition-all ${
-                        selectedWorkstationId === ws.id
+                      onClick={() => {
+                        if (!ws._effectivelyUsed) {
+                          setSelectedWorkstationId(ws.id);
+                        }
+                      }}
+                      className={`p-4 rounded-lg border transition-all ${
+                        ws._effectivelyUsed
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'cursor-pointer'
+                      } ${
+                        selectedWorkstationId === ws.id && !ws._effectivelyUsed
                           ? 'bg-blue-900/50 border-blue-500'
                           : 'bg-gray-700/30 border-gray-600 hover:border-gray-500'
-                      } ${ws.assigned_cabinet_id ? 'opacity-60' : ''}`}
+                      }`}
                     >
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
@@ -2504,17 +2617,30 @@ export default function CabinetInspectionFull() {
                           </div>
                           {ws.assigned_cabinet_name && (
                             <div className="text-sm text-yellow-400 mt-1">
-                              Currently in: {ws.assigned_cabinet_name}
+                              Assigned to: {ws.assigned_cabinet_name}
+                            </div>
+                          )}
+                          {ws._isUsedInForm && !ws.assigned_cabinet_name && (
+                            <div className="text-sm text-yellow-400 mt-1">
+                              Already selected in this rack
                             </div>
                           )}
                         </div>
-                        {selectedWorkstationId === ws.id && (
-                          <span className="text-green-400 text-xl ml-3">✓</span>
-                        )}
+                        <div className="ml-4 flex flex-col items-end gap-1">
+                          {ws._effectivelyUsed ? (
+                            <span className="badge badge-yellow text-xs">Used</span>
+                          ) : (
+                            <span className="badge badge-green text-xs">Available</span>
+                          )}
+                          {selectedWorkstationId === ws.id && !ws._effectivelyUsed && (
+                            <span className="text-green-400 text-xl">✓</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))
-                )}
+                );
+                })()}
               </div>
             </div>
 

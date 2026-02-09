@@ -119,7 +119,11 @@ export default function Customers() {
         (customer.contact_info && customer.contact_info.toLowerCase().includes(search)) ||
         (customer.contact_person && customer.contact_person.toLowerCase().includes(search)) ||
         (customer.email && customer.email.toLowerCase().includes(search)) ||
-        (customer.phone && customer.phone.toLowerCase().includes(search))
+        (customer.phone && customer.phone.toLowerCase().includes(search)) ||
+        (customer.dongle_id && customer.dongle_id.toLowerCase().includes(search)) ||
+        (customer.company_name && customer.company_name.toLowerCase().includes(search)) ||
+        (customer.city && customer.city.toLowerCase().includes(search)) ||
+        (customer.state && customer.state.toLowerCase().includes(search))
       );
     })
     .sort((a, b) => {
@@ -240,34 +244,52 @@ export default function Customers() {
                 onClick={() => navigate(`/customer/${customer.id}`)}
               >
                 <div className="card-header">
-                  <h3 className="text-lg font-semibold text-gray-100">{customer.name}</h3>
+                  <h3 className="text-lg font-semibold text-gray-100">
+                    {customer.dongle_id || customer.name}
+                  </h3>
                 </div>
                 <div className="card-body">
                   {/* Customer Info */}
-                  <div className="space-y-2 mb-4">
+                  <div className="space-y-1.5 mb-4 text-sm">
                     {customer.location && (
-                      <p className="text-sm text-gray-400">
-                        <strong className="text-gray-300">📍 Location:</strong> {customer.location}
+                      <p className="text-gray-400">
+                        <strong className="text-gray-300">Location:</strong> {customer.location}
+                      </p>
+                    )}
+                    {customer.company_name && (
+                      <p className="text-gray-400">
+                        <strong className="text-gray-300">Company:</strong> {customer.company_name}
                       </p>
                     )}
                     {customer.contact_info && (
-                      <p className="text-sm text-gray-400">
-                        <strong className="text-gray-300">💬 Contact:</strong> {customer.contact_info}
+                      <p className="text-gray-400">
+                        <strong className="text-gray-300">Contact:</strong> {customer.contact_info}
                       </p>
                     )}
                     {customer.contact_person && (
-                      <p className="text-sm text-gray-400">
-                        <strong className="text-gray-300">👤 Person:</strong> {customer.contact_person}
+                      <p className="text-gray-400">
+                        <strong className="text-gray-300">Person:</strong> {customer.contact_person}
                       </p>
                     )}
                     {customer.email && (
-                      <p className="text-sm text-gray-400">
-                        <strong className="text-gray-300">📧 Email:</strong> {customer.email}
+                      <p className="text-gray-400">
+                        <strong className="text-gray-300">Email:</strong> {customer.email}
                       </p>
                     )}
                     {customer.phone && (
-                      <p className="text-sm text-gray-400">
-                        <strong className="text-gray-300">📞 Phone:</strong> {customer.phone}
+                      <p className="text-gray-400">
+                        <strong className="text-gray-300">Phone:</strong> {customer.phone}
+                      </p>
+                    )}
+                    {(customer.street_address || customer.city || customer.state) && (
+                      <p className="text-gray-400">
+                        <strong className="text-gray-300">Address:</strong>{' '}
+                        {[
+                          customer.street_address,
+                          [customer.city, customer.state].filter(Boolean).join(', '),
+                          customer.zip,
+                          customer.country
+                        ].filter(Boolean).join(', ')}
                       </p>
                     )}
                   </div>

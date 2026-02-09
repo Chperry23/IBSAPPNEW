@@ -24,6 +24,11 @@ export default function SessionDetailFull() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('location');
   const [locations, setLocations] = useState([]);
+  const [newLocationName, setNewLocationName] = useState('');
+  const [newLocationDescription, setNewLocationDescription] = useState('');
+  const [showAssignLocationModal, setShowAssignLocationModal] = useState(false);
+  const [assigningCabinetId, setAssigningCabinetId] = useState(null);
+  const [selectedLocationId, setSelectedLocationId] = useState('');
 
   useEffect(() => {
     loadSessionData();
@@ -64,10 +69,12 @@ export default function SessionDetailFull() {
   const handleCreateCabinet = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
+    const entries = Object.fromEntries(formData);
     const data = {
-      ...Object.fromEntries(formData),
+      ...entries,
       pm_session_id: id,
-      cabinet_type: 'cabinet', // Explicitly set type
+      cabinet_type: 'cabinet',
+      location_id: entries.location_id || undefined,
     };
 
     try {
@@ -91,10 +98,12 @@ export default function SessionDetailFull() {
   const handleCreateRack = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
+    const entries = Object.fromEntries(formData);
     const data = {
-      ...Object.fromEntries(formData),
+      ...entries,
       pm_session_id: id,
-      cabinet_type: 'rack', // Set as rack type
+      cabinet_type: 'rack',
+      location_id: entries.location_id || undefined,
     };
 
     try {
@@ -199,18 +208,27 @@ export default function SessionDetailFull() {
     }
   };
 
-  const handleAddLocation = async () => {
-    const locationName = prompt('Enter location name:');
-    if (!locationName) return;
+  const handleAddLocation = async (e) => {
+    e.preventDefault();
+    if (!newLocationName.trim()) {
+      showMessage('Location name is required', 'error');
+      return;
+    }
 
     try {
       const result = await api.request(`/api/sessions/${id}/locations`, {
         method: 'POST',
-        body: JSON.stringify({ location_name: locationName }),
+        body: JSON.stringify({ 
+          location_name: newLocationName.trim(),
+          description: newLocationDescription.trim()
+        }),
       });
 
       if (result.success) {
         soundSystem.playSuccess();
+        setShowNewLocationModal(false);
+        setNewLocationName('');
+        setNewLocationDescription('');
         loadSessionData();
         showMessage('Location added successfully', 'success');
       } else {
@@ -220,6 +238,60 @@ export default function SessionDetailFull() {
     } catch (error) {
       soundSystem.playError();
       showMessage('Error adding location', 'error');
+    }
+  };
+
+  const handleAssignCabinetToLocation = async () => {
+    if (!assigningCabinetId) return;
+
+    try {
+      const result = await api.request(`/api/cabinets/${assigningCabinetId}/assign-location`, {
+        method: 'POST',
+        body: JSON.stringify({ location_id: selectedLocationId || null }),
+      });
+
+      if (result.success) {
+        soundSystem.playSuccess();
+        setShowAssignLocationModal(false);
+        setAssigningCabinetId(null);
+        setSelectedLocationId('');
+        loadSessionData();
+        showMessage('Cabinet assigned to location successfully', 'success');
+      } else {
+        soundSystem.playError();
+        showMessage(result.error || 'Error assigning location', 'error');
+      }
+    } catch (error) {
+      soundSystem.playError();
+      showMessage('Error assigning location', 'error');
+    }
+  };
+
+  const openAssignLocationModal = (cabinetId, currentLocationId) => {
+    setAssigningCabinetId(cabinetId);
+    setSelectedLocationId(currentLocationId || '');
+    setShowAssignLocationModal(true);
+  };
+
+  const handleDeleteLocation = async (locationId, locationName) => {
+    if (!confirm(`Delete location "${locationName}"? Cabinets in this location will become unassigned.`)) return;
+
+    try {
+      const result = await api.request(`/api/locations/${locationId}`, {
+        method: 'DELETE',
+      });
+
+      if (result.success) {
+        soundSystem.playSuccess();
+        loadSessionData();
+        showMessage('Location deleted successfully', 'success');
+      } else {
+        soundSystem.playError();
+        showMessage(result.error || 'Error deleting location', 'error');
+      }
+    } catch (error) {
+      soundSystem.playError();
+      showMessage('Error deleting location', 'error');
     }
   };
 
@@ -318,11 +390,8 @@ export default function SessionDetailFull() {
         <div className="flex gap-2 flex-wrap">
           {activeTab === 'cabinets' && (
             <>
-              <button onClick={handleGeneratePDF} className="btn btn-warning">
-                📄 Export PDF
-              </button>
               <button onClick={handleExportAllPDFs} className="btn btn-warning" title="Download full session report (cabinets, diagnostics, node maintenance, PM notes)">
-                📄 Export All
+                📄 PM REPORT PDF
               </button>
               {session.status !== 'completed' && (
                 <>
@@ -335,7 +404,7 @@ export default function SessionDetailFull() {
                   <button onClick={() => setShowAddRackModal(true)} className="btn btn-primary">
                     🗄️ Add Rack
                   </button>
-                  <button onClick={handleAddLocation} className="btn btn-secondary">
+                  <button onClick={() => setShowNewLocationModal(true)} className="btn btn-secondary">
                     📍 Add Location
                   </button>
                 </>
@@ -497,6 +566,37 @@ export default function SessionDetailFull() {
             </div>
           </div>
 
+          {/* Locations Overview */}
+          {locations.length > 0 && (
+            <div className="card mb-6">
+              <div className="card-header flex justify-between items-center">
+                <h3 className="text-gray-200 font-medium">📍 Locations ({locations.length})</h3>
+              </div>
+              <div className="card-body">
+                <div className="flex flex-wrap gap-2">
+                  {locations.map((loc) => {
+                    const cabinetCount = cabinets.filter(c => c.location_id === loc.id).length;
+                    return (
+                      <div key={loc.id} className="flex items-center gap-2 bg-gray-700/50 rounded-lg px-3 py-2 border border-gray-600">
+                        <span className="text-gray-200 text-sm font-medium">{loc.location_name}</span>
+                        <span className="text-xs text-gray-400">({cabinetCount} {cabinetCount === 1 ? 'cabinet' : 'cabinets'})</span>
+                        {session.status !== 'completed' && (
+                          <button
+                            onClick={() => handleDeleteLocation(loc.id, loc.location_name)}
+                            className="text-red-400 hover:text-red-300 text-xs ml-1"
+                            title="Delete location"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Cabinets Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {cabinets.length === 0 ? (
@@ -603,6 +703,15 @@ export default function SessionDetailFull() {
                     >
                       🔍 Inspect
                     </Link>
+                    {session.status !== 'completed' && locations.length > 0 && (
+                      <button
+                        onClick={() => openAssignLocationModal(cabinet.id, cabinet.location_id)}
+                        className="btn btn-secondary text-sm py-2"
+                        title="Assign to Location"
+                      >
+                        📍
+                      </button>
+                    )}
                     {session.status !== 'completed' && (
                       <button
                         onClick={() => handleDeleteCabinet(cabinet.id)}
@@ -678,12 +787,14 @@ export default function SessionDetailFull() {
                 </div>
                 <div>
                   <label className="form-label">Location (Optional)</label>
-                  <input
-                    type="text"
-                    name="location"
-                    placeholder="Specific location within facility"
-                    className="form-input"
-                  />
+                  <select name="location_id" className="form-select">
+                    <option value="">Unassigned</option>
+                    {locations.map((loc) => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.location_name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
@@ -744,6 +855,128 @@ export default function SessionDetailFull() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Location Modal */}
+      {showNewLocationModal && (
+        <div className="modal-backdrop">
+          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-md w-full mx-4 border border-gray-700">
+            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-100">📍 Add Location</h3>
+              <button
+                onClick={() => { setShowNewLocationModal(false); setNewLocationName(''); setNewLocationDescription(''); }}
+                className="text-gray-400 hover:text-gray-200 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleAddLocation}>
+              <div className="px-6 py-4 space-y-4">
+                <div>
+                  <label className="form-label">Location Name *</label>
+                  <input
+                    type="text"
+                    value={newLocationName}
+                    onChange={(e) => setNewLocationName(e.target.value)}
+                    required
+                    placeholder="e.g., Building A - Floor 2"
+                    className="form-input"
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Description (Optional)</label>
+                  <input
+                    type="text"
+                    value={newLocationDescription}
+                    onChange={(e) => setNewLocationDescription(e.target.value)}
+                    placeholder="Brief description of the location"
+                    className="form-input"
+                  />
+                </div>
+                {locations.length > 0 && (
+                  <div className="bg-gray-700/50 rounded-lg p-3 border border-gray-600">
+                    <p className="text-xs text-gray-400 mb-2">Existing locations:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {locations.map((loc) => (
+                        <span key={loc.id} className="text-xs bg-gray-600 text-gray-300 px-2 py-1 rounded">
+                          {loc.location_name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setShowNewLocationModal(false); setNewLocationName(''); setNewLocationDescription(''); }}
+                  className="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  📍 Add Location
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Cabinet to Location Modal */}
+      {showAssignLocationModal && (
+        <div className="modal-backdrop">
+          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-md w-full mx-4 border border-gray-700">
+            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-100">📍 Assign to Location</h3>
+              <button
+                onClick={() => { setShowAssignLocationModal(false); setAssigningCabinetId(null); setSelectedLocationId(''); }}
+                className="text-gray-400 hover:text-gray-200 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <label className="form-label">Cabinet</label>
+                <p className="text-gray-200 font-medium">
+                  {cabinets.find(c => c.id === assigningCabinetId)?.cabinet_name || 'Unknown'}
+                </p>
+              </div>
+              <div>
+                <label className="form-label">Select Location</label>
+                <select
+                  value={selectedLocationId}
+                  onChange={(e) => setSelectedLocationId(e.target.value)}
+                  className="form-select"
+                >
+                  <option value="">Unassigned</option>
+                  {locations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.location_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => { setShowAssignLocationModal(false); setAssigningCabinetId(null); setSelectedLocationId(''); }}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAssignCabinetToLocation}
+                className="btn btn-primary"
+              >
+                📍 Assign Location
+              </button>
+            </div>
           </div>
         </div>
       )}
