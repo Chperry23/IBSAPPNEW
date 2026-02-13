@@ -53,6 +53,8 @@ function generateControllerPage(controllerName, errors, errorTypeLabels) {
         <table class="error-details-table">
           <thead>
             <tr>
+              <th>Device (DST)</th>
+              <th>Bus Type</th>
               <th>Card</th>
               <th>Channel</th>
               <th>Error Type</th>
@@ -62,7 +64,9 @@ function generateControllerPage(controllerName, errors, errorTypeLabels) {
           <tbody>
             ${errors.map(error => `
               <tr>
-                <td class="card-cell">${error.card_number}</td>
+                <td class="card-cell" style="font-weight: 600;">${error.device_name || '-'}</td>
+                <td class="card-cell">${error.bus_type || '-'}</td>
+                <td class="card-cell">${error.card_number || '-'}</td>
                 <td class="channel-cell">${error.channel_number !== null ? error.channel_number : 'N/A'}</td>
                 <td class="error-type-cell">${errorTypeLabels[error.error_type] || error.error_type}</td>
                 <td class="description-cell">${error.error_description || error.notes || 'No description'}</td>
@@ -180,7 +184,7 @@ function generateDiagnosticsPage(diagnosticsData) {
               // Group errors by card for this controller
               const cardGroups = {};
               errors.forEach(error => {
-                const key = `${error.card_number}`;
+                const key = `${error.card_number || '-'}`;
                 if (!cardGroups[key]) cardGroups[key] = [];
                 cardGroups[key].push(error);
               });
@@ -188,13 +192,16 @@ function generateDiagnosticsPage(diagnosticsData) {
               return Object.entries(cardGroups).map(([cardKey, cardErrors]) => {
                 // Get unique error types for this card
                 const errorTypes = [...new Set(cardErrors.map(e => errorTypeLabels[e.error_type] || e.error_type))];
-                const channels = cardErrors.map(e => e.channel_number !== null ? `Ch${e.channel_number}` : 'N/A').filter((v, i, a) => a.indexOf(v) === i);
+                const devices = [...new Set(cardErrors.map(e => e.device_name).filter(Boolean))];
+                const location = devices.length > 0 
+                  ? `Card ${cardKey} (${devices.slice(0, 3).join(', ')}${devices.length > 3 ? '...' : ''})`
+                  : `Card ${cardKey}`;
                 
                 return `
                 <tr>
                   <td class="controller-cell">${name}</td>
                   <td class="error-type-cell">${errorTypes.join(', ')}</td>
-                  <td class="channel-cell">Card ${cardKey} (${channels.join(', ')})</td>
+                  <td class="channel-cell">${location}</td>
                 </tr>
                 `;
               }).join('');
@@ -337,14 +344,16 @@ function generateControllerBreakdown(diagnosticsData) {
       
       <div style="margin: 30px 0; page-break-inside: avoid;">
         <h3 class="section-title">Complete Error Log</h3>
-        <table style="width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <table style="width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); font-size: 12px;">
           <thead>
             <tr style="background: #2563eb; color: white;">
-              <th style="padding: 12px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Controller</th>
-              <th style="padding: 12px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Card</th>
-              <th style="padding: 12px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Channel</th>
-              <th style="padding: 12px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Error Type</th>
-              <th style="padding: 12px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Description</th>
+              <th style="padding: 10px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Controller</th>
+              <th style="padding: 10px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Device (DST)</th>
+              <th style="padding: 10px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Bus Type</th>
+              <th style="padding: 10px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Card</th>
+              <th style="padding: 10px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Channel</th>
+              <th style="padding: 10px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Error Type</th>
+              <th style="padding: 10px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Description</th>
             </tr>
           </thead>
           <tbody>
@@ -355,15 +364,17 @@ function generateControllerBreakdown(diagnosticsData) {
               
               return `
               <tr style="background: ${bgColor};">
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: 600;">${error.controller_name}</td>
-                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${error.card_number}</td>
-                <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${error.channel_number !== null ? error.channel_number : 'N/A'}</td>
-                <td style="padding: 10px; border: 1px solid #ddd;">
-                  <span style="background: #dc3545; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">
+                <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600;">${error.controller_name}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600;">${error.device_name || '-'}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">${error.bus_type || '-'}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${error.card_number || '-'}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${error.channel_number !== null ? error.channel_number : 'N/A'}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">
+                  <span style="background: #dc3545; color: white; padding: 3px 6px; border-radius: 4px; font-size: 10px; font-weight: 600;">
                     ${errorLabel.toUpperCase()}
                   </span>
                 </td>
-                <td style="padding: 10px; border: 1px solid #ddd; font-size: 13px; color: #333;">${description}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; font-size: 12px; color: #333;">${description}</td>
               </tr>
               `;
             }).join('')}

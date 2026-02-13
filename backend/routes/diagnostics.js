@@ -28,6 +28,86 @@ router.get('/:sessionId/diagnostics/debug', async (req, res) => {
   }
 });
 
+// Get IO devices for a specific controller (used by smart error entry)
+router.get('/:sessionId/diagnostics/io-devices/:controllerName', requireAuth, async (req, res) => {
+  const { controllerName } = req.params;
+  const { customerId } = req.query;
+  
+  if (!customerId) {
+    return res.status(400).json({ error: 'customerId query param required' });
+  }
+  
+  try {
+    // Determine if this is a CIOC or a regular controller
+    const cioc = await db.prepare(
+      'SELECT id, name, model FROM sys_charms_io_cards WHERE customer_id = ? AND name = ?'
+    ).get([customerId, controllerName]);
+    
+    const controller = await db.prepare(
+      'SELECT id, name, model FROM sys_controllers WHERE customer_id = ? AND name = ?'
+    ).get([customerId, controllerName]);
+    
+    const isCioc = !!cioc;
+    
+    let ioDevices = [];
+    
+    if (isCioc) {
+      // For CIOCs: get devices where node matches the CIOC name or related CHARMs
+      // CIOC names often appear as the node in io_devices, or CHM variants
+      ioDevices = await db.prepare(`
+        SELECT bus_type, device_type, node, card, device_name, channel
+        FROM sys_io_devices 
+        WHERE customer_id = ? AND (
+          node = ? OR node LIKE ? OR node LIKE ?
+        )
+        ORDER BY card, channel, device_name
+      `).all([customerId, controllerName, `${controllerName}%`, `%${controllerName}%`]);
+    } else {
+      // For regular controllers: get devices where node matches the controller name
+      ioDevices = await db.prepare(`
+        SELECT bus_type, device_type, node, card, device_name, channel
+        FROM sys_io_devices 
+        WHERE customer_id = ? AND node = ?
+        ORDER BY card, channel, device_name
+      `).all([customerId, controllerName]);
+    }
+    
+    // Group by card for the frontend
+    const cardGroups = {};
+    for (const dev of ioDevices) {
+      const cardKey = dev.card || 'Unknown';
+      if (!cardGroups[cardKey]) {
+        cardGroups[cardKey] = {
+          card: cardKey,
+          busTypes: new Set(),
+          devices: []
+        };
+      }
+      cardGroups[cardKey].busTypes.add(dev.bus_type || 'Unknown');
+      cardGroups[cardKey].devices.push(dev);
+    }
+    
+    // Convert Sets to arrays for JSON
+    const cards = Object.values(cardGroups).map(g => ({
+      ...g,
+      busTypes: [...g.busTypes],
+      deviceCount: g.devices.length
+    }));
+    
+    res.json({
+      controllerName,
+      isCioc,
+      model: isCioc ? cioc?.model : controller?.model,
+      totalDevices: ioDevices.length,
+      cards,
+      devices: ioDevices
+    });
+  } catch (error) {
+    console.error('Get IO devices error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 // Get diagnostics for a session
 router.get('/:sessionId/diagnostics', requireAuth, async (req, res) => {
   const sessionId = req.params.sessionId;
@@ -119,16 +199,24 @@ router.post('/:sessionId/diagnostics', requireAuth, async (req, res) => {
     const result = await db.prepare(`
       INSERT INTO session_diagnostics (
         session_id, controller_name, card_number, channel_number, 
-        error_type, error_description, notes, synced
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+        error_type, error_description, notes,
+        bus_type, device_name, device_type, card_type, port_number, ldt,
+        synced
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `).run([
       sessionId,
       diagnostic.controller_name,
-      diagnostic.card_number,
+      diagnostic.card_number || 0,
       diagnostic.channel_number || null,
       diagnostic.error_type,
       diagnostic.error_description || null,
-      diagnostic.notes || null
+      diagnostic.notes || null,
+      diagnostic.bus_type || null,
+      diagnostic.device_name || null,
+      diagnostic.device_type || null,
+      diagnostic.card_type || null,
+      diagnostic.port_number || null,
+      diagnostic.ldt || null
     ]);
     
     res.json({ 
@@ -160,16 +248,23 @@ router.put('/:sessionId/diagnostics/:diagnosticId', requireAuth, async (req, res
     const result = await db.prepare(`
       UPDATE session_diagnostics SET
         controller_name = ?, card_number = ?, channel_number = ?,
-        error_type = ?, error_description = ?, notes = ?, 
+        error_type = ?, error_description = ?, notes = ?,
+        bus_type = ?, device_name = ?, device_type = ?, card_type = ?, port_number = ?, ldt = ?,
         synced = 0, updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND session_id = ?
     `).run([
       diagnostic.controller_name,
-      diagnostic.card_number,
+      diagnostic.card_number || 0,
       diagnostic.channel_number || null,
       diagnostic.error_type,
       diagnostic.error_description || null,
       diagnostic.notes || null,
+      diagnostic.bus_type || null,
+      diagnostic.device_name || null,
+      diagnostic.device_type || null,
+      diagnostic.card_type || null,
+      diagnostic.port_number || null,
+      diagnostic.ldt || null,
       diagnosticId,
       sessionId
     ]);
