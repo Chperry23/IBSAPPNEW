@@ -18,6 +18,9 @@ export default function CustomerDetail() {
   const [editingSession, setEditingSession] = useState(null);
   const [showSystemRegModal, setShowSystemRegModal] = useState(false);
   const [systemRegSummary, setSystemRegSummary] = useState(null);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicatingSession, setDuplicatingSession] = useState(null);
+  const [duplicateProgress, setDuplicateProgress] = useState(false);
 
   useEffect(() => {
     loadCustomerData();
@@ -516,7 +519,7 @@ export default function CustomerDetail() {
                     )}
                     <td>{session.cabinet_count || 0} cabinets</td>
                     <td>
-                      <div className="flex gap-2 flex-wrap">
+                      <div className="flex gap-3 flex-wrap">
                         <Link
                           to={`/session/${session.id}`}
                           className="text-blue-400 hover:text-blue-300 font-medium"
@@ -533,32 +536,13 @@ export default function CustomerDetail() {
                           Edit
                         </button>
                         <button
-                          onClick={async () => {
-                            if (!confirm(`Duplicate "${session.session_name}"?`)) return;
-                            try {
-                              const newSessionData = {
-                                customer_id: session.customer_id,
-                                session_name: `${session.session_name} (Copy)`,
-                                session_type: session.session_type || 'pm',
-                              };
-                              const result = await api.createSession(newSessionData);
-                              if (result.success) {
-                                soundSystem.playSuccess();
-                                loadCustomerData();
-                                showMessage('Session duplicated successfully', 'success');
-                              } else {
-                                soundSystem.playError();
-                                showMessage('Error duplicating session', 'error');
-                              }
-                            } catch (error) {
-                              soundSystem.playError();
-                              showMessage('Error duplicating session', 'error');
-                            }
+                          onClick={() => {
+                            setDuplicatingSession(session);
+                            setShowDuplicateModal(true);
                           }}
-                          className="text-yellow-400 hover:text-yellow-300 font-bold text-lg"
-                          title="Duplicate Session"
+                          className="text-yellow-400 hover:text-yellow-300 font-medium"
                         >
-                          📋
+                          Duplicate
                         </button>
                         {activeTab === 'active' && (
                           <button
@@ -1042,6 +1026,86 @@ export default function CustomerDetail() {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Duplicate Session Modal */}
+      {showDuplicateModal && duplicatingSession && (
+        <div className="modal-backdrop">
+          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-lg w-full mx-4 border border-gray-700">
+            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-100">Duplicate Session</h3>
+              <button
+                onClick={() => { setShowDuplicateModal(false); setDuplicatingSession(null); }}
+                className="text-gray-400 hover:text-gray-200 text-2xl"
+              >&times;</button>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <p className="text-gray-300">
+                Duplicating: <strong className="text-white">{duplicatingSession.session_name}</strong>
+              </p>
+              
+              <div className="bg-green-900/30 border border-green-700/50 rounded-lg p-3">
+                <p className="text-sm font-medium text-green-300 mb-2">What gets KEPT:</p>
+                <ul className="text-sm text-green-200/80 space-y-1">
+                  <li>- All cabinets and racks</li>
+                  <li>- Controller / CIOC assignments to cabinets</li>
+                  <li>- Workstation assignments to racks</li>
+                  <li>- Network switch assignments</li>
+                  <li>- Distribution blocks</li>
+                  <li>- Location assignments</li>
+                </ul>
+              </div>
+              
+              <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-3">
+                <p className="text-sm font-medium text-red-300 mb-2">What gets CLEARED:</p>
+                <ul className="text-sm text-red-200/80 space-y-1">
+                  <li>- Power supply readings (reset to pass)</li>
+                  <li>- Diode readings (reset to pass)</li>
+                  <li>- Inspection pass/fail data (reset to pass)</li>
+                  <li>- Node troubleshooting / maintenance checks</li>
+                  <li>- I/O error diagnostics</li>
+                </ul>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
+              <button
+                onClick={() => { setShowDuplicateModal(false); setDuplicatingSession(null); }}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={duplicateProgress}
+                onClick={async () => {
+                  setDuplicateProgress(true);
+                  try {
+                    const result = await api.request(`/api/sessions/${duplicatingSession.id}/duplicate`, {
+                      method: 'POST',
+                      body: JSON.stringify({}),
+                    });
+                    if (result.success) {
+                      soundSystem.playSuccess();
+                      showMessage('Session duplicated successfully! Cabinets and assignments preserved.', 'success');
+                      setShowDuplicateModal(false);
+                      setDuplicatingSession(null);
+                      loadCustomerData();
+                    } else {
+                      soundSystem.playError();
+                      showMessage(result.error || 'Error duplicating session', 'error');
+                    }
+                  } catch (error) {
+                    soundSystem.playError();
+                    showMessage('Error duplicating session', 'error');
+                  } finally {
+                    setDuplicateProgress(false);
+                  }
+                }}
+                className="btn btn-primary"
+              >
+                {duplicateProgress ? 'Duplicating...' : 'Duplicate Session'}
+              </button>
+            </div>
           </div>
         </div>
       )}

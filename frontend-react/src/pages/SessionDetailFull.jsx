@@ -566,41 +566,9 @@ export default function SessionDetailFull() {
             </div>
           </div>
 
-          {/* Locations Overview */}
-          {locations.length > 0 && (
-            <div className="card mb-6">
-              <div className="card-header flex justify-between items-center">
-                <h3 className="text-gray-200 font-medium">📍 Locations ({locations.length})</h3>
-              </div>
-              <div className="card-body">
-                <div className="flex flex-wrap gap-2">
-                  {locations.map((loc) => {
-                    const cabinetCount = cabinets.filter(c => c.location_id === loc.id).length;
-                    return (
-                      <div key={loc.id} className="flex items-center gap-2 bg-gray-700/50 rounded-lg px-3 py-2 border border-gray-600">
-                        <span className="text-gray-200 text-sm font-medium">{loc.location_name}</span>
-                        <span className="text-xs text-gray-400">({cabinetCount} {cabinetCount === 1 ? 'cabinet' : 'cabinets'})</span>
-                        {session.status !== 'completed' && (
-                          <button
-                            onClick={() => handleDeleteLocation(loc.id, loc.location_name)}
-                            className="text-red-400 hover:text-red-300 text-xs ml-1"
-                            title="Delete location"
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Cabinets Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* Cabinets grouped by Location */}
           {cabinets.length === 0 ? (
-            <div className="col-span-full card">
+            <div className="card">
               <div className="card-body text-center py-12">
                 <div className="text-6xl mb-4">🗄️</div>
                 <p className="text-gray-400 mb-4">
@@ -608,125 +576,139 @@ export default function SessionDetailFull() {
                 </p>
                 {session.status !== 'completed' && (
                   <div className="flex gap-3 justify-center">
-                    <button
-                      onClick={() => setShowNewCabinetModal(true)}
-                      className="btn btn-primary"
-                    >
-                      ➕ Add Cabinet
+                    <button onClick={() => setShowNewCabinetModal(true)} className="btn btn-primary">
+                      Add Cabinet
                     </button>
-                    <button
-                      onClick={() => setShowBulkImportModal(true)}
-                      className="btn btn-success"
-                    >
-                      📤 Bulk Import
+                    <button onClick={() => setShowBulkImportModal(true)} className="btn btn-success">
+                      Bulk Import
                     </button>
                   </div>
                 )}
               </div>
             </div>
           ) : (
-            cabinets.map((cabinet) => (
-              <div
-                key={cabinet.id}
-                className="card hover:border-blue-500/50 transition-all group"
-              >
-                <div className="card-header">
-                  <h3 className="font-semibold text-gray-100">
-                    {cabinet.cabinet_name || cabinet.cabinet_location || 'Unnamed Cabinet'}
-                  </h3>
-                  {cabinet.cabinet_type === 'rack' && (
-                    <span className="badge badge-blue ml-2">Rack</span>
-                  )}
-                </div>
-                <div className="card-body">
-                  <div className="space-y-2 mb-4">
-                    <div className="flex items-center text-sm text-gray-400">
-                      <span className="mr-2">📅</span>
-                      {cabinet.cabinet_date ? new Date(cabinet.cabinet_date).toLocaleDateString() : 'No date'}
-                    </div>
-                    {(cabinet.location_name || cabinet.cabinet_location) && (
-                      <div className="flex items-center text-sm text-gray-400">
-                        <span className="mr-2">📍</span>
-                        {cabinet.location_name || cabinet.cabinet_location || 'Unassigned'}
+            <div className="space-y-6">
+              {/* Render each location container, then unassigned at the end */}
+              {[...locations, { id: null, location_name: 'Unassigned' }].map((loc) => {
+                const locationCabinets = cabinets.filter(c => 
+                  loc.id ? c.location_id === loc.id : (!c.location_id)
+                );
+                
+                // Skip empty location groups (except Unassigned always shows)
+                if (locationCabinets.length === 0 && loc.id) return null;
+                
+                return (
+                  <div key={loc.id || 'unassigned'} className="rounded-lg border border-gray-600 bg-gray-800/30">
+                    {/* Location Container Header */}
+                    <div className="flex items-center justify-between px-4 py-3 bg-gray-700/50 rounded-t-lg border-b border-gray-600">
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">{loc.id ? '📍' : '📦'}</span>
+                        <h3 className="text-gray-100 font-semibold">{loc.location_name}</h3>
+                        <span className="text-xs text-gray-400 bg-gray-600/50 px-2 py-0.5 rounded-full">
+                          {locationCabinets.length} {locationCabinets.length === 1 ? 'cabinet' : 'cabinets'}
+                        </span>
                       </div>
-                    )}
-                    
-                    {/* Content Preview */}
-                    <div className="pt-2 border-t border-gray-700">
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        {cabinet.cabinet_type === 'rack' ? (
-                          <>
-                            <div className="text-gray-400">
-                              🖥️ {(cabinet.workstations || []).length} Workstations
-                            </div>
-                            <div className="text-gray-400">
-                              🔌 {(cabinet.power_supplies || []).length} Power
-                            </div>
-                            <div className="text-gray-400">
-                              🌐 {(cabinet.network_equipment || []).length} Network
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="text-gray-400">
-                              🎛️ {(cabinet.controllers || []).length} Controllers
-                            </div>
-                            <div className="text-gray-400">
-                              🔌 {(cabinet.power_supplies || []).length} Power
-                            </div>
-                            <div className="text-gray-400">
-                              📡 {(cabinet.distribution_blocks || []).length} Dist Blocks
-                            </div>
-                            <div className="text-gray-400">
-                              🌐 {(cabinet.network_equipment || []).length} Network
-                            </div>
-                          </>
-                        )}
-                      </div>
+                      {loc.id && session.status !== 'completed' && (
+                        <button
+                          onClick={() => handleDeleteLocation(loc.id, loc.location_name)}
+                          className="text-red-400 hover:text-red-300 text-sm px-2 py-1 rounded hover:bg-red-900/20"
+                          title="Delete location"
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                     
-                    <div className="pt-2">
-                      <span
-                        className={`badge ${
-                          cabinet.status === 'completed' ? 'badge-green' : 'badge-gray'
-                        }`}
-                      >
-                        {(cabinet.status || 'PENDING').toUpperCase()}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <Link
-                      to={`/cabinet/${cabinet.id}`}
-                      className="flex-1 btn btn-primary text-sm py-2"
-                    >
-                      🔍 Inspect
-                    </Link>
-                    {session.status !== 'completed' && locations.length > 0 && (
-                      <button
-                        onClick={() => openAssignLocationModal(cabinet.id, cabinet.location_id)}
-                        className="btn btn-secondary text-sm py-2"
-                        title="Assign to Location"
-                      >
-                        📍
-                      </button>
+                    {/* Cabinets in this location */}
+                    {locationCabinets.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-gray-500 text-sm">
+                        No cabinets assigned to this location yet. Use the 📍 button on a cabinet to assign it here.
+                      </div>
+                    ) : (
+                      <div className="p-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {locationCabinets.map((cabinet) => (
+                            <div
+                              key={cabinet.id}
+                              className="bg-gray-800 rounded-lg border border-gray-700 hover:border-blue-500/50 transition-all shadow-lg"
+                            >
+                              <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
+                                <h4 className="font-semibold text-gray-100">
+                                  {cabinet.cabinet_name || 'Unnamed Cabinet'}
+                                </h4>
+                                <div className="flex items-center gap-2">
+                                  {cabinet.cabinet_type === 'rack' && (
+                                    <span className="badge badge-blue text-xs">Rack</span>
+                                  )}
+                                  <span className={`badge text-xs ${cabinet.status === 'completed' ? 'badge-green' : 'badge-gray'}`}>
+                                    {(cabinet.status || 'PENDING').toUpperCase()}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="px-4 py-3">
+                                <div className="space-y-2 mb-3">
+                                  <div className="flex items-center text-sm text-gray-400">
+                                    <span className="mr-2">📅</span>
+                                    {cabinet.cabinet_date ? new Date(cabinet.cabinet_date).toLocaleDateString() : 'No date'}
+                                  </div>
+                                  
+                                  <div className="pt-2 border-t border-gray-700">
+                                    <div className="grid grid-cols-2 gap-2 text-xs">
+                                      {cabinet.cabinet_type === 'rack' ? (
+                                        <>
+                                          <div className="text-gray-400">🖥️ {(cabinet.workstations || []).length} Workstations</div>
+                                          <div className="text-gray-400">🔌 {(cabinet.power_supplies || []).length} Power</div>
+                                          <div className="text-gray-400">🌐 {(cabinet.network_equipment || []).length} Network</div>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <div className="text-gray-400">🎛️ {(cabinet.controllers || []).length} Controllers</div>
+                                          <div className="text-gray-400">🔌 {(cabinet.power_supplies || []).length} Power</div>
+                                          <div className="text-gray-400">📡 {(cabinet.distribution_blocks || []).length} Dist Blocks</div>
+                                          <div className="text-gray-400">🌐 {(cabinet.network_equipment || []).length} Network</div>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                
+                                <div className="flex gap-2">
+                                  <Link
+                                    to={`/cabinet/${cabinet.id}`}
+                                    className="flex-1 btn btn-primary text-sm py-2"
+                                  >
+                                    Inspect
+                                  </Link>
+                                  {session.status !== 'completed' && (
+                                    <button
+                                      onClick={() => openAssignLocationModal(cabinet.id, cabinet.location_id)}
+                                      className="btn btn-secondary text-sm py-2"
+                                      title="Assign to Location"
+                                    >
+                                      📍
+                                    </button>
+                                  )}
+                                  {session.status !== 'completed' && (
+                                    <button
+                                      onClick={() => handleDeleteCabinet(cabinet.id)}
+                                      className="btn btn-danger text-sm py-2"
+                                      title="Delete Cabinet"
+                                    >
+                                      🗑️
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     )}
-                    {session.status !== 'completed' && (
-                      <button
-                        onClick={() => handleDeleteCabinet(cabinet.id)}
-                        className="btn btn-danger text-sm py-2"
-                        title="Delete Cabinet"
-                      >
-                        🗑️
-                      </button>
-                    )}
                   </div>
-                </div>
-              </div>
-            ))
+                );
+              })}
+            </div>
           )}
-          </div>
         </>
       )}
 

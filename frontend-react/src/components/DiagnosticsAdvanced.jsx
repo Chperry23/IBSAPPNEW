@@ -255,8 +255,8 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
       )}
 
       {/* Header */}
-      <div>
-        <h3 className="text-2xl font-bold text-gray-100 mb-2">🎛️ Controller Diagnostics</h3>
+      <div className="py-3">
+        <h3 className="text-2xl font-bold text-gray-100 mb-2">Controller Diagnostics</h3>
         <p className="text-gray-400">Click channels to add I/O errors for each controller/card</p>
       </div>
 
@@ -291,11 +291,11 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
             const totalErrors = diagnostics.filter((d) => d.controller_name === node.node_name).length;
 
             return (
-              <div key={node.id} className="card">
-                <div className="card-header flex justify-between items-center">
+              <div key={node.id} className="bg-gray-800 rounded-lg border border-gray-700 shadow-xl">
+                <div className="flex justify-between items-center px-4 py-3 border-b border-gray-700">
                   <div>
                     <h4 className="text-lg font-semibold text-gray-100">
-                      🎛️ {node.node_name}
+                      {node.node_name}
                       {node.is_redundant && <span className="ml-2 badge badge-green text-xs">Redundant</span>}
                     </h4>
                     <div className="text-sm text-gray-400 mt-1">
@@ -307,12 +307,12 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                     className="btn btn-primary btn-sm"
                     disabled={isCompleted}
                   >
-                    ➕ Add Card
+                    + Add Card
                   </button>
                 </div>
                 
                 {cardNumbers.length > 0 && (
-                  <div className="card-body">
+                  <div className="px-4 py-4">
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                       {cardNumbers.map((cardNum) => {
                         const cardErrors = controllerData.cards[cardNum] || [];
@@ -351,36 +351,36 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
 
       {/* Error Table */}
       {diagnostics.length > 0 && (
-        <div className="card">
-          <div className="card-header">
-            <h4 className="text-lg font-semibold text-gray-100">📊 Error Log</h4>
+        <div className="bg-gray-800 rounded-lg border border-gray-700 shadow-xl">
+          <div className="px-4 py-3 border-b border-gray-700">
+            <h4 className="text-lg font-semibold text-gray-100">Error Log ({diagnostics.length})</h4>
           </div>
-          <div className="overflow-x-auto">
-            <table className="table-dark">
+          <div className="overflow-auto" style={{ maxHeight: '70vh' }}>
+            <table className="relative w-full text-sm border-collapse">
               <thead>
                 <tr>
-                  <th>Controller</th>
-                  <th>Card</th>
-                  <th>Channel</th>
-                  <th>Error Type</th>
-                  <th>Description</th>
-                  {!isCompleted && <th>Actions</th>}
+                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-4 py-2">Controller</th>
+                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-4 py-2">Card</th>
+                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-4 py-2">Channel</th>
+                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-4 py-2">Error Type</th>
+                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-4 py-2">Description</th>
+                  {!isCompleted && <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-4 py-2">Actions</th>}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-gray-700">
                 {diagnostics.map((error) => (
-                  <tr key={error.id}>
-                    <td className="font-medium">{error.controller_name}</td>
-                    <td>{error.card_number}</td>
-                    <td>{error.channel_number}</td>
-                    <td>
+                  <tr key={error.id} className="bg-gray-800 hover:bg-gray-700/50">
+                    <td className="font-medium text-gray-200 px-4 py-2">{error.controller_name}</td>
+                    <td className="text-gray-300 px-4 py-2">{error.card_number}</td>
+                    <td className="text-gray-300 px-4 py-2">{error.channel_number}</td>
+                    <td className="px-4 py-2">
                       <span className="badge badge-red text-xs">
                         {error.error_type.replace(/_/g, ' ').toUpperCase()}
                       </span>
                     </td>
-                    <td className="text-sm">{error.error_description || error.notes || 'No description'}</td>
+                    <td className="text-sm text-gray-400 px-4 py-2">{error.error_description || error.notes || 'No description'}</td>
                     {!isCompleted && (
-                      <td>
+                      <td className="px-4 py-2">
                         <button
                           onClick={async () => {
                             if (!confirm('Delete this error?')) return;

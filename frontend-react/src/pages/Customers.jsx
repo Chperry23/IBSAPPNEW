@@ -309,9 +309,7 @@ export default function Customers() {
                   {/* Action Buttons */}
                   <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                     <Link
-                      to={`/sessions?customer=${customer.id}&name=${encodeURIComponent(
-                        customer.name
-                      )}`}
+                      to={`/customer/${customer.id}`}
                       className="flex-1 btn btn-primary text-sm py-2"
                     >
                       View Sessions

@@ -339,11 +339,11 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center py-3">
         <div>
-          <h3 className="text-2xl font-bold text-gray-100">🖥️ Equipment Maintenance Checklist</h3>
+          <h3 className="text-2xl font-bold text-gray-100">Equipment Maintenance Checklist</h3>
           <p className="text-sm text-gray-400 mt-1">
-            {saving && '💾 Auto-saving...'}
+            {saving && 'Auto-saving...'}
           </p>
         </div>
       </div>
@@ -383,9 +383,9 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
         <>
           {/* Controllers Table */}
           {filteredControllers.length > 0 && (
-            <div className="card">
-              <div className="card-header flex justify-between">
-                <h4 className="text-lg font-semibold text-gray-100">🎛️ Controllers</h4>
+            <div className="bg-gray-800 rounded-lg border border-gray-700 shadow-xl">
+              <div className="flex justify-between items-center px-4 py-3 border-b border-gray-700">
+                <h4 className="text-lg font-semibold text-gray-100">Controllers ({filteredControllers.length})</h4>
                 <div className="flex gap-2">
                   <button
                     onClick={() => bulkCheckControllers('hf_updated')}
@@ -424,21 +424,21 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                   </button>
                 </div>
               </div>
-              <div className="overflow-x-auto relative">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-700 sticky top-0 z-10 shadow-lg">
+              <div className="overflow-auto" style={{ maxHeight: '70vh' }}>
+                <table className="relative w-full text-sm border-collapse">
+                  <thead>
                     <tr>
-                      <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Controller</th>
-                      <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Type</th>
-                      <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Serial</th>
-                      <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Performance</th>
-                      <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">DV HF</th>
-                      <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Redundancy</th>
-                      <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Cold Restart</th>
-                      <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Errors</th>
-                      <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Notes/Reason</th>
-                      <th className="px-3 py-2 text-center text-xs text-green-400 bg-gray-700">✓ Done</th>
-                      {!isCompleted && <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Actions</th>}
+                      <th className="sticky top-0 px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Controller</th>
+                      <th className="sticky top-0 px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Type</th>
+                      <th className="sticky top-0 px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Serial</th>
+                      <th className="sticky top-0 px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Performance</th>
+                      <th className="sticky top-0 px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">DV HF</th>
+                      <th className="sticky top-0 px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Redundancy</th>
+                      <th className="sticky top-0 px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Cold Restart</th>
+                      <th className="sticky top-0 px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Errors</th>
+                      <th className="sticky top-0 px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Notes/Reason</th>
+                      <th className="sticky top-0 px-3 py-2 text-center text-xs text-green-400 bg-gray-700">Done</th>
+                      {!isCompleted && <th className="sticky top-0 px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700">
@@ -667,9 +667,9 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
 
           {/* Computers Table */}
           {filteredComputers.length > 0 && (
-            <div className="card">
-              <div className="card-header flex justify-between">
-                <h4 className="text-lg font-semibold text-gray-100">💻 Computers & Workstations</h4>
+            <div className="bg-gray-800 rounded-lg border border-gray-700 shadow-xl">
+              <div className="flex justify-between items-center px-4 py-3 border-b border-gray-700">
+                <h4 className="text-lg font-semibold text-gray-100">Computers & Workstations ({filteredComputers.length})</h4>
                 <div className="flex gap-2">
                   <button
                     onClick={() => bulkCheckComputers('dv_checked')}
@@ -708,20 +708,20 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                   </button>
                 </div>
               </div>
-              <div className="overflow-x-auto relative">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-700 sticky top-0 z-10 shadow-lg">
+              <div className="overflow-auto" style={{ maxHeight: '70vh' }}>
+                <table className="relative w-full text-sm border-collapse">
+                  <thead>
                     <tr>
-                      <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Computer</th>
-                      <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Type</th>
-                      <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Model</th>
-                      <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">DV HF</th>
-                      <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">OS Update</th>
-                      <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">McAfee</th>
-                      <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">HDD Replaced</th>
-                      <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Notes/Reason</th>
-                      <th className="px-3 py-2 text-center text-xs text-green-400 bg-gray-700">✓ Done</th>
-                      {!isCompleted && <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Actions</th>}
+                      <th className="sticky top-0 px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Computer</th>
+                      <th className="sticky top-0 px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Type</th>
+                      <th className="sticky top-0 px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Model</th>
+                      <th className="sticky top-0 px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">DV HF</th>
+                      <th className="sticky top-0 px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">OS Update</th>
+                      <th className="sticky top-0 px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">McAfee</th>
+                      <th className="sticky top-0 px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">HDD Replaced</th>
+                      <th className="sticky top-0 px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Notes/Reason</th>
+                      <th className="sticky top-0 px-3 py-2 text-center text-xs text-green-400 bg-gray-700">Done</th>
+                      {!isCompleted && <th className="sticky top-0 px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700">
@@ -899,9 +899,9 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
 
           {/* Switches Table */}
           {filteredSwitches.length > 0 && (
-            <div className="card">
-              <div className="card-header flex justify-between">
-                <h4 className="text-lg font-semibold text-gray-100">🔌 Network Switches</h4>
+            <div className="bg-gray-800 rounded-lg border border-gray-700 shadow-xl">
+              <div className="flex justify-between items-center px-4 py-3 border-b border-gray-700">
+                <h4 className="text-lg font-semibold text-gray-100">Network Switches ({filteredSwitches.length})</h4>
                 <div className="flex gap-2">
                   <button
                     onClick={async () => {
@@ -910,12 +910,12 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                         await autoSave(switchNode.id, 'firmware_updated_checked', true);
                       }
                       soundSystem.playSuccess();
-                      showMessage('All switches firmware checked!', 'success');
+                      showMessage('All switches version checked!', 'success');
                     }}
                     disabled={isCompleted}
                     className="btn btn-secondary btn-sm text-xs"
                   >
-                    All Firmware
+                    All Version
                   </button>
                   <button
                     onClick={async () => {
@@ -933,16 +933,19 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                   </button>
                 </div>
               </div>
-              <div className="overflow-x-auto relative">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-700 sticky top-0 z-10 shadow-lg">
+              <div className="overflow-auto" style={{ maxHeight: '70vh' }}>
+                <table className="relative w-full text-sm border-collapse">
+                  <thead>
                     <tr>
-                      <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Switch</th>
-                      <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Serial</th>
-                      <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Firmware Updated</th>
-                      <th className="px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Notes/Reason</th>
-                      <th className="px-3 py-2 text-center text-xs text-green-400 bg-gray-700">✓ Done</th>
-                      {!isCompleted && <th className="px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Actions</th>}
+                      <th className="sticky top-0 px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Name</th>
+                      <th className="sticky top-0 px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Model</th>
+                      <th className="sticky top-0 px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Software Rev</th>
+                      <th className="sticky top-0 px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Hardware Rev</th>
+                      <th className="sticky top-0 px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Serial Number</th>
+                      <th className="sticky top-0 px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Version Updated</th>
+                      <th className="sticky top-0 px-3 py-2 text-left text-xs text-gray-300 bg-gray-700">Notes/Reason</th>
+                      <th className="sticky top-0 px-3 py-2 text-center text-xs text-green-400 bg-gray-700">Done</th>
+                      {!isCompleted && <th className="sticky top-0 px-3 py-2 text-center text-xs text-gray-300 bg-gray-700">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700">
@@ -953,6 +956,9 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                       return (
                         <tr key={switchNode.id} className={isDone ? 'bg-green-900/20' : 'bg-gray-800 hover:bg-gray-700/50'}>
                           <td className="px-3 py-2 text-gray-200 font-medium">{switchNode.node_name}</td>
+                          <td className="px-3 py-2 text-gray-400 text-xs">{switchNode.model || 'N/A'}</td>
+                          <td className="px-3 py-2 text-gray-400 text-xs">{switchNode.firmware || 'N/A'}</td>
+                          <td className="px-3 py-2 text-gray-400 text-xs">{switchNode.version || 'N/A'}</td>
                           <td className="px-3 py-2 text-gray-400 text-xs">{switchNode.serial || 'N/A'}</td>
                           <td className="px-3 py-2 text-center">
                             <input

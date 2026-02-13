@@ -699,6 +699,9 @@ function initializeDatabase() {
     addColumnIfNotExists('session_node_tracker', 'device_id', 'TEXT');
     addColumnIfNotExists('session_node_tracker', 'deleted', 'INTEGER DEFAULT 0');
     
+    // Session node snapshots - add assigned_cabinet_name column (missing from original CREATE)
+    addColumnIfNotExists('session_node_snapshots', 'assigned_cabinet_name', 'TEXT');
+    
     // Cabinet locations table
     addColumnIfNotExists('cabinet_locations', 'uuid', 'TEXT');
     addColumnIfNotExists('cabinet_locations', 'synced', 'INTEGER DEFAULT 0');

@@ -201,26 +201,46 @@ router.get('/:sessionId', requireAuth, async (req, res) => {
       inspection: JSON.parse(cabinet.inspection_data || '{}')
     }));
 
-    // Controller/CIOC assignment stats from sys_* tables
-    const cabinetIds = sessionCabinets.map(c => c.id);
+    // Controller/CIOC assignment stats
     const customerId = session.customer_id;
     let controllerAssignmentStats = { assigned: 0, total: 0 };
-    if (customerId) {
-      // Count total controllers + CIOCs for this customer (exclude partner nodes)
-      try {
-        const ctrlTotal = await db.prepare(`SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ?`).get([customerId]);
-        const ciocTotal = await db.prepare(`SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ?`).get([customerId]);
-        controllerAssignmentStats.total = (ctrlTotal?.count ?? 0) + (ciocTotal?.count ?? 0);
-      } catch (e) { console.error('Error counting controllers:', e); }
-      
-      // Count how many are assigned to cabinets in THIS session
-      if (cabinetIds.length > 0) {
-        const placeholders = cabinetIds.map(() => '?').join(',');
+    
+    if (session.status === 'completed') {
+      // For COMPLETED sessions: compute stats from the frozen cabinet JSON data
+      // This ensures historical data isn't affected by future duplications or reassignments
+      let assignedFromJson = 0;
+      for (const cab of cabinets) {
+        const ctrls = cab.controllers || [];
+        assignedFromJson += ctrls.filter(c => c.node_id).length;
+        // Also count CIOCs if stored in controllers array
+      }
+      // Total = what the customer had at the time (use current count as approximation)
+      if (customerId) {
         try {
-          const ctrlAssigned = await db.prepare(`SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ? AND assigned_cabinet_id IN (${placeholders})`).get([customerId, ...cabinetIds]);
-          const ciocAssigned = await db.prepare(`SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ? AND assigned_cabinet_id IN (${placeholders})`).get([customerId, ...cabinetIds]);
-          controllerAssignmentStats.assigned = (ctrlAssigned?.count ?? 0) + (ciocAssigned?.count ?? 0);
-        } catch (e) { console.error('Error counting assigned controllers:', e); }
+          const ctrlTotal = await db.prepare(`SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ?`).get([customerId]);
+          const ciocTotal = await db.prepare(`SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ?`).get([customerId]);
+          controllerAssignmentStats.total = (ctrlTotal?.count ?? 0) + (ciocTotal?.count ?? 0);
+        } catch (e) { /* ignore */ }
+      }
+      controllerAssignmentStats.assigned = assignedFromJson;
+    } else {
+      // For ACTIVE sessions: use live sys_* table data
+      const cabinetIds = sessionCabinets.map(c => c.id);
+      if (customerId) {
+        try {
+          const ctrlTotal = await db.prepare(`SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ?`).get([customerId]);
+          const ciocTotal = await db.prepare(`SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ?`).get([customerId]);
+          controllerAssignmentStats.total = (ctrlTotal?.count ?? 0) + (ciocTotal?.count ?? 0);
+        } catch (e) { console.error('Error counting controllers:', e); }
+        
+        if (cabinetIds.length > 0) {
+          const placeholders = cabinetIds.map(() => '?').join(',');
+          try {
+            const ctrlAssigned = await db.prepare(`SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ? AND assigned_cabinet_id IN (${placeholders})`).get([customerId, ...cabinetIds]);
+            const ciocAssigned = await db.prepare(`SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ? AND assigned_cabinet_id IN (${placeholders})`).get([customerId, ...cabinetIds]);
+            controllerAssignmentStats.assigned = (ctrlAssigned?.count ?? 0) + (ciocAssigned?.count ?? 0);
+          } catch (e) { console.error('Error counting assigned controllers:', e); }
+        }
       }
     }
 
@@ -481,7 +501,8 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
     }
     
     // Create snapshots of all nodes for this customer at completion time
-    const nodes = await db.prepare(`
+    // Pull from BOTH legacy nodes table AND sys_* tables for comprehensive snapshot
+    const legacyNodes = await db.prepare(`
       SELECT n.*, c.cabinet_name as assigned_cabinet_name
       FROM nodes n
       LEFT JOIN cabinets c ON n.assigned_cabinet_id = c.id
@@ -489,8 +510,56 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
       ORDER BY n.node_type, n.node_name
     `).all([session.customer_id]);
     
-    // Insert node snapshots for this session
-    for (const node of nodes) {
+    // Also get nodes from sys_* tables (the real source of truth)
+    const sysControllers = await db.prepare(`
+      SELECT ctrl.id, ctrl.name as node_name, 'Controller' as node_type, ctrl.model, 
+             ctrl.serial_number as serial, ctrl.software_revision as firmware, ctrl.hardware_revision as version,
+             'active' as status, ctrl.redundant, ctrl.assigned_cabinet_id,
+             c.cabinet_name as assigned_cabinet_name
+      FROM sys_controllers ctrl
+      LEFT JOIN cabinets c ON ctrl.assigned_cabinet_id = c.id
+      WHERE ctrl.customer_id = ?
+    `).all([session.customer_id]);
+    
+    const sysCiocs = await db.prepare(`
+      SELECT cioc.id, cioc.name as node_name, 'CIOC' as node_type, cioc.model,
+             cioc.serial_number as serial, cioc.software_revision as firmware, cioc.hardware_revision as version,
+             'active' as status, cioc.redundant, cioc.assigned_cabinet_id,
+             c.cabinet_name as assigned_cabinet_name
+      FROM sys_charms_io_cards cioc
+      LEFT JOIN cabinets c ON cioc.assigned_cabinet_id = c.id
+      WHERE cioc.customer_id = ?
+    `).all([session.customer_id]);
+    
+    const sysWorkstations = await db.prepare(`
+      SELECT ws.id, ws.name as node_name, ws.type as node_type, ws.model,
+             ws.dell_service_tag_number as serial, ws.software_revision as firmware, ws.dv_hotfixes as version,
+             'active' as status, ws.redundant, ws.assigned_cabinet_id, ws.os_name, ws.bios_version,
+             c.cabinet_name as assigned_cabinet_name
+      FROM sys_workstations ws
+      LEFT JOIN cabinets c ON ws.assigned_cabinet_id = c.id
+      WHERE ws.customer_id = ?
+    `).all([session.customer_id]);
+    
+    const sysSwitches = await db.prepare(`
+      SELECT sw.id, sw.name as node_name, 'Smart Switch' as node_type, sw.model,
+             sw.serial_number as serial, sw.software_revision as firmware, sw.hardware_revision as version,
+             'active' as status, sw.assigned_cabinet_id,
+             c.cabinet_name as assigned_cabinet_name
+      FROM sys_smart_switches sw
+      LEFT JOIN cabinets c ON sw.assigned_cabinet_id = c.id
+      WHERE sw.customer_id = ?
+    `).all([session.customer_id]);
+    
+    // Combine all nodes, preferring sys_* tables, deduplicating by name
+    const seenNames = new Set();
+    const allNodes = [...sysControllers, ...sysCiocs, ...sysWorkstations, ...sysSwitches, ...legacyNodes];
+    
+    for (const node of allNodes) {
+      const key = `${node.node_name}-${node.node_type}`;
+      if (seenNames.has(key)) continue;
+      seenNames.add(key);
+      
       try {
         await db.prepare(`
           INSERT OR REPLACE INTO session_node_snapshots (
@@ -500,25 +569,24 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run([
           sessionId,
-          node.id,
+          node.id || node.original_node_id,
           node.node_name,
-          node.node_type,
+          node.node_type || 'Unknown',
           node.model,
-          node.description,
+          node.description || null,
           node.serial,
           node.firmware,
           node.version,
-          node.status,
+          node.status || 'active',
           node.redundant,
-          node.os_name,
-          node.os_service_pack,
-          node.bios_version,
-          node.oem_type_description,
-          node.assigned_cabinet_name
+          node.os_name || null,
+          node.os_service_pack || null,
+          node.bios_version || null,
+          node.oem_type_description || null,
+          node.assigned_cabinet_name || null
         ]);
       } catch (snapshotError) {
         console.error('Error creating node snapshot:', snapshotError);
-        // Continue with other nodes even if one fails
       }
     }
     
@@ -579,6 +647,30 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
     
     console.log('✅ New session created');
     
+    // Duplicate locations (cabinet_names) for the new session and build a remap
+    let sourceLocations = [];
+    try {
+      sourceLocations = await db.prepare('SELECT * FROM cabinet_names WHERE session_id = ? AND (deleted = 0 OR deleted IS NULL) ORDER BY sort_order, location_name').all([sourceSessionId]);
+    } catch (e) {
+      // Fallback if deleted column doesn't exist
+      try {
+        sourceLocations = await db.prepare('SELECT * FROM cabinet_names WHERE session_id = ? ORDER BY sort_order, location_name').all([sourceSessionId]);
+      } catch (e2) { console.error('Error loading locations:', e2.message); }
+    }
+    const locationIdMap = {}; // old location ID -> new location ID
+    
+    for (const loc of sourceLocations) {
+      const newLocationId = uuidv4();
+      locationIdMap[loc.id] = newLocationId;
+      
+      await db.prepare(`
+        INSERT INTO cabinet_names (id, session_id, location_name, description, is_collapsed, sort_order, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `).run([newLocationId, newSessionId, loc.location_name, loc.description || '', loc.is_collapsed || 0, loc.sort_order || 0]);
+    }
+    
+    console.log('📍 Duplicated', sourceLocations.length, 'locations');
+    
     // Get all cabinets from source session
     const sourceCabinets = await db.prepare('SELECT * FROM cabinets WHERE pm_session_id = ?').all([sourceSessionId]);
     console.log('📦 Found', sourceCabinets.length, 'cabinets to duplicate');
@@ -616,85 +708,137 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
         }));
       }
 
-      // Create new cabinet
+      // Clear inspection data but keep pass/fail structure reset to pass
+      let inspectionData = '{}';
+      if (sourceCabinet.inspection_data) {
+        try {
+          const srcInspection = JSON.parse(sourceCabinet.inspection_data);
+          // Reset all pass/fail fields to 'pass', clear notes
+          const resetInspection = {};
+          for (const [key, value] of Object.entries(srcInspection)) {
+            if (typeof value === 'string' && (value === 'pass' || value === 'fail')) {
+              resetInspection[key] = 'pass';
+            } else if (key.includes('notes') || key.includes('comment')) {
+              resetInspection[key] = '';
+            } else {
+              resetInspection[key] = value; // Keep structural fields
+            }
+          }
+          inspectionData = JSON.stringify(resetInspection);
+        } catch (e) { /* keep as {} */ }
+      }
+
+      // Create new cabinet - include cabinet_type and workstations
       await db.prepare(`
         INSERT INTO cabinets (
-          id, pm_session_id, cabinet_name, cabinet_date, status,
+          id, pm_session_id, cabinet_name, cabinet_date, cabinet_type, status,
           power_supplies, distribution_blocks, diodes, network_equipment, 
-          inspection_data, controllers, location_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          inspection_data, controllers, workstations, location_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `).run([
         newCabinetId,
         newSessionId,
         sourceCabinet.cabinet_name,
         sourceCabinet.cabinet_date,
+        sourceCabinet.cabinet_type || 'cabinet', // Keep cabinet type
         'active', // Reset status to active
         JSON.stringify(powerSupplies),
         sourceCabinet.distribution_blocks, // Keep distribution blocks
         JSON.stringify(diodes),
         sourceCabinet.network_equipment, // Keep network equipment
-        '{}', // Clear inspection data
+        inspectionData, // Reset inspection data
         sourceCabinet.controllers, // Keep controller assignments
-        sourceCabinet.location_id // Keep location assignment
+        sourceCabinet.workstations || '[]', // Keep workstation assignments
+        sourceCabinet.location_id ? (locationIdMap[sourceCabinet.location_id] || sourceCabinet.location_id) : null // Remap to new location ID
       ]);
       
       console.log('✅ Cabinet created in database');
       
-      // Assign controllers to the new cabinet based on the controllers JSON field
-      if (sourceCabinet.controllers) {
-        const controllers = JSON.parse(sourceCabinet.controllers);
-        console.log('🎮 Parsed controllers:', controllers);
+      // Re-assign nodes to the NEW cabinet in sys_* tables
+      // Helper to reassign a node from old cabinet to new cabinet across all sys_* tables
+      async function reassignNodeToNewCabinet(nodeId, newCabId, nodeCategory) {
+        const tablePriority = {
+          'controller': 'sys_controllers',
+          'cioc': 'sys_charms_io_cards',
+          'switch': 'sys_smart_switches',
+          'workstation': 'sys_workstations'
+        };
         
-        for (const controller of controllers) {
-          if (controller.node_id) {
-            console.log('🎮 Assigning controller:', controller.node_id, 'to cabinet:', newCabinetId);
-            try {
-              const result = await db.prepare(`
-                UPDATE nodes SET 
-                  assigned_cabinet_id = ?, 
-                  assigned_at = CURRENT_TIMESTAMP,
-                  updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-              `).run([newCabinetId, controller.node_id]);
-              console.log('✅ Controller assigned, changes:', result.changes);
-            } catch (error) {
-              console.error('❌ Error assigning controller during duplication:', error);
+        // Try the priority table first
+        if (nodeCategory && tablePriority[nodeCategory]) {
+          try {
+            const r = await db.prepare(`UPDATE ${tablePriority[nodeCategory]} SET assigned_cabinet_id = ?, assigned_at = CURRENT_TIMESTAMP WHERE id = ?`).run([newCabId, nodeId]);
+            if (r.changes > 0) return;
+          } catch (e) { /* try others */ }
+        }
+        
+        // Try all sys_* tables
+        const allTables = ['sys_controllers', 'sys_charms_io_cards', 'sys_smart_switches', 'sys_workstations'];
+        for (const table of allTables) {
+          try {
+            const r = await db.prepare(`UPDATE ${table} SET assigned_cabinet_id = ?, assigned_at = CURRENT_TIMESTAMP WHERE id = ?`).run([newCabId, nodeId]);
+            if (r.changes > 0) return;
+          } catch (e) { /* skip */ }
+        }
+        
+        // Fallback to legacy nodes table
+        try {
+          await db.prepare('UPDATE nodes SET assigned_cabinet_id = ?, assigned_at = CURRENT_TIMESTAMP WHERE id = ?').run([newCabId, nodeId]);
+        } catch (e) { /* skip */ }
+      }
+      
+      // Reassign controllers
+      if (sourceCabinet.controllers) {
+        try {
+          const controllers = JSON.parse(sourceCabinet.controllers);
+          for (const controller of controllers) {
+            if (controller.node_id) {
+              await reassignNodeToNewCabinet(controller.node_id, newCabinetId, controller.node_category || 'controller');
+              console.log('✅ Controller reassigned:', controller.node_id);
             }
           }
+        } catch (e) {
+          console.error('Error reassigning controllers:', e.message);
         }
-      } else {
-        console.log('📦 No controllers to assign for this cabinet');
+      }
+      
+      // Reassign workstations
+      if (sourceCabinet.workstations) {
+        try {
+          const workstations = JSON.parse(sourceCabinet.workstations);
+          for (const ws of workstations) {
+            if (ws.node_id) {
+              await reassignNodeToNewCabinet(ws.node_id, newCabinetId, ws.node_category || 'workstation');
+              console.log('✅ Workstation reassigned:', ws.node_id);
+            }
+          }
+        } catch (e) {
+          console.error('Error reassigning workstations:', e.message);
+        }
+      }
+      
+      // Reassign network equipment/switches from JSON
+      if (sourceCabinet.network_equipment) {
+        try {
+          const netEquip = JSON.parse(sourceCabinet.network_equipment);
+          // Network equipment can be an array of switch objects
+          const switches = Array.isArray(netEquip) ? netEquip : (netEquip.switches || []);
+          for (const sw of switches) {
+            if (sw.node_id) {
+              await reassignNodeToNewCabinet(sw.node_id, newCabinetId, sw.node_category || 'switch');
+              console.log('✅ Switch reassigned:', sw.node_id);
+            }
+          }
+        } catch (e) {
+          // network_equipment might not be JSON array of assigned nodes
+        }
       }
     }
     
-    // Copy session node maintenance data (keep structure but clear actual maintenance data)
-    const sourceNodeMaintenance = await db.prepare('SELECT * FROM session_node_maintenance WHERE session_id = ?').all([sourceSessionId]);
-    
-    for (const maintenance of sourceNodeMaintenance) {
-      await db.prepare(`
-        INSERT INTO session_node_maintenance (
-          session_id, node_id, dv_checked, os_checked, macafee_checked,
-          free_time, redundancy_checked, cold_restart_checked, no_errors_checked,
-          hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      `).run([
-        newSessionId,
-        maintenance.node_id,
-        0, // Clear dv_checked
-        0, // Clear os_checked
-        0, // Clear macafee_checked
-        null, // Clear free_time
-        0, // Clear redundancy_checked
-        0, // Clear cold_restart_checked
-        0, // Clear no_errors_checked
-        0, // Clear hdd_replaced
-        maintenance.performance_type || 'free_time', // Keep performance type
-        null, // Clear performance value
-        0, // Clear hf_updated
-        0 // Clear firmware_updated_checked
-      ]);
-    }
+    // Clear all node maintenance / troubleshooting data (DO NOT copy)
+    // Diagnostics (I/O errors) are also NOT copied - start fresh
+    // Node maintenance will be created fresh when the user opens nodes in the new session
+    console.log('🧹 Skipping node maintenance and diagnostics copy (cleared for new session)');
     
     // Get the new session data
     const newSession = await db.prepare(`

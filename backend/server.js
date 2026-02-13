@@ -19,6 +19,7 @@ const pmNotesRoutes = require('./routes/pmNotes');
 const iiDocumentsRoutes = require('./routes/iiDocuments');
 const systemRegistryRoutes = require('./routes/systemRegistry');
 const systemRegistrySyncRoutes = require('./routes/systemRegistrySync');
+const locationRoutes = require('./routes/locations');
 
 const PORT = process.env.PORT || 3000;
 
@@ -68,6 +69,7 @@ function createApp(options = {}) {
   app.use('/', iiDocumentsRoutes);
   app.use('/', systemRegistryRoutes);
   app.use('/api/customers', systemRegistrySyncRoutes);
+  app.use('/api', locationRoutes);
 
   if (!catchAllPath) {
     app.get('/dashboard', requireAuth, (req, res) => {

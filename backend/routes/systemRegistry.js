@@ -225,6 +225,10 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       if (contactPerson) { updates.push('contact_person = ?'); values.push(contactPerson); }
       if (contactEmail) { updates.push('email = ?'); values.push(contactEmail); }
       if (contactPhone) { updates.push('phone = ?'); values.push(contactPhone); }
+      // Clear the old location field since we now have proper address fields
+      if (streetAddress || city || state) {
+        updates.push('location = NULL');
+      }
       
       if (updates.length > 0) {
         updates.push('updated_at = CURRENT_TIMESTAMP');
