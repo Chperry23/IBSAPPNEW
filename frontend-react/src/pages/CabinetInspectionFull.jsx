@@ -371,14 +371,15 @@ export default function CabinetInspectionFull() {
       ...formData,
       distribution_blocks: [
         ...formData.distribution_blocks,
-        { id: Date.now(), type: '', condition: '', comments: '' },
+        { id: Date.now(), type: '', condition: '', comments: '', voltage_type: '24VDC', dc_reading: '' },
       ],
     });
   };
 
-  const removeDistributionBlock = (index) => {
+  const removeDistributionBlock = async (index) => {
     const updated = formData.distribution_blocks.filter((_, i) => i !== index);
     setFormData({ ...formData, distribution_blocks: updated });
+    await autoSaveCabinet({ ...formData, distribution_blocks: updated });
   };
 
   const addDiode = async () => {
@@ -965,9 +966,15 @@ export default function CabinetInspectionFull() {
       }
       case 'distribution': {
         const total = formData.distribution_blocks.length + formData.diodes.length;
-        return total > 0
-          ? { text: `${total} Items`, class: 'complete', errors: 0 }
-          : { text: 'Empty', class: 'empty', errors: 0 };
+        if (total === 0) return { text: 'Empty', class: 'empty', errors: 0 };
+        const dbFails = formData.distribution_blocks.filter(db => db.status === 'fail').length;
+        const diodeFails = formData.diodes.filter(d => d.status === 'fail').length;
+        const failCount = dbFails + diodeFails;
+        return {
+          text: `${total} Items`,
+          class: failCount > 0 ? 'error' : 'complete',
+          errors: failCount
+        };
       }
       case 'network': {
         const count = formData.network_equipment.length;
@@ -1776,28 +1783,87 @@ export default function CabinetInspectionFull() {
                     <h4 className="text-gray-300 font-medium mb-3">Distribution Blocks</h4>
                     <div className="space-y-3">
                       {formData.distribution_blocks.map((block, index) => (
-                        <div key={block.id || index} className="bg-gray-700/50 rounded-lg p-3 border border-gray-600 flex gap-3">
-                          <input
-                            type="text"
-                            value={block.type}
-                            onChange={(e) => {
-                              const updated = [...formData.distribution_blocks];
-                              updated[index].type = e.target.value;
-                              setFormData({ ...formData, distribution_blocks: updated });
-                            }}
-                            className="form-input flex-1"
-                            placeholder="Block type/description"
-                            readOnly={isViewOnly}
-                          />
-                          {!isViewOnly && (
-                            <button
-                              type="button"
-                              onClick={() => removeDistributionBlock(index)}
-                              className="text-red-400 hover:text-red-300"
-                            >
-                              🗑️
-                            </button>
-                          )}
+                        <div key={block.id || index} className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
+                          <div className="flex justify-between items-start mb-3">
+                            <input
+                              type="text"
+                              value={block.type || ''}
+                              onChange={(e) => {
+                                const updated = [...formData.distribution_blocks];
+                                updated[index].type = e.target.value;
+                                setFormData({ ...formData, distribution_blocks: updated });
+                              }}
+                              className="form-input flex-1 max-w-[200px]"
+                              placeholder="Block type/description"
+                              readOnly={isViewOnly}
+                            />
+                            {!isViewOnly && (
+                              <button
+                                type="button"
+                                onClick={() => removeDistributionBlock(index)}
+                                className="text-red-400 hover:text-red-300"
+                              >
+                                🗑️
+                              </button>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="form-label text-xs">Voltage Type</label>
+                              <select
+                                value={block.voltage_type || '24VDC'}
+                                onChange={(e) => {
+                                  const updated = [...formData.distribution_blocks];
+                                  updated[index].voltage_type = e.target.value;
+                                  const v = validateVoltage(updated[index].dc_reading, 'dc_reading', updated[index].voltage_type);
+                                  updated[index].status = v ? (v.valid ? 'pass' : 'fail') : '';
+                                  setFormData({ ...formData, distribution_blocks: updated });
+                                  autoSaveCabinet({ ...formData, distribution_blocks: updated });
+                                }}
+                                className="form-select"
+                                disabled={isViewOnly}
+                              >
+                                <option value="24VDC">24VDC</option>
+                                <option value="12VDC">12VDC</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="form-label text-xs">DC Reading (V)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={block.dc_reading ?? ''}
+                                onChange={(e) => {
+                                  const updated = [...formData.distribution_blocks];
+                                  updated[index].dc_reading = e.target.value;
+                                  const v = validateVoltage(updated[index].dc_reading, 'dc_reading', updated[index].voltage_type);
+                                  updated[index].status = v ? (v.valid ? 'pass' : 'fail') : '';
+                                  setFormData({ ...formData, distribution_blocks: updated });
+                                }}
+                                onBlur={() => autoSaveCabinet()}
+                                readOnly={isViewOnly}
+                                className={`form-input ${
+                                  block.dc_reading && validateVoltage(block.dc_reading, 'dc_reading', block.voltage_type)
+                                    ? validateVoltage(block.dc_reading, 'dc_reading', block.voltage_type).valid
+                                      ? 'border-green-500'
+                                      : 'border-red-500'
+                                    : ''
+                                }`}
+                                placeholder={
+                                  (block.voltage_type || '24VDC') === '24VDC' ? '21.6-26.4V' : '10.8-13.2V'
+                                }
+                              />
+                              {block.dc_reading && validateVoltage(block.dc_reading, 'dc_reading', block.voltage_type) && (
+                                <div className={`text-xs mt-1 ${
+                                  validateVoltage(block.dc_reading, 'dc_reading', block.voltage_type).valid
+                                    ? 'text-green-400'
+                                    : 'text-red-400'
+                                }`}>
+                                  {validateVoltage(block.dc_reading, 'dc_reading', block.voltage_type).message}
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1831,6 +1897,8 @@ export default function CabinetInspectionFull() {
                                 onChange={(e) => {
                                   const updated = [...formData.diodes];
                                   updated[index].voltage_type = e.target.value;
+                                  const v = validateVoltage(updated[index].dc_reading, 'dc_reading', updated[index].voltage_type);
+                                  updated[index].status = v ? (v.valid ? 'pass' : 'fail') : '';
                                   setFormData({ ...formData, diodes: updated });
                                   autoSaveCabinet({ ...formData, diodes: updated });
                                 }}
@@ -1850,6 +1918,8 @@ export default function CabinetInspectionFull() {
                                 onChange={(e) => {
                                   const updated = [...formData.diodes];
                                   updated[index].dc_reading = e.target.value;
+                                  const v = validateVoltage(updated[index].dc_reading, 'dc_reading', updated[index].voltage_type);
+                                  updated[index].status = v ? (v.valid ? 'pass' : 'fail') : '';
                                   setFormData({ ...formData, diodes: updated });
                                 }}
                                 onBlur={() => autoSaveCabinet()}

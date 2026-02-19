@@ -29,15 +29,15 @@ class EnhancedMergeReplication {
       'session_ii_equipment',
       'session_ii_checklist',
       'session_ii_equipment_used',
-      'csv_import_history',
-      // System Registry tables (replaces CSV node imports)
+      // System Registry tables (replaces legacy CSV import; synced so pull sees registry)
       'sys_workstations',
       'sys_smart_switches',
       'sys_io_devices',
       'sys_controllers',
       'sys_charms_io_cards',
       'sys_charms',
-      'sys_ams_systems'
+      'sys_ams_systems',
+      'customer_metric_history'
     ];
 
     // Map table names to MongoDB models
@@ -54,15 +54,15 @@ class EnhancedMergeReplication {
       'session_ii_equipment': models.SessionIIEquipment,
       'session_ii_checklist': models.SessionIIChecklist,
       'session_ii_equipment_used': models.SessionIIEquipmentUsed,
-      'csv_import_history': models.CSVImportHistory,
-      // System Registry models (need to create these)
+      // System Registry models (replaces CSV import)
       'sys_workstations': models.SysWorkstation,
       'sys_smart_switches': models.SysSmartSwitch,
       'sys_io_devices': models.SysIODevice,
       'sys_controllers': models.SysController,
       'sys_charms_io_cards': models.SysCharmsIOCard,
       'sys_charms': models.SysCharm,
-      'sys_ams_systems': models.SysAMSSystem
+      'sys_ams_systems': models.SysAMSSystem,
+      'customer_metric_history': models.CustomerMetricHistory
     };
 
     // Conflict resolution strategy: 'local_wins', 'master_wins', 'latest_wins'
@@ -354,11 +354,17 @@ class EnhancedMergeReplication {
   // ============================================================
 
   async mergeRecordFromMaster(tableName, masterRecord) {
-    return new Promise((resolve, reject) => {
-      // Convert MongoDB record to SQLite format
-      const masterData = this.convertMongoToSQLite(masterRecord);
-      const recordId = masterData.id;
+    // Convert MongoDB record to SQLite format
+    const masterData = this.convertMongoToSQLite(masterRecord);
+    const recordId = masterData.id;
 
+    // Resolve customer_id by customer uuid so sessions/nodes link to the correct local customer
+    // (master and local can have different integer ids for the same customer)
+    if ((tableName === 'sessions' || tableName === 'nodes') && masterRecord.customer_id != null) {
+      masterData.customer_id = await this.resolveMasterCustomerIdToLocal(masterRecord.customer_id);
+    }
+
+    return new Promise((resolve, reject) => {
       // cabinets.cabinet_name is NOT NULL - ensure we never insert null/empty
       if (tableName === 'cabinets') {
         const name = (masterData.cabinet_name != null && String(masterData.cabinet_name).trim())
@@ -554,8 +560,14 @@ class EnhancedMergeReplication {
                 await this.markRecordAsSynced(tableName, record.id);
                 deletedCount++;
               } else {
+                // When pushing sessions/nodes, resolve local customer_id to master customer _id (by uuid)
+                let recordToPush = record;
+                if ((tableName === 'sessions' || tableName === 'nodes') && record.customer_id != null) {
+                  const masterCustId = await this.resolveLocalCustomerIdToMaster(record.customer_id);
+                  recordToPush = { ...record, customer_id: masterCustId };
+                }
                 // Upsert to master
-                const mongoRecord = this.convertSQLiteToMongo(record, tableName);
+                const mongoRecord = this.convertSQLiteToMongo(recordToPush, tableName);
                 
                 await Model.findOneAndUpdate(
                   { _id: mongoRecord._id },
@@ -710,7 +722,7 @@ class EnhancedMergeReplication {
     delete mongoRecord.id;
     
     // Convert date strings to Date objects
-    ['created_at', 'updated_at', 'completed_at', 'date_completed', 'ii_date_performed', 'recalibration_date'].forEach(field => {
+    ['created_at', 'updated_at', 'completed_at', 'date_completed', 'ii_date_performed', 'recalibration_date', 'assigned_at'].forEach(field => {
       if (mongoRecord[field] && typeof mongoRecord[field] === 'string') {
         mongoRecord[field] = new Date(mongoRecord[field]);
       }
@@ -734,13 +746,62 @@ class EnhancedMergeReplication {
     delete sqliteRecord.__v; // Remove mongoose version key
     
     // Convert Date objects to ISO strings
-    ['created_at', 'updated_at', 'completed_at', 'date_completed', 'ii_date_performed', 'recalibration_date'].forEach(field => {
+    ['created_at', 'updated_at', 'completed_at', 'date_completed', 'ii_date_performed', 'recalibration_date', 'assigned_at'].forEach(field => {
       if (sqliteRecord[field] && sqliteRecord[field] instanceof Date) {
         sqliteRecord[field] = sqliteRecord[field].toISOString();
       }
     });
     
     return sqliteRecord;
+  }
+
+  /**
+   * Resolve master (MongoDB) customer _id to local (SQLite) customer id by uuid.
+   * Prevents sessions/nodes from being linked to the wrong customer when master and
+   * local use different integer ids for the same customer.
+   */
+  async resolveMasterCustomerIdToLocal(masterCustomerId) {
+    if (masterCustomerId == null) return masterCustomerId;
+    try {
+      if (!this.isConnected) await this.connectToMongoDB();
+      const Customer = this.modelMap['customers'];
+      const masterCust = await Customer.findById(masterCustomerId).lean();
+      if (!masterCust || !masterCust.uuid) return masterCustomerId;
+      const local = await new Promise((resolve, reject) => {
+        this.localDb.get('SELECT id FROM customers WHERE uuid = ?', [masterCust.uuid], (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
+      });
+      return local ? local.id : masterCustomerId;
+    } catch (err) {
+      console.warn('   Could not resolve master customer_id to local (using raw id):', err.message);
+      return masterCustomerId;
+    }
+  }
+
+  /**
+   * Resolve local (SQLite) customer id to master (MongoDB) customer _id by uuid.
+   * When pushing sessions/nodes we must send master's _id so master stores correct links.
+   */
+  async resolveLocalCustomerIdToMaster(localCustomerId) {
+    if (localCustomerId == null) return localCustomerId;
+    try {
+      const local = await new Promise((resolve, reject) => {
+        this.localDb.get('SELECT uuid FROM customers WHERE id = ?', [localCustomerId], (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
+      });
+      if (!local || !local.uuid) return localCustomerId;
+      if (!this.isConnected) await this.connectToMongoDB();
+      const Customer = this.modelMap['customers'];
+      const masterCust = await Customer.findOne({ uuid: local.uuid }).lean();
+      return masterCust ? masterCust._id : localCustomerId;
+    } catch (err) {
+      console.warn('   Could not resolve local customer_id to master (using raw id):', err.message);
+      return localCustomerId;
+    }
   }
 
   // ============================================================

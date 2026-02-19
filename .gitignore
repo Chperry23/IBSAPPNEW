@@ -12,6 +12,7 @@ yarn-error.log*
 # Logs
 *.log
 error.log
+logs/
 
 # Environment variables
 .env

@@ -98,6 +98,34 @@ export default function Sync() {
     }
   };
 
+  /** Download from cloud and remove local records that no longer exist on cloud (match counts). */
+  const downloadAndMatchCloud = async () => {
+    if (!confirm('This will make this device match the cloud: local-only records not on the cloud will be removed. Continue?')) {
+      return;
+    }
+    setSyncing(true);
+    showMessage('Downloading and matching to cloud (removing local-only orphans)...', 'info');
+    try {
+      const result = await api.request('/api/sync/enhanced-merge/pull-with-cleanup', { method: 'POST' });
+      if (result.success) {
+        const data = result.data || result;
+        const pulled = data.pulled ?? data.pullResults?.totalPulled ?? 0;
+        const removed = data.orphansRemoved ?? data.orphanResults?.totalOrphansRemoved ?? 0;
+        soundSystem.playSuccess();
+        showMessage(`✅ Done. Downloaded ${pulled} records, removed ${removed} local-only records.`, 'success');
+        refreshStatus();
+      } else {
+        soundSystem.playError();
+        showMessage(`❌ Failed: ${result.error}`, 'error');
+      }
+    } catch (error) {
+      soundSystem.playError();
+      showMessage('Download & match failed!', 'error');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const uploadToCloud = async () => {
     setSyncing(true);
     showMessage('Uploading your changes to cloud...', 'info');
@@ -263,7 +291,7 @@ export default function Sync() {
           <h3 className="text-lg font-semibold text-gray-100">Sync Actions</h3>
         </div>
         <div className="card-body">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <button
               onClick={syncAll}
               disabled={syncing}
@@ -280,7 +308,16 @@ export default function Sync() {
             >
               <div className="text-3xl mb-2">⬇️</div>
               <div className="text-lg font-semibold">Download</div>
-              <div className="text-xs opacity-75 mt-1">Get Latest Data</div>
+              <div className="text-xs opacity-75 mt-1">Get latest, keep local-only</div>
+            </button>
+            <button
+              onClick={downloadAndMatchCloud}
+              disabled={syncing}
+              className="btn bg-amber-600 hover:bg-amber-500 text-white h-32 flex flex-col items-center justify-center disabled:opacity-50"
+            >
+              <div className="text-3xl mb-2">⬇️✨</div>
+              <div className="text-lg font-semibold">Download & match cloud</div>
+              <div className="text-xs opacity-75 mt-1">Make this device match cloud</div>
             </button>
             <button
               onClick={uploadToCloud}
@@ -289,8 +326,11 @@ export default function Sync() {
             >
               <div className="text-3xl mb-2">⬆️</div>
               <div className="text-lg font-semibold">Upload</div>
-              <div className="text-xs opacity-75 mt-1">Send Your Changes</div>
+              <div className="text-xs opacity-75 mt-1">Send your changes</div>
             </button>
+          </div>
+          <div className="mt-4 p-3 bg-gray-700/30 rounded-lg text-sm text-gray-300">
+            <strong className="text-gray-200">How sync works:</strong> System Registry data (workstations, controllers, etc.) is stored in the database and synced with the cloud. <strong>Download</strong> adds/updates from cloud but keeps records that exist only on this device. <strong>Download & match cloud</strong> also removes local records that are not on the cloud so counts match (use when this device should mirror the cloud). When you delete something and then <strong>Upload</strong>, that delete is sent to the cloud so other devices can see it after they download.
           </div>
         </div>
       </div>
@@ -359,7 +399,13 @@ export default function Sync() {
                         session_ii_equipment: 'I&I Equipment',
                         session_ii_checklist: 'I&I Checklist',
                         session_ii_equipment_used: 'I&I Equipment Used',
-                        csv_import_history: 'CSV Import History',
+                        sys_workstations: 'Sys Workstations',
+                        sys_smart_switches: 'Sys Smart Switches',
+                        sys_io_devices: 'Sys IO Devices',
+                        sys_controllers: 'Sys Controllers',
+                        sys_charms_io_cards: 'Sys Charms IO Cards',
+                        sys_charms: 'Sys Charms',
+                        sys_ams_systems: 'Sys AMS Systems',
                       };
                       const displayName = tableDisplayNames[table] ?? table
                         .replace(/_/g, ' ')

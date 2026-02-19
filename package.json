@@ -42,10 +42,16 @@
     "assets": [
       "frontend-react/dist/**/*",
       "backend/**/*",
-      "node_modules/sqlite3/**/*"
+      "node_modules/sqlite3/**/*",
+      "node_modules/@mapbox/**/*",
+      "node_modules/node-addon-api/**/*",
+      "node_modules/detect-libc/**/*",
+      "node_modules/nopt/**/*",
+      "node_modules/semver/**/*"
     ],
     "scripts": [
-      "backend/**/*.js"
+      "backend/**/*.js",
+      "node_modules/@mapbox/node-pre-gyp/lib/**/*.js"
     ],
     "targets": [
       "node18-win-x64"

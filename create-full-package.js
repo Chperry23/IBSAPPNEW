@@ -91,12 +91,81 @@ function createPackage(includeExe) {
     }
   });
 
-  // CRITICAL: Always include SQLite3 native module (even for exe)
-  if (fs.existsSync('node_modules/sqlite3')) {
-    console.log(`  ✅ node_modules/sqlite3/ (native module - required!)`);
-    archive.directory('node_modules/sqlite3', 'node_modules/sqlite3');
-  } else {
-    console.warn(`  ⚠️  node_modules/sqlite3/ NOT FOUND! Install it with: npm install`);
+  // CRITICAL: Include sqlite3 native module AND all its runtime dependencies.
+  // sqlite3 requires @mapbox/node-pre-gyp to resolve its native binding at runtime.
+  // Without these, the exe will crash on startup with a module-not-found error.
+  const requiredModuleDirs = [
+    'node_modules/sqlite3',
+    'node_modules/@mapbox',
+    'node_modules/node-addon-api',
+    'node_modules/detect-libc',
+    'node_modules/nopt',
+    'node_modules/abbrev',
+    'node_modules/semver',
+    'node_modules/make-dir',
+    'node_modules/npmlog',
+    'node_modules/are-we-there-yet',
+    'node_modules/console-control-strings',
+    'node_modules/gauge',
+    'node_modules/set-blocking',
+    'node_modules/delegates',
+    'node_modules/readable-stream',
+    'node_modules/string_decoder',
+    'node_modules/safe-buffer',
+    'node_modules/util-deprecate',
+    'node_modules/inherits',
+    'node_modules/has-unicode',
+    'node_modules/wide-align',
+    'node_modules/string-width',
+    'node_modules/strip-ansi',
+    'node_modules/ansi-regex',
+    'node_modules/is-fullwidth-code-point',
+    'node_modules/emoji-regex',
+    'node_modules/color-support',
+    'node_modules/signal-exit',
+    'node_modules/aproba',
+    'node_modules/object-assign',
+    'node_modules/tar',
+    'node_modules/minipass',
+    'node_modules/minizlib',
+    'node_modules/yallist',
+    'node_modules/chownr',
+    'node_modules/fs-minipass',
+    'node_modules/mkdirp',
+    'node_modules/rimraf',
+    'node_modules/glob',
+    'node_modules/inflight',
+    'node_modules/once',
+    'node_modules/wrappy',
+    'node_modules/balanced-match',
+    'node_modules/brace-expansion',
+    'node_modules/minimatch',
+    'node_modules/fs.realpath',
+    'node_modules/node-fetch',
+    'node_modules/whatwg-url',
+    'node_modules/tr46',
+    'node_modules/webidl-conversions',
+    'node_modules/https-proxy-agent',
+    'node_modules/agent-base',
+    'node_modules/debug',
+    'node_modules/ms',
+  ];
+
+  let modulesAdded = 0;
+  let modulesMissing = 0;
+  requiredModuleDirs.forEach(dir => {
+    if (fs.existsSync(dir)) {
+      archive.directory(dir, dir);
+      modulesAdded++;
+    } else {
+      console.warn(`  -- ${dir}/ not found (may be optional)`);
+      modulesMissing++;
+    }
+  });
+  console.log(`  + ${modulesAdded} node_modules included (${modulesMissing} optional modules not found)`);
+
+  if (!fs.existsSync('node_modules/sqlite3')) {
+    console.warn(`  WARNING: node_modules/sqlite3/ NOT FOUND! Run: npm install`);
   }
 
   archive.finalize();

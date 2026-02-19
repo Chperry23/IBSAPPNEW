@@ -24,21 +24,32 @@ const userSchema = new mongoose.Schema({
 userSchema.index({ updated_at: 1, deleted: 1 });
 userSchema.index({ uuid: 1 }, { unique: true, sparse: true });
 
-// Customers Schema
+// Customers Schema (includes fields updated by System Registry import)
 const customerSchema = new mongoose.Schema({
   _id: { type: Number, required: true }, // Maps to SQLite id (INTEGER PRIMARY KEY)
   name: { type: String, required: true },
   location: { type: String },
   contact_info: { type: String },
-  system_username: { type: String }, // System login credentials
-  system_password: { type: String }, // System login credentials (encrypted)
+  contact_person: { type: String },
+  email: { type: String },
+  phone: { type: String },
+  address: { type: String },
+  system_username: { type: String },
+  system_password: { type: String },
+  company_name: { type: String },
+  street_address: { type: String },
+  city: { type: String },
+  state: { type: String },
+  zip: { type: String },
+  country: { type: String },
+  dongle_id: { type: String },
   uuid: { type: String, index: true },
   synced: { type: Number, default: 0 },
   device_id: { type: String, index: true },
   deleted: { type: Number, default: 0, index: true },
   created_at: { type: Date, default: Date.now },
   updated_at: { type: Date, default: Date.now }
-}, { 
+}, {
   collection: 'customers',
   versionKey: false
 });
@@ -123,13 +134,15 @@ const nodeSchema = new mongoose.Schema({
   model: { type: String },
   serial: { type: String },
   firmware: { type: String },
+  assigned_cabinet_id: { type: String }, // cabinet id when assigned in session
+  assigned_at: { type: Date },
   uuid: { type: String },
   synced: { type: Number, default: 0 },
   device_id: { type: String },
   deleted: { type: Number, default: 0 },
   created_at: { type: Date, default: Date.now },
   updated_at: { type: Date, default: Date.now }
-}, { 
+}, {
   collection: 'nodes',
   versionKey: false
 });
@@ -387,6 +400,8 @@ const sysWorkstationSchema = new mongoose.Schema({
   computer_model: { type: String },
   bios_version: { type: String },
   memory: { type: String },
+  assigned_cabinet_id: { type: String },
+  assigned_at: { type: Date },
   uuid: { type: String },
   synced: { type: Number, default: 0 },
   device_id: { type: String },
@@ -405,6 +420,8 @@ const sysSmartSwitchSchema = new mongoose.Schema({
   software_revision: { type: String },
   hardware_revision: { type: String },
   serial_number: { type: String },
+  assigned_cabinet_id: { type: String },
+  assigned_at: { type: Date },
   uuid: { type: String },
   synced: { type: Number, default: 0 },
   device_id: { type: String },
@@ -448,6 +465,8 @@ const sysControllerSchema = new mongoose.Schema({
   partner_software_revision: { type: String },
   partner_hardware_revision: { type: String },
   partner_serial_number: { type: String },
+  assigned_cabinet_id: { type: String },
+  assigned_at: { type: Date },
   uuid: { type: String },
   synced: { type: Number, default: 0 },
   device_id: { type: String },
@@ -471,6 +490,8 @@ const sysCharmsIOCardSchema = new mongoose.Schema({
   partner_software_revision: { type: String },
   partner_hardware_revision: { type: String },
   partner_serial_number: { type: String },
+  assigned_cabinet_id: { type: String },
+  assigned_at: { type: Date },
   uuid: { type: String },
   synced: { type: Number, default: 0 },
   device_id: { type: String },
@@ -514,6 +535,25 @@ const sysAMSSystemSchema = new mongoose.Schema({
 sysAMSSystemSchema.index({ updated_at: 1, deleted: 1 });
 sysAMSSystemSchema.index({ customer_id: 1 }, { unique: true });
 
+// Customer metric history (trend over time per customer)
+const customerMetricHistorySchema = new mongoose.Schema({
+  _id: { type: Number, required: true },
+  customer_id: { type: Number, required: true },
+  session_id: { type: String, required: true },
+  session_name: { type: String },
+  recorded_at: { type: Date, default: Date.now },
+  error_count: { type: Number, default: 0 },
+  risk_score: { type: Number, default: 0 },
+  risk_level: { type: String },
+  total_components: { type: Number, default: 0 },
+  failed_components: { type: Number, default: 0 },
+  cabinet_count: { type: Number, default: 0 },
+  synced: { type: Number, default: 0 },
+  created_at: { type: Date, default: Date.now }
+}, { collection: 'customer_metric_history', versionKey: false });
+customerMetricHistorySchema.index({ customer_id: 1 });
+customerMetricHistorySchema.index({ recorded_at: -1 });
+
 // Export all models
 module.exports = {
   User: mongoose.model('User', userSchema),
@@ -537,5 +577,6 @@ module.exports = {
   SysController: mongoose.model('SysController', sysControllerSchema),
   SysCharmsIOCard: mongoose.model('SysCharmsIOCard', sysCharmsIOCardSchema),
   SysCharm: mongoose.model('SysCharm', sysCharmSchema),
-  SysAMSSystem: mongoose.model('SysAMSSystem', sysAMSSystemSchema)
+  SysAMSSystem: mongoose.model('SysAMSSystem', sysAMSSystemSchema),
+  CustomerMetricHistory: mongoose.model('CustomerMetricHistory', customerMetricHistorySchema)
 };

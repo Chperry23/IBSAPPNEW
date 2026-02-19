@@ -66,7 +66,7 @@ function generateControllerPage(controllerName, errors, errorTypeLabels) {
               <tr>
                 <td class="card-cell" style="font-weight: 600;">${error.device_name || '-'}</td>
                 <td class="card-cell">${error.bus_type || '-'}</td>
-                <td class="card-cell">${error.card_number || '-'}</td>
+                <td class="card-cell">${error.card_display || error.card_number || '-'}</td>
                 <td class="channel-cell">${error.channel_number !== null ? error.channel_number : 'N/A'}</td>
                 <td class="error-type-cell">${errorTypeLabels[error.error_type] || error.error_type}</td>
                 <td class="description-cell">${error.error_description || error.notes || 'No description'}</td>
@@ -259,22 +259,17 @@ function generateDiagnosticsSummary(diagnosticsData) {
 
   const totalErrors = diagnosticsData.length;
   const errorTypes = Object.entries(errorCounts).sort((a, b) => b[1] - a[1]);
-  
-  // Generate bar chart
-  const maxCount = Math.max(...Object.values(errorCounts));
-  const barChartHtml = errorTypes.map(([type, count]) => {
-    const percentage = Math.round((count / totalErrors) * 100);
-    const height = Math.round((count / maxCount) * 160);
-    return `
-      <div class="bar-wrapper">
-        <div class="bar-value">${count}</div>
-        <div class="bar" style="height: ${height}px;">
-          <span class="bar-label">${percentage}%</span>
-        </div>
-        <div class="bar-category">${errorTypeLabels[type] || type}</div>
-      </div>
-    `;
-  }).join('');
+  const labels = errorTypes.map(([type]) => errorTypeLabels[type] || type);
+  const data = errorTypes.map(([, count]) => count);
+  const polarColors = [
+    'rgba(220, 53, 69, 0.6)',
+    'rgba(253, 126, 20, 0.6)',
+    'rgba(255, 193, 7, 0.6)',
+    'rgba(40, 167, 69, 0.6)',
+    'rgba(0, 123, 255, 0.6)',
+    'rgba(111, 66, 193, 0.6)'
+  ];
+  const chartDataJson = JSON.stringify({ labels, data, backgroundColor: polarColors.slice(0, labels.length) }).replace(/</g, '\\u003c');
 
   return `
     <div class="page-break" style="page-break-before: always;">
@@ -296,9 +291,44 @@ function generateDiagnosticsSummary(diagnosticsData) {
 
       <div class="chart-container" style="margin: 30px 0; page-break-inside: avoid;">
         <h3 class="section-title" style="margin-bottom: 20px;">Error Distribution by Type</h3>
-        <div class="bar-chart">
-          ${barChartHtml}
+        <script>window.__DIAGNOSTICS_CHART_DATA__ = ${chartDataJson};<\/script>
+        <div style="display: flex; justify-content: center;">
+          <canvas id="diagnostics-polar-chart" width="320" height="280" style="max-width: 320px;"></canvas>
         </div>
+        <script>
+        (function(){
+          var data = window.__DIAGNOSTICS_CHART_DATA__;
+          if (!data || !data.labels || !data.labels.length) return;
+          function init() {
+            if (typeof Chart === 'undefined') { setTimeout(init, 50); return; }
+            var el = document.getElementById('diagnostics-polar-chart');
+            if (!el) return;
+            new Chart(el.getContext('2d'), {
+              type: 'polarArea',
+              data: {
+                labels: data.labels,
+                datasets: [{
+                  label: 'Errors',
+                  data: data.data,
+                  backgroundColor: data.backgroundColor
+                }]
+              },
+              options: {
+                responsive: false,
+                plugins: {
+                  legend: { position: 'bottom' },
+                  title: { display: false }
+                },
+                scales: {
+                  r: { beginAtZero: true }
+                }
+              }
+            });
+          }
+          if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+          else init();
+        })();
+        <\/script>
       </div>
 
       <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #0066cc; margin-top: 30px;">
@@ -367,7 +397,7 @@ function generateControllerBreakdown(diagnosticsData) {
                 <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600;">${error.controller_name}</td>
                 <td style="padding: 8px; border: 1px solid #ddd; font-weight: 600;">${error.device_name || '-'}</td>
                 <td style="padding: 8px; border: 1px solid #ddd;">${error.bus_type || '-'}</td>
-                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${error.card_number || '-'}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${error.card_display || error.card_number || '-'}</td>
                 <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${error.channel_number !== null ? error.channel_number : 'N/A'}</td>
                 <td style="padding: 8px; border: 1px solid #ddd;">
                   <span style="background: #dc3545; color: white; padding: 3px 6px; border-radius: 4px; font-size: 10px; font-weight: 600;">

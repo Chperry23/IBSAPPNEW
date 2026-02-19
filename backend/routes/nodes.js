@@ -196,26 +196,18 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
       }
     }
     
-    // If this is an active session, merge with maintenance data
+    // If this is an active session, merge with maintenance data (by node_id)
     if (sessionId) {
-      console.log(`🔍 [NODES] Merging with maintenance data for session ${sessionId}`);
       const maintenanceData = await db.prepare(`
         SELECT * FROM session_node_maintenance WHERE session_id = ?
       `).all([sessionId]);
       
-      console.log(`   📊 Found ${maintenanceData.length} maintenance records`);
-      
-      // Create a map of maintenance data by node_name
       const maintMap = {};
-      maintenanceData.forEach(m => {
-        maintMap[m.node_name] = m;
-      });
+      maintenanceData.forEach(m => { maintMap[m.node_id] = m; });
       
-      // Merge maintenance data into nodes
       nodes.forEach(node => {
-        const maint = maintMap[node.node_name];
+        const maint = maintMap[node.id];
         if (maint) {
-          console.log(`   ✅ [NODES] Found maintenance for ${node.node_name}, no_errors_checked=${maint.no_errors_checked}`);
           node.dv_checked = Boolean(maint.dv_checked);
           node.dv_version = maint.dv_version;
           node.hf_checked = Boolean(maint.hf_checked);
@@ -229,6 +221,7 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
           node.hdd_replaced = Boolean(maint.hdd_replaced);
           node.performance_type = maint.performance_type || 'free_time';
           node.performance_value = maint.performance_value;
+          node.firmware_updated_checked = Boolean(maint.firmware_updated_checked);
           node.notes = maint.notes || '';
         } else {
           // Default values for nodes without maintenance records
@@ -244,6 +237,7 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
           node.hdd_replaced = false;
           node.performance_type = 'free_time';
           node.performance_value = null;
+          node.firmware_updated_checked = false;
           node.notes = '';
         }
       });

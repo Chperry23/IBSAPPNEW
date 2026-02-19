@@ -29,6 +29,8 @@ export default function SessionDetailFull() {
   const [showAssignLocationModal, setShowAssignLocationModal] = useState(false);
   const [assigningCabinetId, setAssigningCabinetId] = useState(null);
   const [selectedLocationId, setSelectedLocationId] = useState('');
+  const [showCompleteSessionModal, setShowCompleteSessionModal] = useState(false);
+  const [completeSaveToHistory, setCompleteSaveToHistory] = useState(true);
 
   useEffect(() => {
     loadSessionData();
@@ -313,14 +315,18 @@ export default function SessionDetailFull() {
     }
   };
 
-  const handleCompleteSession = async () => {
-    if (!confirm(`Mark "${session.session_name}" as completed? This will lock the session and create a snapshot of nodes.`)) return;
+  const handleCompleteSession = () => {
+    setShowCompleteSessionModal(true);
+  };
+
+  const confirmCompleteSession = async () => {
     try {
-      const result = await api.completeSession(id);
+      const result = await api.completeSession(id, { saveHistory: completeSaveToHistory });
+      setShowCompleteSessionModal(false);
       if (result.success) {
         soundSystem.playSuccess();
         loadSessionData();
-        showMessage('Session marked as completed', 'success');
+        showMessage(result.savedToHistory ? 'Session completed and saved to customer history' : 'Session marked as completed', 'success');
       } else {
         soundSystem.playError();
         showMessage(result.error || 'Error completing session', 'error');
@@ -415,6 +421,34 @@ export default function SessionDetailFull() {
             <button onClick={handleCompleteSession} className="btn btn-success" title="Lock session and create node snapshot">
               ✅ Complete session
             </button>
+          )}
+          {showCompleteSessionModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+              <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 max-w-md w-full p-6">
+                <h3 className="text-lg font-semibold text-gray-100 mb-2">Complete PM Session</h3>
+                <p className="text-gray-300 text-sm mb-4">
+                  Mark &quot;{session.session_name}&quot; as completed? This will lock the session and create a snapshot of nodes.
+                </p>
+                <div className="mb-4 p-3 rounded-lg bg-gray-700/50 border border-gray-600">
+                  <p className="text-xs text-gray-400 mb-3">
+                    <strong className="text-gray-300">Optional:</strong> Save this session&apos;s metrics (error count, risk score, cabinet count, etc.) to this customer&apos;s history so you can view trends over time on the customer profile. You can choose to skip this.
+                  </p>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={completeSaveToHistory}
+                      onChange={(e) => setCompleteSaveToHistory(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-500"
+                    />
+                    <span className="text-sm text-gray-200">Save to customer history (for trend over time)</span>
+                  </label>
+                </div>
+                <div className="flex gap-3 justify-end">
+                  <button onClick={() => setShowCompleteSessionModal(false)} className="btn btn-secondary">Cancel</button>
+                  <button onClick={confirmCompleteSession} className="btn btn-success">Complete session</button>
+                </div>
+              </div>
+            </div>
           )}
           {customer && (
             <button onClick={() => navigate(`/customer/${customer.id}`)} className="btn btn-secondary">
@@ -672,13 +706,32 @@ export default function SessionDetailFull() {
                                   </div>
                                 </div>
                                 
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap gap-2">
                                   <Link
                                     to={`/cabinet/${cabinet.id}`}
-                                    className="flex-1 btn btn-primary text-sm py-2"
+                                    className="flex-1 btn btn-primary text-sm py-2 min-w-0"
                                   >
                                     Inspect
                                   </Link>
+                                  {session.status !== 'completed' && cabinet.status !== 'completed' && (
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          await api.markCabinetComplete(cabinet.id);
+                                          soundSystem.playSuccess();
+                                          showMessage('Cabinet marked complete', 'success');
+                                          loadSessionData();
+                                        } catch (err) {
+                                          soundSystem.playError();
+                                          showMessage(err?.error || err?.message || 'Failed to mark cabinet complete', 'error');
+                                        }
+                                      }}
+                                      className="btn btn-success text-sm py-2"
+                                      title="Mark this cabinet as completed"
+                                    >
+                                      ✓ Complete
+                                    </button>
+                                  )}
                                   {session.status !== 'completed' && (
                                     <button
                                       onClick={() => openAssignLocationModal(cabinet.id, cabinet.location_id)}

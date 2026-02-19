@@ -1,33 +1,62 @@
-const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 
-// Determine database path: env DB_PATH (tablet/packaged) or default under project data/
 const dbPath = process.env.DB_PATH || path.resolve(__dirname, '../../data/cabinet_pm_tablet.db');
-console.log('📊 Initializing database at:', dbPath);
+console.log('Initializing database at:', dbPath);
 
-// Ensure data directory exists
 const dataDir = path.dirname(dbPath);
 if (!fs.existsSync(dataDir)) {
-    console.log('📁 Creating data directory:', dataDir);
+    console.log('Creating data directory:', dataDir);
     fs.mkdirSync(dataDir, { recursive: true });
+}
+
+let sqlite3;
+try {
+    sqlite3 = require('sqlite3').verbose();
+    console.log('sqlite3 module loaded successfully');
+} catch (error) {
+    console.error('FATAL: Failed to load sqlite3 module:', error.message);
+    console.error('Stack:', error.stack);
+
+    // Diagnostic info for packaged environments
+    const isPackaged = typeof process.pkg !== 'undefined';
+    if (isPackaged) {
+        const exeDir = path.dirname(process.execPath);
+        const extSqlite3 = path.join(exeDir, 'node_modules', 'sqlite3');
+        const extBinding = path.join(extSqlite3, 'lib', 'binding', 'napi-v6-win32-unknown-x64', 'node_sqlite3.node');
+        const extPreGyp = path.join(exeDir, 'node_modules', '@mapbox', 'node-pre-gyp');
+        console.error('Diagnostics (packaged exe):');
+        console.error('  Exe directory:', exeDir);
+        console.error('  External sqlite3 exists:', fs.existsSync(extSqlite3));
+        console.error('  Native binding exists:', fs.existsSync(extBinding));
+        console.error('  @mapbox/node-pre-gyp exists:', fs.existsSync(extPreGyp));
+
+        const extNodeModules = path.join(exeDir, 'node_modules');
+        if (fs.existsSync(extNodeModules)) {
+            try {
+                const dirs = fs.readdirSync(extNodeModules);
+                console.error('  node_modules contents:', dirs.join(', '));
+            } catch(e) {}
+        } else {
+            console.error('  node_modules folder: MISSING');
+        }
+    }
+    throw error;
 }
 
 let db;
 try {
     db = new sqlite3.Database(dbPath, (err) => {
         if (err) {
-            console.error('❌ Database connection failed:', err);
-            // Log error to file if needed
-            fs.writeFileSync(path.join(dataDir, 'error.log'), `${new Date().toISOString()} - DATABASE ERROR: ${err.message}\n`, { flag: 'a' });
-            throw err;
+            console.error('Database connection failed:', err.message);
         } else {
-            console.log('✅ Database connected successfully');
+            console.log('Database connected successfully');
         }
     });
 } catch (error) {
-    console.error('❌ Critical database error:', error);
-    process.exit(1);
+    console.error('Critical database error:', error.message);
+    console.error('Stack:', error.stack);
+    throw error;
 }
 
 // Create a better-sqlite3 compatible wrapper for easier migration

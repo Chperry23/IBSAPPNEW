@@ -117,7 +117,8 @@ router.delete('/:customerId', requireAuth, async (req, res) => {
   
   try {
     // Delete all related records first due to foreign key constraints
-    // Delete in proper order: cabinets -> sessions -> nodes -> customer
+    // Delete in proper order: metric history -> cabinets -> sessions -> nodes -> customer
+    await db.prepare('DELETE FROM customer_metric_history WHERE customer_id = ?').run([customerId]);
     await db.prepare('DELETE FROM cabinets WHERE pm_session_id IN (SELECT id FROM sessions WHERE customer_id = ?)').run([customerId]);
     await db.prepare('DELETE FROM sessions WHERE customer_id = ?').run([customerId]);
     await db.prepare('DELETE FROM nodes WHERE customer_id = ?').run([customerId]);
@@ -130,6 +131,26 @@ router.delete('/:customerId', requireAuth, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Delete customer error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Get customer metric history (for trend over time)
+router.get('/:customerId/metric-history', requireAuth, async (req, res) => {
+  const customerId = parseInt(req.params.customerId);
+  
+  try {
+    const history = await db.prepare(`
+      SELECT id, customer_id, session_id, session_name, recorded_at, error_count, risk_score, risk_level,
+             total_components, failed_components, cabinet_count, created_at
+      FROM customer_metric_history
+      WHERE customer_id = ?
+      ORDER BY recorded_at DESC
+    `).all([customerId]);
+    
+    res.json(history);
+  } catch (error) {
+    console.error('Get customer metric history error:', error);
     res.status(500).json({ error: 'Database error' });
   }
 });

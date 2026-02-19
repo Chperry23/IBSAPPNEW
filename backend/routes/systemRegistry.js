@@ -232,10 +232,11 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       
       if (updates.length > 0) {
         updates.push('updated_at = CURRENT_TIMESTAMP');
+        updates.push('synced = 0'); // so customer info is pushed to cloud and others get it on pull
         values.push(customerId);
         try {
           await db.prepare(`UPDATE customers SET ${updates.join(', ')} WHERE id = ?`).run(values);
-          console.log(`✅ [SYSTEM REGISTRY] Updated customer with UserInfo: ${updates.length - 1} fields`);
+          console.log(`✅ [SYSTEM REGISTRY] Updated customer with UserInfo: ${updates.length - 1} fields (marked unsynced for push)`);
         } catch (err) {
           console.error('⚠️ [SYSTEM REGISTRY] Error updating customer with UserInfo:', err.message);
         }

@@ -47,13 +47,12 @@ router.get('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
   }
 });
 
-// Save node maintenance data for a session
+// Save node maintenance data for a session (full replace: upsert per node to avoid UNIQUE constraint races)
 router.post('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
   const sessionId = req.params.sessionId;
   const maintenanceData = req.body;
   
   try {
-    // Check if session is completed
     if (await isSessionCompleted(sessionId)) {
       return res.status(403).json({ 
         error: 'Cannot modify node maintenance data - PM session is completed',
@@ -61,60 +60,49 @@ router.post('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
       });
     }
     
-    // First, delete existing maintenance data for this session
-    await db.prepare('DELETE FROM session_node_maintenance WHERE session_id = ?').run([sessionId]);
-    
-    // Insert new maintenance data
-    let insertedCount = 0;
-    
+    let count = 0;
     for (const [nodeId, maintenance] of Object.entries(maintenanceData)) {
-      // Only insert if at least one field has data
-      // IMPORTANT: no_errors_checked can be false (meaning HAS errors), so check !== undefined
       const hasData = maintenance.dv_checked || maintenance.os_checked || maintenance.macafee_checked ||
                      maintenance.redundancy_checked || maintenance.cold_restart_checked || 
-                     (maintenance.no_errors_checked !== undefined) || // false means HAS errors, must be saved!
+                     (maintenance.no_errors_checked !== undefined) ||
                      maintenance.hdd_replaced || maintenance.hf_updated ||
-                     maintenance.firmware_updated_checked || (maintenance.free_time && maintenance.free_time.trim()) ||
-                     maintenance.performance_value || (maintenance.notes && maintenance.notes.trim()) ||
+                     maintenance.firmware_updated_checked || (maintenance.free_time && String(maintenance.free_time).trim()) ||
+                     maintenance.performance_value != null || (maintenance.notes && String(maintenance.notes).trim()) ||
                      maintenance.is_custom_node || maintenance.completed;
       
-      console.log(`[nodeMaintenance] Node ${nodeId}: hasData=${hasData}, no_errors_checked=${maintenance.no_errors_checked}`);
+      if (!hasData) continue;
       
-      if (hasData) {
-        await db.prepare(`
-          INSERT INTO session_node_maintenance (
-            session_id, node_id, dv_checked, os_checked, macafee_checked,
-            free_time, redundancy_checked, cold_restart_checked, no_errors_checked,
-            hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked,
-            notes, is_custom_node, completed
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run([
-          sessionId,
-          parseInt(nodeId),
-          maintenance.dv_checked ? 1 : 0,
-          maintenance.os_checked ? 1 : 0,
-          maintenance.macafee_checked ? 1 : 0,
-          maintenance.free_time || null,
-          maintenance.redundancy_checked ? 1 : 0,
-          maintenance.cold_restart_checked ? 1 : 0,
-          maintenance.no_errors_checked ? 1 : 0,
-          maintenance.hdd_replaced ? 1 : 0,
-          maintenance.performance_type || 'free_time',
-          maintenance.performance_value || null,
-          maintenance.hf_updated ? 1 : 0,
-          maintenance.firmware_updated_checked ? 1 : 0,
-          maintenance.notes || null,
-          maintenance.is_custom_node ? 1 : 0,
-          maintenance.completed ? 1 : 0
-        ]);
-        insertedCount++;
-      }
+      const nid = parseInt(nodeId, 10);
+      if (Number.isNaN(nid)) continue;
+      
+      await db.prepare(`
+        INSERT INTO session_node_maintenance (
+          session_id, node_id, dv_checked, os_checked, macafee_checked,
+          free_time, redundancy_checked, cold_restart_checked, no_errors_checked,
+          hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked,
+          notes, is_custom_node, completed
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(session_id, node_id) DO UPDATE SET
+          dv_checked=excluded.dv_checked, os_checked=excluded.os_checked, macafee_checked=excluded.macafee_checked,
+          free_time=excluded.free_time, redundancy_checked=excluded.redundancy_checked, cold_restart_checked=excluded.cold_restart_checked,
+          no_errors_checked=excluded.no_errors_checked, hdd_replaced=excluded.hdd_replaced,
+          performance_type=excluded.performance_type, performance_value=excluded.performance_value,
+          hf_updated=excluded.hf_updated, firmware_updated_checked=excluded.firmware_updated_checked,
+          notes=excluded.notes, is_custom_node=excluded.is_custom_node, completed=excluded.completed,
+          updated_at=CURRENT_TIMESTAMP
+      `).run([
+        sessionId, nid,
+        maintenance.dv_checked ? 1 : 0, maintenance.os_checked ? 1 : 0, maintenance.macafee_checked ? 1 : 0,
+        maintenance.free_time || null, maintenance.redundancy_checked ? 1 : 0, maintenance.cold_restart_checked ? 1 : 0,
+        maintenance.no_errors_checked ? 1 : 0, maintenance.hdd_replaced ? 1 : 0,
+        maintenance.performance_type || 'free_time', maintenance.performance_value != null ? maintenance.performance_value : null,
+        maintenance.hf_updated ? 1 : 0, maintenance.firmware_updated_checked ? 1 : 0,
+        maintenance.notes || null, maintenance.is_custom_node ? 1 : 0, maintenance.completed ? 1 : 0
+      ]);
+      count++;
     }
     
-    res.json({ 
-      success: true, 
-      message: `Maintenance data saved for ${insertedCount} nodes`
-    });
+    res.json({ success: true, message: `Maintenance data saved for ${count} nodes` });
   } catch (error) {
     console.error('Save node maintenance error:', error);
     res.status(500).json({ error: 'Database error' });

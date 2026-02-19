@@ -102,19 +102,23 @@ function generateMaintenanceReportPage(nodeMaintenanceData) {
     return 'N/A';
   };
 
-  const generateMaintenanceTable = (nodes, title, includePerformance = false, includeWorkstationColumns = false, includeFirmware = false) => {
+  // Match in-app tables: same column order and labels
+  const generateMaintenanceTable = (nodes, title, tableType) => {
     if (nodes.length === 0) return '';
 
-    let headers = ['Node Name', 'Serial'];
-    if (includePerformance) {
-      headers.push('Type', 'Performance', 'HF Updated', 'Errors', 'Notes/Reason');
-    } else if (includeWorkstationColumns) {
-      headers.push('DeltaV HotFixes', 'OS Updates', 'McAfee Updates', 'HDD Replaced', 'Notes/Reason');
-    } else if (includeFirmware) {
-      headers.push('HF Updated', 'Firmware Updated', 'Notes/Reason');
+    let headers;
+    if (tableType === 'controllers') {
+      headers = ['Controller', 'Type', 'Serial', 'Performance', 'DV HF', 'Redundancy', 'Cold Restart', 'Errors', 'Notes/Reason', 'Done'];
+    } else if (tableType === 'workstations') {
+      headers = ['Computer', 'Type', 'Model', 'DV HF', 'OS Update', 'McAfee', 'HDD Replaced', 'Notes/Reason', 'Done'];
     } else {
-      headers.push('HF Updated', 'Notes/Reason');
+      headers = ['Node Name', 'Type', 'Serial', 'DV HF', 'Firmware Updated', 'Notes/Reason', 'Done'];
     }
+
+    const isNoErrors = (node) => {
+      if (node.no_errors_checked === undefined || node.no_errors_checked === null) return true;
+      return Boolean(node.no_errors_checked);
+    };
 
     return `
       <div class="maintenance-section">
@@ -129,31 +133,50 @@ function generateMaintenanceReportPage(nodeMaintenanceData) {
             ${nodes.map(node => {
               const controllerType = getControllerType(node);
               const isRIU = controllerType === 'RIU';
-              
+              const noError = tableType === 'controllers' ? isNoErrors(node) : true;
+              const errorsText = noError ? 'No Error' : 'Has Errors';
+              const errorsCellClass = noError ? 'no-error-cell' : 'error-cell';
+
+              if (tableType === 'controllers') {
+                return `
+              <tr>
+                <td>${node.node_name || 'Unknown'}</td>
+                <td><span class="controller-type ${(controllerType || '').toLowerCase()}">${controllerType || 'Controller'}</span></td>
+                <td>${isRIU ? 'N/A' : (node.serial || 'N/A')}</td>
+                <td>${formatPerformance(node)}</td>
+                <td class="${node.hf_updated ? 'checked-cell' : ''}">${node.hf_updated ? '✅' : ''}</td>
+                <td class="${node.redundancy_checked ? 'checked-cell' : ''}">${node.redundancy_checked ? '✅' : ''}</td>
+                <td class="${node.cold_restart_checked ? 'checked-cell' : ''}">${node.cold_restart_checked ? '✅' : ''}</td>
+                <td class="${errorsCellClass}">${errorsText}</td>
+                <td style="font-size: 10px; color: #666;">${node.notes || '—'}</td>
+                <td class="${node.completed ? 'checked-cell' : ''}">${node.completed ? '✅' : ''}</td>
+              </tr>
+              `;
+              }
+              if (tableType === 'workstations') {
+                return `
+              <tr>
+                <td>${node.node_name || 'Unknown'}</td>
+                <td>${(node.node_type || '—')}</td>
+                <td>${node.model || '—'}</td>
+                <td class="${node.dv_checked ? 'checked-cell' : ''}">${node.dv_checked ? '✅' : ''}</td>
+                <td class="${node.os_checked ? 'checked-cell' : ''}">${node.os_checked ? '✅' : ''}</td>
+                <td class="${node.macafee_checked ? 'checked-cell' : ''}">${node.macafee_checked ? '✅' : ''}</td>
+                <td class="${node.hdd_replaced ? 'checked-cell' : ''}">${node.hdd_replaced ? '✅' : ''}</td>
+                <td style="font-size: 10px; color: #666;">${node.notes || '—'}</td>
+                <td class="${node.completed ? 'checked-cell' : ''}">${node.completed ? '✅' : ''}</td>
+              </tr>
+              `;
+              }
               return `
               <tr>
                 <td>${node.node_name || 'Unknown'}</td>
-                <td>${isRIU ? 'N/A' : (node.serial || 'N/A')}</td>
-                ${includePerformance ? `
-                  <td><span class="controller-type ${controllerType.toLowerCase()}">${controllerType}</span></td>
-                  <td>${formatPerformance(node)}</td>
-                  <td class="${node.hf_updated ? 'checked-cell' : ''}">${node.hf_updated ? '✅' : ''}</td>
-                  <td class="${(node.no_errors_checked ?? true) ? 'no-error-cell' : 'error-cell'}">${(node.no_errors_checked ?? true) ? 'No Error' : 'Has Errors'}</td>
-                  <td style="font-size: 10px; color: #666;">${node.notes || '—'}</td>
-                ` : includeWorkstationColumns ? `
-                  <td class="${node.dv_checked ? 'checked-cell' : ''}">${node.dv_checked ? '✅' : ''}</td>
-                  <td class="${node.os_checked ? 'checked-cell' : ''}">${node.os_checked ? '✅' : ''}</td>
-                  <td class="${node.macafee_checked ? 'checked-cell' : ''}">${node.macafee_checked ? '✅' : ''}</td>
-                  <td class="${node.hdd_replaced ? 'checked-cell' : ''}">${node.hdd_replaced ? '❌' : ''}</td>
-                  <td style="font-size: 10px; color: #666;">${node.notes || '—'}</td>
-                ` : includeFirmware ? `
-                  <td class="${node.hf_updated ? 'checked-cell' : ''}">${node.hf_updated ? '✅' : ''}</td>
-                  <td class="${node.firmware_updated_checked ? 'checked-cell' : ''}">${node.firmware_updated_checked ? '✅' : ''}</td>
-                  <td style="font-size: 10px; color: #666;">${node.notes || '—'}</td>
-                ` : `
-                  <td class="${node.hf_updated ? 'checked-cell' : ''}">${node.hf_updated ? '✅' : ''}</td>
-                  <td style="font-size: 10px; color: #666;">${node.notes || '—'}</td>
-                `}
+                <td>${(node.node_type || '—')}</td>
+                <td>${node.serial || 'N/A'}</td>
+                <td class="${node.hf_updated ? 'checked-cell' : ''}">${node.hf_updated ? '✅' : ''}</td>
+                <td class="${node.firmware_updated_checked ? 'checked-cell' : ''}">${node.firmware_updated_checked ? '✅' : ''}</td>
+                <td style="font-size: 10px; color: #666;">${node.notes || '—'}</td>
+                <td class="${node.completed ? 'checked-cell' : ''}">${node.completed ? '✅' : ''}</td>
               </tr>
               `;
             }).join('')}
@@ -175,11 +198,12 @@ function generateMaintenanceReportPage(nodeMaintenanceData) {
   }).length;
 
   return `
-    <div class="page-break">
+    <div class="page-break" style="page-break-before: always;">
       <h2 style="text-align: center; color: #2563eb; font-size: 28px; margin: 20px 0; padding: 15px; border-bottom: 3px solid #2563eb;">Node Maintenance Report</h2>
-      ${generateMaintenanceTable(controllers, 'Controllers', true, false, false)}
-      ${generateMaintenanceTable(computers, 'Workstations/Computers', false, true, false)}
-      ${generateMaintenanceTable(switches, 'Network Switches', false, false, true)}
+      ${controllers.length ? generateMaintenanceTable(controllers, 'Controllers', 'controllers') : ''}
+    </div>
+    ${computers.length ? `<div style="page-break-before: always;">${generateMaintenanceTable(computers, 'Computers & Workstations', 'workstations')}</div>` : ''}
+    ${switches.length ? `<div style="page-break-before: always;">${generateMaintenanceTable(switches, 'Network Switches', 'switches')}</div>` : ''}
 
       ${hddReplaced > 0 ? `
         <div class="maintenance-section">
@@ -209,7 +233,6 @@ function generateMaintenanceReportPage(nodeMaintenanceData) {
           </ul>
         </div>
       ` : ''}
-    </div>
   `;
 }
 

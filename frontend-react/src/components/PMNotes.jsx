@@ -12,19 +12,21 @@ export default function PMNotes({ sessionId, isCompleted }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
 
-  const commonTasks = [
-    { id: 'inspect_status_leds', label: 'Inspected all status LEDs on controllers and I/O' },
-    { id: 'inspect_terminals', label: 'Inspected all terminal connections for tightness' },
-    { id: 'clean_enclosure', label: 'Cleaned all control enclosures' },
-    { id: 'check_temperatures', label: 'Checked environmental temperatures' },
-    { id: 'test_fans', label: 'Tested all cooling fans' },
-    { id: 'inspect_wiring', label: 'Inspected wiring for damage or wear' },
-    { id: 'check_power_supplies', label: 'Checked all power supply voltages' },
-    { id: 'inspect_network', label: 'Inspected network equipment status' },
-    { id: 'test_controllers', label: 'Tested controller communications' },
-    { id: 'backup_configuration', label: 'Backed up controller configurations' },
-    { id: 'update_firmware', label: 'Updated firmware if needed' },
-    { id: 'document_changes', label: 'Documented all changes made' },
+  // Single PM checklist: Backups + cleaning (stored in common_tasks)
+  const checklistTasks = [
+    { id: 'backup_database', label: 'Database' },
+    { id: 'backup_sound', label: 'Sound' },
+    { id: 'backup_powerup', label: 'Power-up' },
+    { id: 'backup_charts', label: 'Charts' },
+    { id: 'backup_event_chronicle', label: 'Event Chronicle' },
+    { id: 'backup_srs', label: 'SRS' },
+    { id: 'backup_graphics', label: 'Graphics' },
+    { id: 'backup_maintenance_tool', label: 'Maintenance tool' },
+    { id: 'backup_ddc', label: 'DDC' },
+    { id: 'backup_uploaded_sys_reg', label: 'Uploaded Sys Reg' },
+    { id: 'all_machines_blown_out', label: 'All machines blown out' },
+    { id: 'keyboards_cleaned', label: 'Keyboards cleaned' },
+    { id: 'monitors_cleaned', label: 'Monitors cleaned' },
   ];
 
   useEffect(() => {
@@ -128,14 +130,14 @@ export default function PMNotes({ sessionId, isCompleted }) {
         </div>
       )}
 
-      {/* Common Tasks Checklist */}
+      {/* PM Checklist: Backups + cleaning */}
       <div className="card">
         <div className="card-header">
-          <h3 className="text-lg font-semibold text-gray-100">✅ Common PM Tasks</h3>
+          <h3 className="text-lg font-semibold text-gray-100">✅ PM Checklist</h3>
         </div>
         <div className="card-body">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {commonTasks.map((task) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {checklistTasks.map((task) => (
               <label
                 key={task.id}
                 className={`flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer ${

@@ -72,22 +72,26 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
   let failedComponents = 0;
   let riskBreakdown = [];
   
-  // Performance risk assessment from node maintenance data
+  // Node maintenance risk: performance, I/O errors, HDD replacement
   nodeMaintenanceData.forEach(maintenance => {
-    if (maintenance.performance_value && maintenance.performance_type) {
-      const nodeName = maintenance.node_name || `Node ${maintenance.node_id}`;
-      
+    const nodeName = maintenance.node_name || `Node ${maintenance.node_id}`;
+    if (maintenance.performance_value != null && maintenance.performance_type) {
       if (maintenance.performance_type === 'perf_index' && maintenance.performance_value <= 2) {
-        const weight = 15; // High risk for poor performance index
+        const weight = 15;
         riskScore += weight;
         riskBreakdown.push(`${nodeName}: Poor performance index (${maintenance.performance_value}/5)`);
         moderateIssues.push(`${nodeName}: Performance index ${maintenance.performance_value}/5 indicates degraded controller performance`);
-       } else if (maintenance.performance_type === 'free_time' && maintenance.performance_value <= 28) {
-         const weight = 12; // Moderate risk for low free time
-         riskScore += weight;
-         riskBreakdown.push(`${nodeName}: Low free time (${maintenance.performance_value}%)`);
+      } else if (maintenance.performance_type === 'free_time' && maintenance.performance_value <= 28) {
+        const weight = 12;
+        riskScore += weight;
+        riskBreakdown.push(`${nodeName}: Low free time (${maintenance.performance_value}%)`);
         moderateIssues.push(`${nodeName}: Free time ${maintenance.performance_value}% indicates high controller utilization`);
       }
+    }
+    // I/O errors are not included in the risk score (informational only)
+    if (maintenance.hdd_replaced) {
+      riskBreakdown.push(`${nodeName}: HDD replaced`);
+      slightIssues.push(`${nodeName}: Hard drive was replaced during this PM`);
     }
   });
   
@@ -134,11 +138,17 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
       });
     }
     
-    // Check distribution blocks
+    // Check distribution blocks (status or dc_reading vs spec)
     if (cabinet.distribution_blocks) {
       cabinet.distribution_blocks.forEach((db, dbIndex) => {
         totalComponents++;
-        if (db.status === 'fail') {
+        let isFail = db.status === 'fail';
+        if (!isFail && db.dc_reading !== undefined && db.dc_reading !== '') {
+          const voltageType = db.voltage_type || '24VDC';
+          const check = checkVoltageInRange(db.dc_reading, voltageType);
+          isFail = !check.inRange;
+        }
+        if (isFail) {
           failedComponents++;
           const weight = 8; // Moderate risk
           riskScore += weight;
@@ -148,11 +158,17 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
       });
     }
     
-    // Check diodes
+    // Check diodes (status or dc_reading vs spec)
     if (cabinet.diodes) {
       cabinet.diodes.forEach((diode, diodeIndex) => {
         totalComponents++;
-        if (diode.status === 'fail') {
+        let isFail = diode.status === 'fail';
+        if (!isFail && diode.dc_reading !== undefined && diode.dc_reading !== '') {
+          const voltageType = diode.voltage_type || '24VDC';
+          const check = checkVoltageInRange(diode.dc_reading, voltageType);
+          isFail = !check.inRange;
+        }
+        if (isFail) {
           failedComponents++;
           const weight = 6; // Moderate risk
           riskScore += weight;

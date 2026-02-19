@@ -373,6 +373,33 @@ router.put('/:cabinetId', requireAuth, async (req, res) => {
   }
 });
 
+// Mark a single cabinet as completed
+router.put('/:cabinetId/complete', requireAuth, async (req, res) => {
+  const cabinetId = req.params.cabinetId;
+  try {
+    const cabinet = await db.prepare(`
+      SELECT c.id, c.pm_session_id, s.status
+      FROM cabinets c
+      LEFT JOIN sessions s ON c.pm_session_id = s.id
+      WHERE c.id = ?
+    `).get(cabinetId);
+    if (!cabinet) {
+      return res.status(404).json({ error: 'Cabinet not found' });
+    }
+    if (cabinet.status === 'completed') {
+      return res.status(403).json({
+        error: 'Session already completed',
+        message: 'This PM session has been completed.'
+      });
+    }
+    await db.prepare('UPDATE cabinets SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(['completed', cabinetId]);
+    res.json({ success: true, message: 'Cabinet marked as completed' });
+  } catch (error) {
+    console.error('Mark cabinet complete error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 // Delete cabinet
 router.delete('/:cabinetId', requireAuth, async (req, res) => {
   const cabinetId = req.params.cabinetId;

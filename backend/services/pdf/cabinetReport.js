@@ -1,5 +1,6 @@
 const { getEnhancedControllerType } = require('../../utils/controllerType');
 const { formatDate, formatStatus, formatValue } = require('../../utils/dateFormat');
+const { VOLTAGE_RANGES } = require('../../utils/risk-assessment');
 
 function getSharedStyles() {
   return `
@@ -29,15 +30,20 @@ function getSharedStyles() {
     }
     .cabinet-title {
       text-align: center;
-      font-size: 28px;
+      font-size: 18px;
       font-weight: bold;
       color: #2563eb;
       background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-      border: 3px solid #2563eb;
-      border-radius: 12px;
-      padding: 20px;
-      margin: 30px 0;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      border: 2px solid #2563eb;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin: 0 0 10px 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .cabinet-info-section { 
+      margin-bottom: 10px;
+      font-size: 11px;
+      color: #666;
     }
     .info-section { 
       margin-bottom: 25px;
@@ -69,6 +75,8 @@ function getSharedStyles() {
       page-break-inside: avoid;
       page-break-before: auto;
     }
+    .cabinet-detail table { margin-bottom: 10px; font-size: 11px; }
+    .cabinet-detail th, .cabinet-detail td { padding: 4px 6px; }
     th, td { 
       border: 1px solid #0066cc; 
       padding: 8px; 
@@ -81,6 +89,7 @@ function getSharedStyles() {
       font-weight: bold; 
       text-align: center;
     }
+    .cabinet-detail th { font-size: 10px; padding: 4px 6px; }
     .section-title { 
       font-size: 16px; 
       font-weight: bold; 
@@ -93,6 +102,18 @@ function getSharedStyles() {
       page-break-after: avoid;
       page-break-inside: avoid;
     }
+    .cabinet-detail .section-title {
+      font-size: 11px;
+      margin: 10px 0 6px 0;
+      padding: 5px 8px;
+      border-radius: 4px;
+    }
+    .cabinet-detail .section-group { margin-bottom: 4px; }
+    .cabinet-detail .inspection-grid { gap: 4px; margin-bottom: 8px; }
+    .cabinet-detail .inspection-item { font-size: 11px; }
+    .cabinet-detail .comments-section { margin-top: 10px; }
+    .cabinet-detail .comments-header { padding: 6px 8px; font-size: 11px; }
+    .cabinet-detail .comments-body { padding: 8px; min-height: 40px; }
     .status-pass { color: #28a745; font-weight: bold; }
     .status-fail { color: #dc3545; font-weight: bold; }
             .checked-cell { background-color: #d4edda; border-left: 3px solid #28a745; font-weight: bold; }
@@ -578,22 +599,7 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
     <div class="cabinet-title">
       Cabinet ${cabinetNumber}: ${cabinet.cabinet_name}
     </div>
-    
-    <div class="info-section">
-      <div class="info-row">
-        <span class="info-label">Cabinet Location:</span>
-        <span class="info-value">${cabinet.cabinet_name}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Date:</span>
-        <span class="info-value">${formatDate(cabinet.cabinet_date)}</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Session:</span>
-        <span class="info-value">${sessionInfo.session_name || ''}</span>
-      </div>
-    </div>
-    
+    <div class="cabinet-detail">
     ${powerSupplies.length > 0 ? `
     <div class="section-group">
       <div class="section-title">Power Supply Measurements</div>
@@ -774,6 +780,7 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
       </div>
     </div>
     ` : ''}
+    </div>
   `;
 }
 
@@ -1025,6 +1032,20 @@ function generateRiskAssessmentPage(risk, sessionName) {
     riskBreakdown
   } = risk;
 
+  // Build accepted value ranges (spec) from VOLTAGE_RANGES for PDF
+  const specLabels = {
+    '24VDC': '24 VDC (power supplies, distribution blocks, diodes)',
+    '12VDC': '12 VDC',
+    'line_neutral': 'Line–Neutral (AC)',
+    'line_ground': 'Line–Ground (AC)',
+    'neutral_ground': 'Neutral–Ground (AC, mV)'
+  };
+  const specRows = Object.entries(VOLTAGE_RANGES).map(([key, r]) => {
+    const unit = r.unit || 'V';
+    const label = specLabels[key] || key.replace(/_/g, ' ');
+    return `<tr><td>${label}</td><td>${r.min}–${r.max} ${unit}</td></tr>`;
+  }).join('');
+
   return `
     <div class="page-break" style="page-break-before: always;">
       <h2 style="text-align: center; color: #2563eb; font-size: 28px; margin: 20px 0; padding: 15px; border-bottom: 3px solid #2563eb;">Risk Assessment — ${sessionName || 'PM Session'}</h2>
@@ -1037,6 +1058,13 @@ function generateRiskAssessmentPage(risk, sessionName) {
           <div class="stat-item"><span class="stat-label">Total components / items assessed</span><span class="stat-value">${totalComponents}</span></div>
           <div class="stat-item"><span class="stat-label">Failed / out of spec</span><span class="stat-value">${failedComponents}</span></div>
         </div>
+      </div>
+      <div class="risk-breakdown-section" style="margin-top: 16px;">
+        <div class="breakdown-header">Accepted value ranges (spec we read against)</div>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 8px;">
+          <thead><tr style="background: #e5e7eb;"><th style="text-align: left; padding: 8px; border: 1px solid #d1d5db;">Measurement</th><th style="text-align: left; padding: 8px; border: 1px solid #d1d5db;">Accepted range</th></tr></thead>
+          <tbody>${specRows}</tbody>
+        </table>
       </div>
       ${criticalIssues.length > 0 ? `
       <div class="issues-section critical">
@@ -1059,11 +1087,6 @@ function generateRiskAssessmentPage(risk, sessionName) {
       <div class="recommendations-section">
         <div class="recommendations-header">Recommendations</div>
         <ul class="recommendations-list">${recommendations.map(r => `<li>${r}</li>`).join('')}</ul>
-      </div>
-      <div class="risk-breakdown-section">
-        <div class="breakdown-header">Error / issue breakdown (scored items)</div>
-        <ul class="breakdown-list">${riskBreakdown.length ? riskBreakdown.map(b => `<li>${b}</li>`).join('') : '<li>No issues scored.</li>'}</ul>
-        <div class="total-score">Total risk score: ${riskScore} — ${riskLevel}</div>
       </div>
     </div>
   `;
@@ -1126,5 +1149,35 @@ function generateCoverPage(sessionInfo, customerName, sessionDate) {
   `;
 }
 
-module.exports = { getSharedStyles, generateSingleCabinetHtml, generatePDFHtml, generateRiskAssessmentPage, generateCoverPage };
+/**
+ * Section cover page before cabinet inspections (breaks up summaries from cabinets).
+ * Includes details of everything we check in cabinets so it reads like its own cover.
+ */
+function generateCabinetsSectionDividerPage() {
+  return `
+    <div class="page-break" style="page-break-before: always;">
+      <div style="min-height: 80px;"></div>
+      <h2 style="text-align: center; color: #2563eb; font-size: 28px; margin: 0 0 8px 0; padding: 0; font-weight: bold;">Cabinet Inspections</h2>
+      <div style="text-align: center; margin-bottom: 32px;">
+        <div style="display: inline-block; height: 4px; width: 120px; background: #2563eb; border-radius: 2px;"></div>
+      </div>
+      <p style="text-align: center; color: #555; font-size: 14px; margin: 0 24px 28px; line-height: 1.5;">The following pages contain detailed inspection data for each cabinet in this session.</p>
+      <div style="max-width: 560px; margin: 0 auto; padding: 24px 28px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+        <h3 style="color: #2563eb; font-size: 14px; margin: 0 0 14px 0; padding-bottom: 8px; border-bottom: 2px solid #2563eb;">What we check in each cabinet</h3>
+        <ul style="margin: 0; padding-left: 20px; color: #334155; font-size: 12px; line-height: 1.85;">
+          <li><strong>Power supply measurements</strong> — Voltage type, line-to-neutral, line-to-ground, neutral-to-ground, DC reading, pass/fail status</li>
+          <li><strong>Distribution blocks</strong> — DC voltage readings and status</li>
+          <li><strong>Diodes</strong> — DC readings and status (24VDC / 12VDC)</li>
+          <li><strong>Inspection items</strong> — Cabinet fans, controller LEDs, I/O status, network status, temperatures, enclosure cleanliness, filter, ground inspection</li>
+          <li><strong>Network equipment</strong> — Type, model, status</li>
+          <li><strong>Controllers</strong> — Name, type, model, serial</li>
+          <li><strong>Comments</strong> — Any notes from the inspection</li>
+        </ul>
+      </div>
+      <p style="text-align: center; color: #64748b; font-size: 11px; margin-top: 28px;">Each cabinet is reported on the following pages with the same structure for consistency.</p>
+    </div>
+  `;
+}
+
+module.exports = { getSharedStyles, generateSingleCabinetHtml, generatePDFHtml, generateRiskAssessmentPage, generateCoverPage, generateCabinetsSectionDividerPage };
 

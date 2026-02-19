@@ -5,7 +5,7 @@ const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
 const puppeteer = require('puppeteer');
 const { findChrome } = require('../utils/chrome');
-const { getSharedStyles, generateSingleCabinetHtml, generateRiskAssessmentPage, generateCoverPage } = require('../services/pdf/cabinetReport');
+const { getSharedStyles, generateSingleCabinetHtml, generateRiskAssessmentPage, generateCoverPage, generateCabinetsSectionDividerPage } = require('../services/pdf/cabinetReport');
 const { generateMaintenanceReportPage } = require('../services/pdf/maintenanceReport');
 const { generateDiagnosticsSummary, generateControllerBreakdown } = require('../services/pdf/diagnosticsReport');
 const { generateRiskAssessment } = require('../utils/risk-assessment');
@@ -323,20 +323,24 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
       });
     }
 
-    // Node maintenance data: merge session_node_maintenance with nodes
+    // Node maintenance data: use same node source as UI (sys_*) and merge with session_node_maintenance by node_id
     let nodeMaintenanceData = [];
     if (session.customer_id) {
       const maintenanceRows = await db.prepare(`
-        SELECT node_id, dv_checked, os_checked, macafee_checked, free_time, redundancy_checked, cold_restart_checked, no_errors_checked, hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked
+        SELECT node_id, dv_checked, os_checked, macafee_checked, free_time, redundancy_checked, cold_restart_checked, no_errors_checked, hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked, notes, completed
         FROM session_node_maintenance WHERE session_id = ?
       `).all([sessionId]);
-      const nodes = await db.prepare(`
-        SELECT id, node_name, node_type, model, serial, description FROM nodes WHERE customer_id = ?
-      `).all([session.customer_id]);
+      const nodes = [];
+      const ws = await db.prepare(`SELECT id, name as node_name, type as node_type, model, dell_service_tag_number as serial FROM sys_workstations WHERE customer_id = ?`).all([session.customer_id]);
+      const ctrl = await db.prepare(`SELECT id, name as node_name, 'Controller' as node_type, model, serial_number as serial FROM sys_controllers WHERE customer_id = ?`).all([session.customer_id]);
+      const sw = await db.prepare(`SELECT id, name as node_name, 'Smart Network Devices' as node_type, model, serial_number as serial FROM sys_smart_switches WHERE customer_id = ?`).all([session.customer_id]);
+      const cioc = await db.prepare(`SELECT id, name as node_name, 'CIOC' as node_type, model, serial_number as serial FROM sys_charms_io_cards WHERE customer_id = ?`).all([session.customer_id]);
+      nodes.push(...ws, ...ctrl, ...sw, ...cioc);
       const maintByNode = {};
       maintenanceRows.forEach(m => { maintByNode[m.node_id] = m; });
       nodeMaintenanceData = nodes.map(n => ({
         ...n,
+        serial: n.serial ?? null,
         dv_checked: Boolean(maintByNode[n.id]?.dv_checked),
         os_checked: Boolean(maintByNode[n.id]?.os_checked),
         macafee_checked: Boolean(maintByNode[n.id]?.macafee_checked),
@@ -346,9 +350,11 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
         no_errors_checked: maintByNode[n.id] !== undefined ? Boolean(maintByNode[n.id].no_errors_checked) : true,
         hdd_replaced: Boolean(maintByNode[n.id]?.hdd_replaced),
         performance_type: maintByNode[n.id]?.performance_type || 'free_time',
-        performance_value: maintByNode[n.id]?.performance_value,
+        performance_value: maintByNode[n.id]?.performance_value ?? null,
         hf_updated: Boolean(maintByNode[n.id]?.hf_updated),
         firmware_updated_checked: Boolean(maintByNode[n.id]?.firmware_updated_checked),
+        notes: maintByNode[n.id]?.notes || '',
+        completed: Boolean(maintByNode[n.id]?.completed),
       }));
     }
 
@@ -441,6 +447,7 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
       <head>
         <meta charset="UTF-8">
         <title>PM Session Report - ${session.session_name}</title>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <style>
           body { font-family: Arial, sans-serif; font-size: 12px; line-height: 1.4; margin: 0; padding: 20px; color: #333; }
           .page-break { page-break-before: always; }
@@ -457,6 +464,7 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
         ${maintenanceHtml}
         ${dvSummaryHtml}
         ${pmNotesHtml}
+        ${generateCabinetsSectionDividerPage()}
         ${cabinetsHtml}
         ${controllerBreakdownHtml}
       </body>
@@ -471,6 +479,7 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
     const page = await browser.newPage();
     page.setDefaultTimeout(120000);
     await page.setContent(fullHtml, { waitUntil: 'networkidle0', timeout: 120000 });
+    await page.evaluate(() => new Promise(r => setTimeout(r, 400)));
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
@@ -488,13 +497,14 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
   }
 });
 
-// Complete PM session
+// Complete PM session (optional body: { saveHistory: true } to record metrics for customer trend)
 router.put('/:sessionId/complete', requireAuth, async (req, res) => {
   const sessionId = req.params.sessionId;
+  const saveHistory = !!(req.body && req.body.saveHistory);
   
   try {
-    // First, get the session to find the customer ID
-    const session = await db.prepare('SELECT customer_id FROM sessions WHERE id = ?').get([sessionId]);
+    // First, get the session to find the customer ID and name
+    const session = await db.prepare('SELECT id, customer_id, session_name FROM sessions WHERE id = ?').get([sessionId]);
     
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
@@ -597,7 +607,85 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
     
-    res.json({ success: true, message: 'Session marked as completed' });
+    // Mark all cabinets in this session as completed
+    await db.prepare('UPDATE cabinets SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE pm_session_id = ?').run(['completed', sessionId]);
+    
+    // Optionally save metrics to customer history for trend over time
+    if (saveHistory && session.customer_id) {
+      try {
+        const sessionCabinets = await db.prepare('SELECT * FROM cabinets WHERE pm_session_id = ? ORDER BY created_at').all([sessionId]);
+        const cabinets = sessionCabinets.map((row) => {
+          const inspection = (() => {
+            try {
+              return typeof row.inspection_data === 'string' ? JSON.parse(row.inspection_data || '{}') : (row.inspection_data || {});
+            } catch (_) { return {}; }
+          })();
+          let controllers = JSON.parse(row.controllers || '[]');
+          return {
+            cabinet_name: row.cabinet_name || row.cabinet_location,
+            cabinet_location: row.cabinet_location,
+            power_supplies: JSON.parse(row.power_supplies || '[]'),
+            distribution_blocks: JSON.parse(row.distribution_blocks || '[]'),
+            diodes: JSON.parse(row.diodes || '[]'),
+            network_equipment: JSON.parse(row.network_equipment || '[]'),
+            controllers,
+            workstations: JSON.parse(row.workstations || '[]'),
+            inspection,
+          };
+        });
+        const maintenanceRows = await db.prepare(`
+          SELECT node_id, dv_checked, os_checked, macafee_checked, free_time, redundancy_checked, cold_restart_checked, no_errors_checked, hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked, notes, completed
+          FROM session_node_maintenance WHERE session_id = ?
+        `).all([sessionId]);
+        const nodes = [];
+        const ws = await db.prepare('SELECT id, name as node_name, type as node_type FROM sys_workstations WHERE customer_id = ?').all([session.customer_id]);
+        const ctrl = await db.prepare("SELECT id, name as node_name, 'Controller' as node_type FROM sys_controllers WHERE customer_id = ?").all([session.customer_id]);
+        const sw = await db.prepare("SELECT id, name as node_name, 'Smart Network Devices' as node_type FROM sys_smart_switches WHERE customer_id = ?").all([session.customer_id]);
+        const cioc = await db.prepare("SELECT id, name as node_name, 'CIOC' as node_type FROM sys_charms_io_cards WHERE customer_id = ?").all([session.customer_id]);
+        nodes.push(...ws, ...ctrl, ...sw, ...cioc);
+        const maintByNode = {};
+        maintenanceRows.forEach((m) => { maintByNode[m.node_id] = m; });
+        const nodeMaintenanceData = nodes.map((n) => ({
+          ...n,
+          dv_checked: Boolean(maintByNode[n.id]?.dv_checked),
+          os_checked: Boolean(maintByNode[n.id]?.os_checked),
+          macafee_checked: Boolean(maintByNode[n.id]?.macafee_checked),
+          free_time: maintByNode[n.id]?.free_time || '',
+          redundancy_checked: Boolean(maintByNode[n.id]?.redundancy_checked),
+          cold_restart_checked: Boolean(maintByNode[n.id]?.cold_restart_checked),
+          no_errors_checked: maintByNode[n.id] !== undefined ? Boolean(maintByNode[n.id].no_errors_checked) : true,
+          hdd_replaced: Boolean(maintByNode[n.id]?.hdd_replaced),
+          performance_type: maintByNode[n.id]?.performance_type || 'free_time',
+          performance_value: maintByNode[n.id]?.performance_value ?? null,
+          hf_updated: Boolean(maintByNode[n.id]?.hf_updated),
+          firmware_updated_checked: Boolean(maintByNode[n.id]?.firmware_updated_checked),
+          notes: maintByNode[n.id]?.notes || '',
+          completed: Boolean(maintByNode[n.id]?.completed),
+        }));
+        const riskResult = generateRiskAssessment(cabinets, nodeMaintenanceData);
+        const diagCount = await db.prepare(
+          'SELECT COUNT(*) as c FROM session_diagnostics WHERE session_id = ? AND (deleted IS NULL OR deleted = 0)'
+        ).get([sessionId]);
+        await db.prepare(`
+          INSERT INTO customer_metric_history (customer_id, session_id, session_name, recorded_at, error_count, risk_score, risk_level, total_components, failed_components, cabinet_count, synced)
+          VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, 0)
+        `).run([
+          session.customer_id,
+          sessionId,
+          session.session_name || '',
+          diagCount?.c ?? 0,
+          riskResult.riskScore ?? 0,
+          riskResult.riskLevel || '',
+          riskResult.totalComponents ?? 0,
+          riskResult.failedComponents ?? 0,
+          cabinets.length,
+        ]);
+      } catch (histErr) {
+        console.error('Error saving customer metric history:', histErr);
+      }
+    }
+    
+    res.json({ success: true, message: 'Session marked as completed', savedToHistory: saveHistory });
   } catch (error) {
     console.error('Complete session error:', error);
     res.status(500).json({ error: 'Database error' });

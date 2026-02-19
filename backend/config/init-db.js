@@ -413,6 +413,26 @@ function initializeDatabase() {
       addColumnIfNotExists('session_diagnostics', 'card_type', 'TEXT');
       addColumnIfNotExists('session_diagnostics', 'port_number', 'TEXT');
       addColumnIfNotExists('session_diagnostics', 'ldt', 'TEXT');
+      addColumnIfNotExists('session_diagnostics', 'card_display', 'TEXT');
+
+      // Customer metric history: error count, risk score, etc. per PM completion (for trend over time)
+      db.run(`CREATE TABLE IF NOT EXISTS customer_metric_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_id INTEGER NOT NULL,
+        session_id TEXT NOT NULL,
+        session_name TEXT,
+        recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        error_count INTEGER DEFAULT 0,
+        risk_score INTEGER DEFAULT 0,
+        risk_level TEXT,
+        total_components INTEGER DEFAULT 0,
+        failed_components INTEGER DEFAULT 0,
+        cabinet_count INTEGER DEFAULT 0,
+        synced INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (customer_id) REFERENCES customers(id),
+        FOREIGN KEY (session_id) REFERENCES sessions(id)
+      )`);
 
       // Add new columns for enhanced node maintenance
       db.run(
@@ -918,6 +938,10 @@ function initializeDatabase() {
       );
       addColumnIfNotExists('sys_workstations', 'assigned_cabinet_id', 'TEXT');
       addColumnIfNotExists('sys_workstations', 'assigned_at', 'DATETIME');
+      addColumnIfNotExists('sys_workstations', 'uuid', 'TEXT');
+      addColumnIfNotExists('sys_workstations', 'synced', 'INTEGER DEFAULT 0');
+      addColumnIfNotExists('sys_workstations', 'device_id', 'TEXT');
+      addColumnIfNotExists('sys_workstations', 'deleted', 'INTEGER DEFAULT 0');
 
       // SmartSwitch table
       db.run(

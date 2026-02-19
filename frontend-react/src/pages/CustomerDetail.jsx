@@ -21,6 +21,9 @@ export default function CustomerDetail() {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [duplicatingSession, setDuplicatingSession] = useState(null);
   const [duplicateProgress, setDuplicateProgress] = useState(false);
+  const [showTrendModal, setShowTrendModal] = useState(false);
+  const [metricHistory, setMetricHistory] = useState([]);
+  const [metricHistoryLoading, setMetricHistoryLoading] = useState(false);
 
   useEffect(() => {
     loadCustomerData();
@@ -46,6 +49,25 @@ export default function CustomerDetail() {
   const showMessage = (text, type = 'info') => {
     setMessage({ text, type });
     setTimeout(() => setMessage(null), 5000);
+  };
+
+  const loadMetricHistory = async () => {
+    if (!id) return;
+    setMetricHistoryLoading(true);
+    try {
+      const data = await api.getCustomerMetricHistory(id);
+      setMetricHistory(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Error loading metric history:', err);
+      setMetricHistory([]);
+    } finally {
+      setMetricHistoryLoading(false);
+    }
+  };
+
+  const openTrendModal = () => {
+    setShowTrendModal(true);
+    loadMetricHistory();
   };
 
   const loadSystemRegSummary = async () => {
@@ -250,7 +272,14 @@ export default function CustomerDetail() {
             <p className="text-gray-400 text-lg">📍 {customer.location}</p>
           )}
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
+          <button
+            onClick={openTrendModal}
+            className="btn btn-secondary"
+            title="View error count, risk score, and other metrics over time"
+          >
+            📈 View trend over time
+          </button>
           <button
             onClick={() => setShowEditModal(true)}
             className="btn btn-secondary"
@@ -278,6 +307,61 @@ export default function CustomerDetail() {
           }`}
         >
           {message.text}
+        </div>
+      )}
+
+      {/* Trend over time modal */}
+      {showTrendModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 max-w-4xl w-full max-h-[85vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
+              <h3 className="text-lg font-semibold text-gray-100">📈 Metrics trend over time</h3>
+              <button onClick={() => setShowTrendModal(false)} className="text-gray-400 hover:text-white text-2xl leading-none">×</button>
+            </div>
+            <div className="flex-1 overflow-auto p-6">
+              {metricHistoryLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="spinner h-8 w-8"></div>
+                  <span className="ml-3 text-gray-400">Loading history...</span>
+                </div>
+              ) : metricHistory.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">No history yet. Complete PM sessions and check &quot;Save to customer history&quot; to build trends here.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="border-b border-gray-600">
+                        <th className="text-left py-2 px-3 text-gray-400 font-medium">Date</th>
+                        <th className="text-left py-2 px-3 text-gray-400 font-medium">Session</th>
+                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Errors</th>
+                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Risk score</th>
+                        <th className="text-left py-2 px-3 text-gray-400 font-medium">Risk level</th>
+                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Components</th>
+                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Failed</th>
+                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Cabinets</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metricHistory.map((row) => (
+                        <tr key={row.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                          <td className="py-2 px-3 text-gray-300">
+                            {row.recorded_at ? new Date(row.recorded_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                          </td>
+                          <td className="py-2 px-3 text-gray-200">{row.session_name || row.session_id || '—'}</td>
+                          <td className="py-2 px-3 text-right text-gray-300">{row.error_count ?? '—'}</td>
+                          <td className="py-2 px-3 text-right text-gray-300">{row.risk_score ?? '—'}</td>
+                          <td className="py-2 px-3 text-gray-300">{row.risk_level || '—'}</td>
+                          <td className="py-2 px-3 text-right text-gray-300">{row.total_components ?? '—'}</td>
+                          <td className="py-2 px-3 text-right text-gray-300">{row.failed_components ?? '—'}</td>
+                          <td className="py-2 px-3 text-right text-gray-300">{row.cabinet_count ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

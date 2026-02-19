@@ -58,6 +58,10 @@ class ApiService {
     return this.request(`/api/customers/${id}`);
   }
 
+  async getCustomerMetricHistory(customerId) {
+    return this.request(`/api/customers/${customerId}/metric-history`);
+  }
+
   async createCustomer(customerData) {
     return this.request('/api/customers', {
       method: 'POST',
@@ -110,8 +114,11 @@ class ApiService {
     return this.request(`/api/sessions/${id}`, { method: 'DELETE' });
   }
 
-  async completeSession(id) {
-    return this.request(`/api/sessions/${id}/complete`, { method: 'PUT' });
+  async completeSession(id, options = {}) {
+    return this.request(`/api/sessions/${id}/complete`, {
+      method: 'PUT',
+      body: JSON.stringify(options),
+    });
   }
 
   async duplicateSession(id, newSessionName) {
@@ -138,6 +145,10 @@ class ApiService {
       method: 'PUT',
       body: JSON.stringify(cabinetData),
     });
+  }
+
+  async markCabinetComplete(cabinetId) {
+    return this.request(`/api/cabinets/${cabinetId}/complete`, { method: 'PUT' });
   }
 
   async deleteCabinet(id) {

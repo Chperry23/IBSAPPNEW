@@ -33,6 +33,46 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
   const [selectedErrorType, setSelectedErrorType] = useState('');
   const [errorDescription, setErrorDescription] = useState('');
   
+  // Collapsible sections for error tables (key: node.id or 'fullLog', value: true = collapsed)
+  const [collapsedSections, setCollapsedSections] = useState({});
+  const toggleSection = (key) => {
+    setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+  const isCollapsed = (key, defaultCollapsed) => (collapsedSections[key] !== undefined ? collapsedSections[key] : defaultCollapsed);
+  
+  // Inline edit: { id, field } or null
+  const [editingCell, setEditingCell] = useState(null);
+  const [editValue, setEditValue] = useState('');
+  const saveDiagnosticField = async (error, field, value) => {
+    setEditingCell(null);
+    const payload = {
+      controller_name: error.controller_name,
+      card_number: error.card_number ?? 0,
+      card_display: error.card_display || null,
+      channel_number: error.channel_number,
+      error_type: error.error_type,
+      error_description: error.error_description || null,
+      notes: error.notes || null,
+      bus_type: error.bus_type || null,
+      device_name: error.device_name || null,
+      device_type: error.device_type || null,
+      card_type: error.card_type || null,
+      port_number: error.port_number || null,
+      ldt: error.ldt || null,
+      [field]: value,
+    };
+    if (field === 'channel_number') payload.channel_number = value === '' || value == null ? null : (parseInt(value, 10) || null);
+    if (field === 'card_number') payload.card_number = value === '' ? 0 : (parseInt(value, 10) || 0);
+    try {
+      await api.request(`/api/sessions/${sessionId}/diagnostics/${error.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      soundSystem.playSuccess();
+      loadData();
+    } catch (err) {
+      soundSystem.playError();
+      showMsg('Failed to update', 'error');
+    }
+  };
+  
   const errorTypes = [
     { value: 'bad', label: 'Bad', icon: '❌', description: 'Component or signal is faulty' },
     { value: 'not_communicating', label: 'Not Communicating', icon: '📡', description: 'Device not responding' },
@@ -157,13 +197,12 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
       setIoDeviceData(data);
       
       if (data.isCioc) {
-        // CIOC: go straight to device list
-        setFlowStep('pick-device');
+        // CIOC: single list view (all charms; cards without DST show as N/A, still selectable)
+        setFlowStep((data.cards?.length > 0 || data.totalDevices > 0) ? 'pick-device' : 'manual-entry');
       } else if (data.totalDevices > 0) {
-        // Regular controller with sys_reg data: show card picker
+        // Regular controller: card picker then device list
         setFlowStep('pick-card');
       } else {
-        // No data: manual entry
         setFlowStep('manual-entry');
       }
     } catch (err) {
@@ -209,6 +248,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
           body: JSON.stringify({
             controller_name: currentNode.node_name,
             card_number: device.card ? parseInt(device.card.replace(/\D/g, '')) || 0 : 0,
+            card_display: device.card && typeof device.card === 'string' ? device.card : null,
             channel_number: device.channel && device.channel !== 'N/A' ? parseInt(device.channel.replace(/\D/g, '')) || null : null,
             error_type: selectedErrorType,
             error_description: errorDescription || errorTypes.find(t => t.value === selectedErrorType)?.description || '',
@@ -221,8 +261,15 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
       
       soundSystem.playSuccess();
       showMsg(`Added ${selectedDevices.length} error(s) successfully`, 'success');
-      closeModal();
-      loadData();
+      await loadData();
+      setSelectedDevices([]);
+      setSelectedErrorType('');
+      setErrorDescription('');
+      if (ioDeviceData?.isCioc) {
+        setFlowStep('pick-device');
+      } else {
+        closeModal();
+      }
     } catch (error) {
       soundSystem.playError();
       showMsg('Error saving diagnostics', 'error');
@@ -269,8 +316,20 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
       
       soundSystem.playSuccess();
       showMsg('Error added successfully', 'success');
-      closeModal();
-      loadData();
+      await loadData();
+      setSelectedErrorType('');
+      setErrorDescription('');
+      setManualCardType('');
+      setManualCardNumber('');
+      setManualPort('');
+      setManualChannel('');
+      setManualPdt('');
+      setManualLdt('');
+      if (currentNode && ioDeviceData?.isCioc) {
+        setFlowStep('pick-device');
+      } else {
+        closeModal();
+      }
     } catch (error) {
       soundSystem.playError();
       showMsg('Error saving diagnostic', 'error');
@@ -297,6 +356,51 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
       (d.channel || '').toLowerCase().includes(term)
     );
   };
+
+  // CIOC: one list row per charm/card; cards with no DST in data show as N/A, still selectable
+  const ciocDeviceList = (ioDeviceData?.isCioc && ioDeviceData?.cards?.length)
+    ? ioDeviceData.cards.flatMap((c) =>
+        c.devices?.length
+          ? c.devices
+          : [{ card: c.card, device_name: 'N/A', channel: 'N/A', bus_type: 'HART', device_type: null }]
+      )
+    : [];
+
+  // Chunk into baseplates of 12 (up to 8 baseplates)
+  const CIOC_CHARMS_PER_BASEPLATE = 12;
+  const ciocChunks = [];
+  for (let i = 0; i < ciocDeviceList.length; i += CIOC_CHARMS_PER_BASEPLATE) {
+    ciocChunks.push(ciocDeviceList.slice(i, i + CIOC_CHARMS_PER_BASEPLATE));
+  }
+
+  // Keys for device rows (match diagnostic keys for highlighting)
+  const deviceKey = (dev) => `${dev.card ?? ''}-${dev.device_name ?? 'N/A'}-${dev.channel ?? 'N/A'}`;
+  const diagnosticErrorKeys = currentNode
+    ? new Set(
+        diagnostics
+          .filter((d) => d.controller_name === currentNode.node_name)
+          .map((d) => `${(d.card_display || (d.card_number ?? '')).toString().trim()}-${(d.device_name ?? 'N/A').toString()}-${(d.channel_number != null ? d.channel_number : 'N/A').toString()}`)
+      )
+    : new Set();
+  const charmHasError = (dev) => diagnosticErrorKeys.has(deviceKey(dev));
+
+  const selectAllInChunk = (chunk) => {
+    const keys = new Set(chunk.map(deviceKey));
+    const allSelected = chunk.every((dev) => selectedDevices.some((d) => deviceKey(d) === deviceKey(dev)));
+    if (allSelected) {
+      setSelectedDevices(selectedDevices.filter((d) => !keys.has(deviceKey(d))));
+    } else {
+      const existingKeys = new Set(selectedDevices.map(deviceKey));
+      const toAdd = chunk.filter((dev) => !existingKeys.has(deviceKey(dev)));
+      setSelectedDevices([...selectedDevices, ...toAdd]);
+    }
+  };
+
+  const filteredCiocList = getFilteredDevices(ciocDeviceList);
+  const filteredChunks = [];
+  for (let i = 0; i < filteredCiocList.length; i += CIOC_CHARMS_PER_BASEPLATE) {
+    filteredChunks.push(filteredCiocList.slice(i, i + CIOC_CHARMS_PER_BASEPLATE));
+  }
 
   return (
     <div className="space-y-6">
@@ -338,15 +442,27 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
             return (
               <div key={node.id} className="bg-gray-800 rounded-lg border border-gray-700 shadow-xl">
                 <div className="flex justify-between items-center px-4 py-3 border-b border-gray-700">
-                  <div>
-                    <h4 className="text-lg font-semibold text-gray-100">
-                      {node.node_name}
-                      <span className="ml-2 text-xs badge badge-blue">{node.node_type}</span>
-                      {node.is_redundant && <span className="ml-1 badge badge-green text-xs">Redundant</span>}
-                    </h4>
-                    <div className="text-sm text-gray-400 mt-1">
-                      {node.model && <span className="mr-3">{node.model}</span>}
-                      {nodeErrors.length} Error{nodeErrors.length !== 1 ? 's' : ''}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => toggleSection(`node-${node.id}`)}
+                      className="text-gray-300 hover:text-white p-1 rounded"
+                      title={isCollapsed(`node-${node.id}`, nodeErrors.length > 5) ? 'Expand' : 'Collapse'}
+                    >
+                      <span className="text-lg leading-none">
+                        {isCollapsed(`node-${node.id}`, nodeErrors.length > 5) ? '▶' : '▼'}
+                      </span>
+                    </button>
+                    <div>
+                      <h4 className="text-lg font-semibold text-gray-100">
+                        {node.node_name}
+                        <span className="ml-2 text-xs badge badge-blue">{node.node_type}</span>
+                        {node.is_redundant && <span className="ml-1 badge badge-green text-xs">Redundant</span>}
+                      </h4>
+                      <div className="text-sm text-gray-400 mt-1">
+                        {node.model && <span className="mr-3">{node.model}</span>}
+                        {nodeErrors.length} Error{nodeErrors.length !== 1 ? 's' : ''}
+                      </div>
                     </div>
                   </div>
                   {!isCompleted && (
@@ -359,56 +475,91 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                   )}
                 </div>
                 
-                {/* Existing errors for this controller */}
-                {nodeErrors.length > 0 && (
+                {/* Existing errors for this controller - collapsible */}
+                {nodeErrors.length > 0 && isCollapsed(`node-${node.id}`, nodeErrors.length > 5) && (
+                  <div className="px-4 py-2 text-sm text-gray-500 border-b border-gray-700">
+                    {nodeErrors.length} error{nodeErrors.length !== 1 ? 's' : ''} — click ▶ to expand
+                  </div>
+                )}
+                {nodeErrors.length > 0 && !isCollapsed(`node-${node.id}`, nodeErrors.length > 5) && (
                   <div className="overflow-auto" style={{ maxHeight: '40vh' }}>
                     <table className="relative w-full text-sm border-collapse">
                       <thead>
                         <tr>
-                          <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-3 py-2">Device (DST)</th>
-                          <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-3 py-2">Bus Type</th>
-                          <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-3 py-2">Card</th>
-                          <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-3 py-2">Channel</th>
-                          <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-3 py-2">Error</th>
-                          <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-3 py-2">Description</th>
-                          {!isCompleted && <th className="sticky top-0 bg-gray-700 text-center text-xs text-gray-300 px-3 py-2">Del</th>}
+                          <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">Device (DST)</th>
+                          <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">Bus Type</th>
+                          <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">Card</th>
+                          <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">Port/PDT</th>
+                          <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">Channel</th>
+                          <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">LDT</th>
+                          <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">Error</th>
+                          <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">Description</th>
+                          {!isCompleted && <th className="sticky top-0 bg-gray-700 text-center text-xs text-gray-300 px-2 py-2 w-8">Del</th>}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-700">
-                        {nodeErrors.map((error) => (
-                          <tr key={error.id} className="bg-gray-800 hover:bg-gray-700/50">
-                            <td className="px-3 py-2 text-gray-200 font-medium">{error.device_name || '-'}</td>
-                            <td className="px-3 py-2 text-gray-400 text-xs">{error.bus_type || '-'}</td>
-                            <td className="px-3 py-2 text-gray-300">{error.card_number || '-'}</td>
-                            <td className="px-3 py-2 text-gray-300">{error.channel_number ?? '-'}</td>
-                            <td className="px-3 py-2">
-                              <span className="badge badge-red text-xs">
-                                {error.error_type.replace(/_/g, ' ').toUpperCase()}
+                        {nodeErrors.map((error) => {
+                          const isEditing = (f) => !isCompleted && editingCell?.id === error.id && editingCell?.field === f;
+                          const cell = (field, value, label) => {
+                            const val = value ?? '-';
+                            if (isEditing(field)) {
+                              return (
+                                <input
+                                  autoFocus
+                                  className="w-full px-1 py-0.5 bg-gray-700 border border-blue-500 rounded text-gray-100 text-xs"
+                                  value={editValue}
+                                  onChange={(e) => setEditValue(e.target.value)}
+                                  onBlur={() => saveDiagnosticField(error, field, field === 'channel_number' || field === 'card_number' ? (editValue === '' ? null : parseInt(editValue, 10)) : editValue)}
+                                  onKeyDown={(e) => e.key === 'Enter' && (e.target.blur(), e.preventDefault())}
+                                />
+                              );
+                            }
+                            return (
+                              <span
+                                className={`block min-w-[3rem] ${!isCompleted ? 'cursor-pointer hover:bg-gray-600 rounded px-1' : ''}`}
+                                onClick={() => { if (!isCompleted) { setEditingCell({ id: error.id, field }); setEditValue(value ?? ''); } }}
+                                title={!isCompleted ? 'Click to edit' : ''}
+                              >
+                                {val}
                               </span>
-                            </td>
-                            <td className="px-3 py-2 text-gray-400 text-xs">{error.error_description || '-'}</td>
-                            {!isCompleted && (
-                              <td className="px-3 py-2 text-center">
-                                <button
-                                  onClick={async () => {
-                                    if (!confirm('Delete this error?')) return;
-                                    try {
-                                      await api.request(`/api/sessions/${sessionId}/diagnostics/${error.id}`, { method: 'DELETE' });
-                                      soundSystem.playSuccess();
-                                      loadData();
-                                    } catch (err) {
-                                      soundSystem.playError();
-                                      showMsg('Error deleting', 'error');
-                                    }
-                                  }}
-                                  className="text-red-400 hover:text-red-300 text-xs"
-                                >
-                                  X
-                                </button>
+                            );
+                          };
+                          return (
+                            <tr key={error.id} className="bg-gray-800 hover:bg-gray-700/50">
+                              <td className="px-2 py-1.5 text-gray-200 font-medium">{cell('device_name', error.device_name)}</td>
+                              <td className="px-2 py-1.5 text-gray-400 text-xs">{cell('bus_type', error.bus_type)}</td>
+                              <td className="px-2 py-1.5 text-gray-300">{cell('card_display', error.card_display || error.card_number)}</td>
+                              <td className="px-2 py-1.5 text-gray-300">{cell('port_number', error.port_number)}</td>
+                              <td className="px-2 py-1.5 text-gray-300">{cell('channel_number', error.channel_number)}</td>
+                              <td className="px-2 py-1.5 text-gray-300">{cell('ldt', error.ldt)}</td>
+                              <td className="px-2 py-1.5">
+                                <span className="badge badge-red text-xs">{error.error_type.replace(/_/g, ' ').toUpperCase()}</span>
                               </td>
-                            )}
-                          </tr>
-                        ))}
+                              <td className="px-2 py-1.5 text-gray-400 text-xs">{cell('error_description', error.error_description)}</td>
+                              {!isCompleted && (
+                                <td className="px-2 py-1.5 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (!confirm('Delete this error?')) return;
+                                      try {
+                                        await api.request(`/api/sessions/${sessionId}/diagnostics/${error.id}`, { method: 'DELETE' });
+                                        soundSystem.playSuccess();
+                                        loadData();
+                                      } catch (err) {
+                                        soundSystem.playError();
+                                        showMsg('Error deleting', 'error');
+                                      }
+                                    }}
+                                    className="text-red-400 hover:text-red-300 text-xs"
+                                  >
+                                    X
+                                  </button>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -419,43 +570,90 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
         </div>
       )}
 
-      {/* Full Error Log */}
+      {/* Full Error Log - collapsible */}
       {diagnostics.length > 0 && (
         <div className="bg-gray-800 rounded-lg border border-gray-700 shadow-xl">
-          <div className="px-4 py-3 border-b border-gray-700">
+          <div className="px-4 py-3 border-b border-gray-700 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => toggleSection('fullLog')}
+              className="text-gray-300 hover:text-white p-1 rounded"
+              title={isCollapsed('fullLog', diagnostics.length > 10) ? 'Expand' : 'Collapse'}
+            >
+              <span className="text-lg leading-none">
+                {isCollapsed('fullLog', diagnostics.length > 10) ? '▶' : '▼'}
+              </span>
+            </button>
             <h4 className="text-lg font-semibold text-gray-100">Complete Error Log ({diagnostics.length})</h4>
           </div>
+          {isCollapsed('fullLog', diagnostics.length > 10) && (
+            <div className="px-4 py-2 text-sm text-gray-500 border-b border-gray-700">
+              {diagnostics.length} error{diagnostics.length !== 1 ? 's' : ''} — click ▶ to expand
+            </div>
+          )}
+          {!isCollapsed('fullLog', diagnostics.length > 10) && (
           <div className="overflow-auto" style={{ maxHeight: '70vh' }}>
             <table className="relative w-full text-sm border-collapse">
               <thead>
                 <tr>
-                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-4 py-2">Controller</th>
-                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-4 py-2">Device (DST)</th>
-                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-4 py-2">Bus Type</th>
-                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-4 py-2">Card</th>
-                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-4 py-2">Channel</th>
-                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-4 py-2">Error Type</th>
-                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-4 py-2">Description</th>
-                  {!isCompleted && <th className="sticky top-0 bg-gray-700 text-center text-xs text-gray-300 px-4 py-2">Del</th>}
+                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">Controller</th>
+                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">Device (DST)</th>
+                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">Bus Type</th>
+                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">Card</th>
+                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">Port/PDT</th>
+                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">Channel</th>
+                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">LDT</th>
+                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">Error Type</th>
+                  <th className="sticky top-0 bg-gray-700 text-left text-xs text-gray-300 px-2 py-2">Description</th>
+                  {!isCompleted && <th className="sticky top-0 bg-gray-700 text-center text-xs text-gray-300 px-2 py-2 w-8">Del</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-700">
-                {diagnostics.map((error) => (
+                {diagnostics.map((error) => {
+                  const isEditing = (f) => !isCompleted && editingCell?.id === error.id && editingCell?.field === f;
+                  const fullLogCell = (field, value) => {
+                    const val = value ?? '-';
+                    if (isEditing(field)) {
+                      return (
+                        <input
+                          autoFocus
+                          className="w-full px-1 py-0.5 bg-gray-700 border border-blue-500 rounded text-gray-100 text-xs"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={() => saveDiagnosticField(error, field, field === 'channel_number' || field === 'card_number' ? (editValue === '' ? null : parseInt(editValue, 10)) : editValue)}
+                          onKeyDown={(e) => e.key === 'Enter' && (e.target.blur(), e.preventDefault())}
+                        />
+                      );
+                    }
+                    return (
+                      <span
+                        className={`block min-w-[3rem] ${!isCompleted ? 'cursor-pointer hover:bg-gray-600 rounded px-1' : ''}`}
+                        onClick={() => { if (!isCompleted) { setEditingCell({ id: error.id, field }); setEditValue(value ?? ''); } }}
+                        title={!isCompleted ? 'Click to edit' : ''}
+                      >
+                        {val}
+                      </span>
+                    );
+                  };
+                  return (
                   <tr key={error.id} className="bg-gray-800 hover:bg-gray-700/50">
-                    <td className="font-medium text-gray-200 px-4 py-2">{error.controller_name}</td>
-                    <td className="text-gray-200 px-4 py-2">{error.device_name || '-'}</td>
-                    <td className="text-gray-400 text-xs px-4 py-2">{error.bus_type || '-'}</td>
-                    <td className="text-gray-300 px-4 py-2">{error.card_number || '-'}</td>
-                    <td className="text-gray-300 px-4 py-2">{error.channel_number ?? '-'}</td>
-                    <td className="px-4 py-2">
+                    <td className="font-medium text-gray-200 px-2 py-1.5">{error.controller_name}</td>
+                    <td className="text-gray-200 px-2 py-1.5">{fullLogCell('device_name', error.device_name)}</td>
+                    <td className="text-gray-400 text-xs px-2 py-1.5">{fullLogCell('bus_type', error.bus_type)}</td>
+                    <td className="text-gray-300 px-2 py-1.5">{fullLogCell('card_display', error.card_display || error.card_number)}</td>
+                    <td className="text-gray-300 px-2 py-1.5">{fullLogCell('port_number', error.port_number)}</td>
+                    <td className="text-gray-300 px-2 py-1.5">{fullLogCell('channel_number', error.channel_number)}</td>
+                    <td className="text-gray-300 px-2 py-1.5">{fullLogCell('ldt', error.ldt)}</td>
+                    <td className="px-2 py-1.5">
                       <span className="badge badge-red text-xs">
                         {error.error_type.replace(/_/g, ' ').toUpperCase()}
                       </span>
                     </td>
-                    <td className="text-sm text-gray-400 px-4 py-2">{error.error_description || '-'}</td>
+                    <td className="text-sm text-gray-400 px-2 py-1.5">{fullLogCell('error_description', error.error_description)}</td>
                     {!isCompleted && (
-                      <td className="px-4 py-2 text-center">
+                      <td className="px-2 py-1.5 text-center">
                         <button
+                          type="button"
                           onClick={async () => {
                             if (!confirm('Delete this error?')) return;
                             try {
@@ -474,10 +672,12 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                       </td>
                     )}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 
@@ -549,59 +749,83 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                 </div>
 
               ) : flowStep === 'pick-device' && ioDeviceData?.isCioc ? (
-                /* ─── CIOC: FLAT DEVICE LIST ─── */
+                /* ─── CIOC: charms grouped by baseplate (12 per baseplate), Select all per baseplate; rows with existing error in red ─── */
                 <div>
-                  <h4 className="text-gray-200 font-medium mb-3">Select Device(s) with Error</h4>
+                  <h4 className="text-gray-200 font-medium mb-3">Select charm/card(s) with error</h4>
+                  <p className="text-gray-500 text-sm mb-3">Grouped by baseplate (12 charms each). Rows in red already have an error logged.</p>
                   <input
                     type="text"
-                    placeholder="Search by DST, bus type, device type..."
+                    placeholder="Search by card, DST, bus type..."
                     value={deviceSearch}
                     onChange={(e) => setDeviceSearch(e.target.value)}
                     className="form-input mb-3"
                   />
-                  <div className="overflow-auto border border-gray-600 rounded-lg" style={{ maxHeight: '45vh' }}>
-                    <table className="relative w-full text-sm border-collapse">
-                      <thead>
-                        <tr>
-                          <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300 w-8"></th>
-                          <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300">Device (DST)</th>
-                          <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300">Bus Type</th>
-                          <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300">Device Type</th>
-                          <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300">Card</th>
-                          <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300">Channel</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-700">
-                        {getFilteredDevices(ioDeviceData?.devices).map((dev, idx) => {
-                          const key = `${dev.card}-${dev.device_name}-${dev.channel}`;
-                          const isSelected = selectedDevices.some(d => `${d.card}-${d.device_name}-${d.channel}` === key);
-                          return (
-                            <tr
-                              key={idx}
-                              onClick={() => toggleDevice(dev)}
-                              className={`cursor-pointer transition-all ${isSelected ? 'bg-blue-900/40' : 'bg-gray-800 hover:bg-gray-700/50'}`}
+                  <div className="overflow-auto space-y-4" style={{ maxHeight: '45vh' }}>
+                    {filteredChunks.map((chunk, chunkIndex) => {
+                      const baseplateNum = chunkIndex + 1;
+                      const start = chunkIndex * CIOC_CHARMS_PER_BASEPLATE + 1;
+                      const end = start + chunk.length - 1;
+                      const allSelected = chunk.length > 0 && chunk.every((dev) => selectedDevices.some((d) => deviceKey(d) === deviceKey(dev)));
+                      return (
+                        <div key={chunkIndex} className="border border-gray-600 rounded-lg overflow-hidden">
+                          <div className="flex items-center justify-between px-3 py-2 bg-gray-700/50 border-b border-gray-600">
+                            <span className="text-xs font-medium text-gray-300">Baseplate {baseplateNum} — Charms {start}–{end}</span>
+                            <button
+                              type="button"
+                              onClick={() => selectAllInChunk(chunk)}
+                              className="text-xs px-2 py-1 rounded bg-gray-600 hover:bg-blue-600 text-gray-200"
                             >
-                              <td className="px-3 py-2">
-                                <input type="checkbox" checked={isSelected} readOnly className="w-4 h-4" />
-                              </td>
-                              <td className="px-3 py-2 text-gray-200 font-medium">{dev.device_name || 'N/A'}</td>
-                              <td className="px-3 py-2 text-xs">
-                                <span className="bg-gray-600 text-gray-200 px-2 py-0.5 rounded">{dev.bus_type || 'N/A'}</span>
-                              </td>
-                              <td className="px-3 py-2 text-gray-400 text-xs">{dev.device_type || 'N/A'}</td>
-                              <td className="px-3 py-2 text-gray-300">{dev.card || 'N/A'}</td>
-                              <td className="px-3 py-2 text-gray-300">{dev.channel || 'N/A'}</td>
-                            </tr>
-                          );
-                        })}
-                        {getFilteredDevices(ioDeviceData?.devices).length === 0 && (
-                          <tr><td colSpan="6" className="text-center text-gray-500 py-8">No devices found</td></tr>
-                        )}
-                      </tbody>
-                    </table>
+                              {allSelected ? 'Deselect all' : `Select all ${chunk.length}`}
+                            </button>
+                          </div>
+                          <table className="w-full text-sm border-collapse">
+                            <thead>
+                              <tr>
+                                <th className="bg-gray-700 px-3 py-1.5 text-left text-xs text-gray-300 w-8"></th>
+                                <th className="bg-gray-700 px-3 py-1.5 text-left text-xs text-gray-300">Card</th>
+                                <th className="bg-gray-700 px-3 py-1.5 text-left text-xs text-gray-300">Device (DST)</th>
+                                <th className="bg-gray-700 px-3 py-1.5 text-left text-xs text-gray-300">Bus Type</th>
+                                <th className="bg-gray-700 px-3 py-1.5 text-left text-xs text-gray-300">Device Type</th>
+                                <th className="bg-gray-700 px-3 py-1.5 text-left text-xs text-gray-300">Channel</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-700">
+                              {chunk.map((dev, idx) => {
+                                const key = deviceKey(dev);
+                                const isSelected = selectedDevices.some((d) => deviceKey(d) === key);
+                                const hasError = charmHasError(dev);
+                                return (
+                                  <tr
+                                    key={key + idx}
+                                    onClick={() => toggleDevice(dev)}
+                                    className={`cursor-pointer transition-all ${
+                                      hasError ? 'bg-red-900/40 hover:bg-red-900/50' : isSelected ? 'bg-blue-900/40' : 'bg-gray-800 hover:bg-gray-700/50'
+                                    }`}
+                                  >
+                                    <td className="px-3 py-1.5">
+                                      <input type="checkbox" checked={isSelected} readOnly className="w-4 h-4" />
+                                    </td>
+                                    <td className="px-3 py-1.5 text-gray-200 font-medium">{dev.card || 'N/A'}</td>
+                                    <td className="px-3 py-1.5 text-gray-300">{dev.device_name || 'N/A'}</td>
+                                    <td className="px-3 py-1.5 text-xs">
+                                      <span className="bg-gray-600 text-gray-200 px-2 py-0.5 rounded">{dev.bus_type || 'N/A'}</span>
+                                    </td>
+                                    <td className="px-3 py-1.5 text-gray-400 text-xs">{dev.device_type || 'N/A'}</td>
+                                    <td className="px-3 py-1.5 text-gray-300">{dev.channel || 'N/A'}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })}
+                    {filteredChunks.length === 0 && (
+                      <div className="text-center text-gray-500 py-8 border border-gray-600 rounded-lg">No charms/cards found</div>
+                    )}
                   </div>
                   <div className="text-sm text-gray-400 mt-2">
-                    {selectedDevices.length} device(s) selected
+                    {selectedDevices.length} selected
                   </div>
                 </div>
 
@@ -639,7 +863,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                 </div>
 
               ) : flowStep === 'pick-card-device' && selectedCard ? (
-                /* ─── CONTROLLER: DEVICES ON SELECTED CARD ─── */
+                /* ─── CONTROLLER / CIOC: DEVICES ON SELECTED CARD (or "card only" if no devices) ─── */
                 <div>
                   <button onClick={() => { setFlowStep('pick-card'); setSelectedCard(null); setSelectedDevices([]); }}
                     className="text-sm text-blue-400 hover:text-blue-300 mb-3 block">
@@ -647,51 +871,75 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                   </button>
                   <h4 className="text-gray-200 font-medium mb-3">
                     Devices on {selectedCard.card}
-                    <span className="ml-2 text-sm text-gray-400">({selectedCard.busTypes.join(', ')})</span>
+                    <span className="ml-2 text-sm text-gray-400">{(selectedCard.busTypes?.length > 0 && selectedCard.busTypes.join(', ')) || '—'}</span>
                   </h4>
-                  <input
-                    type="text"
-                    placeholder="Search devices..."
-                    value={deviceSearch}
-                    onChange={(e) => setDeviceSearch(e.target.value)}
-                    className="form-input mb-3"
-                  />
-                  <div className="overflow-auto border border-gray-600 rounded-lg" style={{ maxHeight: '40vh' }}>
-                    <table className="relative w-full text-sm border-collapse">
-                      <thead>
-                        <tr>
-                          <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300 w-8"></th>
-                          <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300">Device (DST)</th>
-                          <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300">Bus Type</th>
-                          <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300">Device Type</th>
-                          <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300">Channel</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-700">
-                        {getFilteredDevices(selectedCard.devices).map((dev, idx) => {
-                          const key = `${dev.card}-${dev.device_name}-${dev.channel}`;
-                          const isSelected = selectedDevices.some(d => `${d.card}-${d.device_name}-${d.channel}` === key);
-                          return (
-                            <tr
-                              key={idx}
-                              onClick={() => toggleDevice(dev)}
-                              className={`cursor-pointer transition-all ${isSelected ? 'bg-blue-900/40' : 'bg-gray-800 hover:bg-gray-700/50'}`}
-                            >
-                              <td className="px-3 py-2">
-                                <input type="checkbox" checked={isSelected} readOnly className="w-4 h-4" />
-                              </td>
-                              <td className="px-3 py-2 text-gray-200 font-medium">{dev.device_name || 'N/A'}</td>
-                              <td className="px-3 py-2 text-xs">
-                                <span className="bg-gray-600 text-gray-200 px-2 py-0.5 rounded">{dev.bus_type || 'N/A'}</span>
-                              </td>
-                              <td className="px-3 py-2 text-gray-400 text-xs">{dev.device_type || 'N/A'}</td>
-                              <td className="px-3 py-2 text-gray-300">{dev.channel || 'N/A'}</td>
+                  {(selectedCard.devices?.length > 0) ? (
+                    <>
+                      <input
+                        type="text"
+                        placeholder="Search devices..."
+                        value={deviceSearch}
+                        onChange={(e) => setDeviceSearch(e.target.value)}
+                        className="form-input mb-3"
+                      />
+                      <div className="overflow-auto border border-gray-600 rounded-lg" style={{ maxHeight: '40vh' }}>
+                        <table className="relative w-full text-sm border-collapse">
+                          <thead>
+                            <tr>
+                              <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300 w-8"></th>
+                              <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300">Device (DST)</th>
+                              <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300">Bus Type</th>
+                              <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300">Device Type</th>
+                              <th className="sticky top-0 bg-gray-700 px-3 py-2 text-left text-xs text-gray-300">Channel</th>
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                          </thead>
+                          <tbody className="divide-y divide-gray-700">
+                            {getFilteredDevices(selectedCard.devices).map((dev, idx) => {
+                              const key = `${dev.card}-${dev.device_name}-${dev.channel}`;
+                              const isSelected = selectedDevices.some(d => `${d.card}-${d.device_name}-${d.channel}` === key);
+                              return (
+                                <tr
+                                  key={idx}
+                                  onClick={() => toggleDevice(dev)}
+                                  className={`cursor-pointer transition-all ${isSelected ? 'bg-blue-900/40' : 'bg-gray-800 hover:bg-gray-700/50'}`}
+                                >
+                                  <td className="px-3 py-2">
+                                    <input type="checkbox" checked={isSelected} readOnly className="w-4 h-4" />
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-200 font-medium">{dev.device_name || 'N/A'}</td>
+                                  <td className="px-3 py-2 text-xs">
+                                    <span className="bg-gray-600 text-gray-200 px-2 py-0.5 rounded">{dev.bus_type || 'N/A'}</span>
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-400 text-xs">{dev.device_type || 'N/A'}</td>
+                                  <td className="px-3 py-2 text-gray-300">{dev.channel || 'N/A'}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-lg border border-gray-600 bg-gray-700/30 p-4">
+                      <p className="text-gray-400 text-sm mb-3">No devices linked to this card in System Registry. You can still add an error for the card.</p>
+                      <label className="flex items-center gap-3 p-3 rounded-lg border border-gray-600 hover:border-blue-500 cursor-pointer transition-all">
+                        <input
+                          type="checkbox"
+                          checked={selectedDevices.some(d => d.card === selectedCard.card && d.device_name == null)}
+                          onChange={() => {
+                            const exists = selectedDevices.some(d => d.card === selectedCard.card && d.device_name == null);
+                            if (exists) {
+                              setSelectedDevices(selectedDevices.filter(d => !(d.card === selectedCard.card && d.device_name == null)));
+                            } else {
+                              setSelectedDevices([...selectedDevices, { card: selectedCard.card, device_name: null, channel: 'N/A', bus_type: 'HART' }]);
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-gray-200 font-medium">This card only ({selectedCard.card}) — no device</span>
+                      </label>
+                    </div>
+                  )}
                   <div className="text-sm text-gray-400 mt-2">
                     {selectedDevices.length} device(s) selected
                   </div>

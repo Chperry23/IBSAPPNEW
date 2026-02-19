@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import soundSystem from '../utils/sounds';
 
 export default function NodeMaintenance({ sessionId, customerId, isCompleted }) {
@@ -82,7 +82,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
       if (saveTimeout) clearTimeout(saveTimeout);
       
       const timeout = setTimeout(async () => {
-        await performSave(allMaintenanceData, nodeId, field, value);
+        await performSave(allMaintenanceData);
       }, 1000); // Wait 1 second after user stops typing
       
       setSaveTimeout(timeout);
@@ -90,36 +90,36 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
     }
 
     // For checkboxes, save immediately
-    await performSave(allMaintenanceData, nodeId, field, value);
+    await performSave(allMaintenanceData);
   };
 
-  const performSave = async (dataToSave, nodeId, field, value) => {
-    setSaving(true);
-    console.log('💾 [NodeMaintenance] Saving to backend...');
-    console.log('💾 [NodeMaintenance] Node ID:', nodeId, 'Field:', field, 'Value:', value);
-    console.log('💾 [NodeMaintenance] Full data being sent:', dataToSave);
-    
-    try {
-      const response = await fetch(`/api/sessions/${sessionId}/node-maintenance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(dataToSave),
-      });
-
-      if (response.ok) {
-        console.log('✅ Auto-saved node:', nodeId, field, value);
-      } else if (response.status === 401) {
-        showMessage('Session expired. Please refresh and login again.', 'error');
-      } else {
-        const errorText = await response.text();
-        console.error('❌ [NodeMaintenance] Save failed:', response.status, errorText);
+  const saveTimeoutRef = useRef(null);
+  const performSave = async (dataToSave) => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(async () => {
+      saveTimeoutRef.current = null;
+      setSaving(true);
+      try {
+        const response = await fetch(`/api/sessions/${sessionId}/node-maintenance`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(dataToSave),
+        });
+        if (response.ok) {
+          // saved
+        } else if (response.status === 401) {
+          showMessage('Session expired. Please refresh and login again.', 'error');
+        } else {
+          const errorText = await response.text();
+          console.error('Save failed:', response.status, errorText);
+        }
+      } catch (error) {
+        console.error('Auto-save error:', error);
+      } finally {
+        setSaving(false);
       }
-    } catch (error) {
-      console.error('❌ [NodeMaintenance] Auto-save error:', error);
-    } finally {
-      setSaving(false);
-    }
+    }, 400);
   };
 
   // Bulk action functions
