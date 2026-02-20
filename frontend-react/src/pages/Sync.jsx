@@ -202,6 +202,25 @@ export default function Sync() {
 
   return (
     <Layout>
+      {/* Full-screen sync loading modal – blocks page until sync finishes */}
+      {syncing && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          aria-modal="true"
+          aria-busy="true"
+          aria-label="Sync in progress"
+        >
+          <div className="bg-gray-800 border border-gray-600 rounded-2xl shadow-2xl p-10 max-w-md w-full mx-4 text-center">
+            <div className="w-20 h-20 mx-auto mb-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <h2 className="text-xl font-semibold text-gray-100 mb-2">Syncing with cloud</h2>
+            <p className="text-gray-400 mb-6">
+              {message?.text || 'Please wait...'}
+            </p>
+            <p className="text-sm text-gray-500">Do not leave this page until sync is complete.</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-4xl font-bold gradient-text mb-2">Cloud Sync</h1>

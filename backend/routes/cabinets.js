@@ -378,7 +378,7 @@ router.put('/:cabinetId/complete', requireAuth, async (req, res) => {
   const cabinetId = req.params.cabinetId;
   try {
     const cabinet = await db.prepare(`
-      SELECT c.id, c.pm_session_id, s.status
+      SELECT c.id, c.pm_session_id, c.status, s.status as session_status
       FROM cabinets c
       LEFT JOIN sessions s ON c.pm_session_id = s.id
       WHERE c.id = ?
@@ -386,7 +386,7 @@ router.put('/:cabinetId/complete', requireAuth, async (req, res) => {
     if (!cabinet) {
       return res.status(404).json({ error: 'Cabinet not found' });
     }
-    if (cabinet.status === 'completed') {
+    if (cabinet.session_status === 'completed') {
       return res.status(403).json({
         error: 'Session already completed',
         message: 'This PM session has been completed.'
@@ -396,6 +396,36 @@ router.put('/:cabinetId/complete', requireAuth, async (req, res) => {
     res.json({ success: true, message: 'Cabinet marked as completed' });
   } catch (error) {
     console.error('Mark cabinet complete error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Uncomplete a cabinet (set status back to active; only when session is not completed)
+router.put('/:cabinetId/uncomplete', requireAuth, async (req, res) => {
+  const cabinetId = req.params.cabinetId;
+  try {
+    const cabinet = await db.prepare(`
+      SELECT c.id, c.pm_session_id, c.status, s.status as session_status
+      FROM cabinets c
+      LEFT JOIN sessions s ON c.pm_session_id = s.id
+      WHERE c.id = ?
+    `).get(cabinetId);
+    if (!cabinet) {
+      return res.status(404).json({ error: 'Cabinet not found' });
+    }
+    if (cabinet.session_status === 'completed') {
+      return res.status(403).json({
+        error: 'Cannot uncomplete cabinet',
+        message: 'The PM session is completed. Uncomplete the session first to change cabinet status.'
+      });
+    }
+    if (cabinet.status !== 'completed') {
+      return res.json({ success: true, message: 'Cabinet was not completed' });
+    }
+    await db.prepare('UPDATE cabinets SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(['active', cabinetId]);
+    res.json({ success: true, message: 'Cabinet marked as active (uncompleted)' });
+  } catch (error) {
+    console.error('Uncomplete cabinet error:', error);
     res.status(500).json({ error: 'Database error' });
   }
 });

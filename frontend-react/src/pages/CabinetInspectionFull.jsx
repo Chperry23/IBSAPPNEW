@@ -126,15 +126,19 @@ export default function CabinetInspectionFull() {
 
   useEffect(() => {
     loadCabinetData();
-    loadCustomModels();
   }, [id]);
-  
+
+  useEffect(() => {
+    if (customer?.id) loadCustomModels();
+  }, [customer?.id]);
+
   const loadCustomModels = async () => {
+    if (!customer?.id) return;
     try {
-      const response = await fetch('/api/custom-models/Switch');
+      const response = await fetch(`/api/customers/${customer.id}/custom-models/Switch`, { credentials: 'include' });
       if (response.ok) {
         const models = await response.json();
-        setCustomSwitchModels(models);
+        setCustomSwitchModels(Array.isArray(models) ? models : []);
       }
     } catch (error) {
       console.error('Error loading custom models:', error);
@@ -705,6 +709,28 @@ export default function CabinetInspectionFull() {
     }
   };
 
+  const handleUncompleteCabinet = async () => {
+    if (session?.status === 'completed') return;
+    setSaving(true);
+    try {
+      const result = await api.request(`/api/cabinets/${id}/uncomplete`, { method: 'PUT' });
+      if (result.success) {
+        setFormData(prev => ({ ...prev, status: 'active' }));
+        soundSystem.playSuccess();
+        showMessage('Cabinet uncompleted – you can edit again', 'success');
+        loadCabinetData();
+      } else {
+        soundSystem.playError();
+        showMessage(result.error || 'Failed to uncomplete cabinet', 'error');
+      }
+    } catch (error) {
+      soundSystem.playError();
+      showMessage('Error uncompleting cabinet', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     if (session?.status === 'completed') {
       showMessage('Cannot save changes - PM session is completed', 'error');
@@ -1166,6 +1192,16 @@ export default function CabinetInspectionFull() {
               title="Mark this cabinet as done for this PM"
             >
               ✅ Mark cabinet complete
+            </button>
+          )}
+          {formData.status === 'completed' && session?.status !== 'completed' && (
+            <button
+              onClick={handleUncompleteCabinet}
+              disabled={saving}
+              className="btn btn-secondary"
+              title="Reopen this cabinet to make changes"
+            >
+              ↩ Uncomplete cabinet
             </button>
           )}
           <button
@@ -2064,26 +2100,34 @@ export default function CabinetInspectionFull() {
                           <label className="form-label">Model Number</label>
                           {equipment.equipment_type && networkEquipmentModels.find(m => m.type === equipment.equipment_type)?.models.length > 0 ? (
                             <div className="space-y-2">
+                              {(() => {
+                                const switchModels = networkEquipmentModels.find(m => m.type === equipment.equipment_type)?.models || [];
+                                const isCustomValue = equipment.model_number && equipment.model_number !== '__custom__' && !switchModels.includes(equipment.model_number);
+                              return (
+                              <>
                               <select
-                                value={equipment.model_number}
+                                value={equipment.model_number || ''}
                                 onChange={(e) => {
+                                  const v = e.target.value;
                                   const updated = [...formData.network_equipment];
-                                  updated[index].model_number = e.target.value;
+                                  updated[index].model_number = v;
                                   setFormData({ ...formData, network_equipment: updated });
                                 }}
                                 className="form-select"
                                 disabled={isViewOnly}
                               >
                                 <option value="">Select or enter custom...</option>
-                                {networkEquipmentModels.find(m => m.type === equipment.equipment_type)?.models.map(model => (
+                                {switchModels.map(model => (
                                   <option key={model} value={model}>{model}</option>
                                 ))}
-                                <option value="__custom__">Custom Model</option>
+                                {isCustomValue && <option value={equipment.model_number}>{equipment.model_number}</option>}
+                                <option value="__custom__">Custom Model...</option>
                               </select>
-                              {equipment.model_number === '__custom__' && (
+                              {(equipment.model_number === '__custom__' || isCustomValue) && (
                                 <input
                                   type="text"
                                   placeholder="Enter custom model"
+                                  value={equipment.model_number === '__custom__' ? '' : (equipment.model_number || '')}
                                   readOnly={isViewOnly}
                                   onChange={(e) => {
                                     const updated = [...formData.network_equipment];
@@ -2091,27 +2135,25 @@ export default function CabinetInspectionFull() {
                                     setFormData({ ...formData, network_equipment: updated });
                                   }}
                                   onBlur={async (e) => {
-                                    const customModel = e.target.value;
-                                    if (customModel && equipment.equipment_type === 'Switch') {
-                                      // Save custom model to database
+                                    const customModel = (e.target.value || '').trim();
+                                    if (customModel && equipment.equipment_type === 'Switch' && customer?.id) {
                                       try {
-                                        await api.request('/api/custom-models', {
+                                        await api.request(`/api/customers/${customer.id}/custom-models`, {
                                           method: 'POST',
-                                          body: JSON.stringify({
-                                            equipment_type: 'Switch',
-                                            model_name: customModel
-                                          })
+                                          body: JSON.stringify({ equipment_type: 'Switch', model_name: customModel })
                                         });
-                                        // Reload custom models
                                         await loadCustomModels();
-                                      } catch (error) {
-                                        console.error('Error saving custom model:', error);
+                                      } catch (err) {
+                                        console.error('Error saving custom model:', err);
                                       }
                                     }
                                   }}
                                   className="form-input"
                                 />
                               )}
+                              </>
+                              );
+                              })()}
                             </div>
                           ) : (
                             <input

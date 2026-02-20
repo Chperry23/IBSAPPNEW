@@ -15,23 +15,27 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
   const [ioDeviceData, setIoDeviceData] = useState(null); // data from the io-devices API
   const [ioLoading, setIoLoading] = useState(false);
   
-  // Flow step: 'pick-device' | 'pick-card' | 'pick-card-device' | 'manual-entry' | 'pick-error'
+  // Modal tab: 'detected' | 'manual'
+  const [addErrorTab, setAddErrorTab] = useState('detected');
+  // Flow step (Detected tab): 'pick-device' | 'pick-card' | 'pick-card-device' | 'pick-error'
   const [flowStep, setFlowStep] = useState('pick-device');
   const [selectedDevices, setSelectedDevices] = useState([]); // selected io devices for error
   const [selectedCard, setSelectedCard] = useState(null); // selected card group
   const [deviceSearch, setDeviceSearch] = useState('');
   
-  // Manual entry states
+  // Manual entry states (grid: card 1-100 single, channels 1-60 multi, port 1-5)
   const [manualCardType, setManualCardType] = useState('');
-  const [manualCardNumber, setManualCardNumber] = useState('');
-  const [manualPort, setManualPort] = useState('');
-  const [manualChannel, setManualChannel] = useState('');
+  const [manualCardNumber, setManualCardNumber] = useState(null); // single card 1-100
+  const [manualChannels, setManualChannels] = useState([]); // multi-select 1-60
+  const [manualPort, setManualPort] = useState(null); // 1-5 when applicable
   const [manualPdt, setManualPdt] = useState('');
   const [manualLdt, setManualLdt] = useState('');
+  const [manualDst, setManualDst] = useState(''); // DST (Device) when not from registry
   
   // Error selection
   const [selectedErrorType, setSelectedErrorType] = useState('');
   const [errorDescription, setErrorDescription] = useState('');
+  const [overrideDst, setOverrideDst] = useState(''); // DST to use when device doesn't have one (pick-error step)
   
   // Collapsible sections for error tables (key: node.id or 'fullLog', value: true = collapsed)
   const [collapsedSections, setCollapsedSections] = useState({});
@@ -182,33 +186,29 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
     setSelectedErrorType('');
     setErrorDescription('');
     setManualCardType('');
-    setManualCardNumber('');
-    setManualPort('');
-    setManualChannel('');
+    setManualCardNumber(null);
+    setManualChannels([]);
+    setManualPort(null);
     setManualPdt('');
     setManualLdt('');
     setShowAddErrorModal(true);
     setIoLoading(true);
+    const hasDeviceData = (d) => d?.isCioc && (d?.cards?.length > 0 || d?.totalDevices > 0) || (d?.totalDevices > 0);
     
     try {
       const data = await api.request(
         `/api/sessions/${sessionId}/diagnostics/io-devices/${encodeURIComponent(node.node_name)}?customerId=${customerId}`
       );
       setIoDeviceData(data);
-      
-      if (data.isCioc) {
-        // CIOC: single list view (all charms; cards without DST show as N/A, still selectable)
-        setFlowStep((data.cards?.length > 0 || data.totalDevices > 0) ? 'pick-device' : 'manual-entry');
-      } else if (data.totalDevices > 0) {
-        // Regular controller: card picker then device list
-        setFlowStep('pick-card');
-      } else {
-        setFlowStep('manual-entry');
+      setAddErrorTab(hasDeviceData(data) ? 'detected' : 'manual');
+      if (hasDeviceData(data)) {
+        if (data.isCioc) setFlowStep('pick-device');
+        else setFlowStep('pick-card');
       }
     } catch (err) {
       console.error('Error loading IO devices:', err);
       setIoDeviceData(null);
-      setFlowStep('manual-entry');
+      setAddErrorTab('manual');
     } finally {
       setIoLoading(false);
     }
@@ -220,7 +220,30 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
     setIoDeviceData(null);
     setSelectedDevices([]);
     setSelectedCard(null);
+    setAddErrorTab('detected');
     setFlowStep('pick-device');
+  };
+
+  // Reset manual form but stay in modal (for "add another")
+  const resetManualForm = () => {
+    setManualCardType('');
+    setManualCardNumber(null);
+    setManualChannels([]);
+    setManualPort(null);
+    setManualPdt('');
+    setManualLdt('');
+    setManualDst('');
+    setSelectedErrorType('');
+    setErrorDescription('');
+  };
+
+  // Reset detected flow but stay in modal
+  const resetDetectedFlow = () => {
+    setSelectedDevices([]);
+    setSelectedCard(null);
+    setSelectedErrorType('');
+    setErrorDescription('');
+    setFlowStep(ioDeviceData?.isCioc ? 'pick-device' : 'pick-card');
   };
 
   // ─── Toggle device selection ───
@@ -243,6 +266,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
     
     try {
       for (const device of selectedDevices) {
+        const deviceName = (device.device_name && device.device_name !== 'N/A') ? device.device_name : (overrideDst?.trim() || null);
         await api.request(`/api/sessions/${sessionId}/diagnostics`, {
           method: 'POST',
           body: JSON.stringify({
@@ -253,83 +277,113 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
             error_type: selectedErrorType,
             error_description: errorDescription || errorTypes.find(t => t.value === selectedErrorType)?.description || '',
             bus_type: device.bus_type || null,
-            device_name: device.device_name || null,
+            device_name: deviceName,
             device_type: device.device_type || null,
           }),
         });
       }
       
       soundSystem.playSuccess();
-      showMsg(`Added ${selectedDevices.length} error(s) successfully`, 'success');
+      showMsg(`Added ${selectedDevices.length} error(s) successfully. Add another?`, 'success');
       await loadData();
-      setSelectedDevices([]);
-      setSelectedErrorType('');
-      setErrorDescription('');
-      if (ioDeviceData?.isCioc) {
-        setFlowStep('pick-device');
-      } else {
-        closeModal();
-      }
+      resetDetectedFlow();
     } catch (error) {
       soundSystem.playError();
       showMsg('Error saving diagnostics', 'error');
     }
   };
 
-  // ─── Save errors (manual mode) ───
+  // ─── Save errors (manual mode): one card, multiple channels, port 1-5; bulk assign ───
   const saveManualErrors = async () => {
     if (!selectedErrorType) {
       showMsg('Please select an error type', 'error');
       return;
     }
-    
-    const cardNum = parseInt(manualCardNumber) || 0;
-    let channelNum = null;
-    let portNum = manualPort || null;
-    let busType = manualCardType || null;
-    let ldt = manualLdt || null;
-    
+    const cardNum = manualCardNumber != null ? Number(manualCardNumber) : 0;
+    const busType = manualCardType || null;
+    const ldt = manualLdt || null;
+    const desc = errorDescription || errorTypes.find(t => t.value === selectedErrorType)?.description || '';
+
+    const payloads = [];
     if (manualCardType === 'hart') {
-      channelNum = parseInt(manualChannel) || null;
-      portNum = null;
-    } else if (manualCardType === 'eioc') {
-      portNum = manualPdt || null;
-    } else {
-      channelNum = null;
-    }
-    
-    try {
-      await api.request(`/api/sessions/${sessionId}/diagnostics`, {
-        method: 'POST',
-        body: JSON.stringify({
+      if (manualChannels.length === 0) {
+        showMsg('Select at least one channel', 'error');
+        return;
+      }
+      const deviceName = manualDst?.trim() || null;
+      manualChannels.forEach((ch) => {
+        payloads.push({
           controller_name: currentNode.node_name,
           card_number: cardNum,
-          channel_number: channelNum,
+          channel_number: ch,
           error_type: selectedErrorType,
-          error_description: errorDescription || errorTypes.find(t => t.value === selectedErrorType)?.description || '',
+          error_description: desc,
           bus_type: busType,
-          card_type: manualCardType || null,
-          port_number: portNum,
+          card_type: manualCardType,
+          port_number: null,
           ldt: ldt,
-        }),
+          device_name: deviceName,
+        });
       });
-      
-      soundSystem.playSuccess();
-      showMsg('Error added successfully', 'success');
-      await loadData();
-      setSelectedErrorType('');
-      setErrorDescription('');
-      setManualCardType('');
-      setManualCardNumber('');
-      setManualPort('');
-      setManualChannel('');
-      setManualPdt('');
-      setManualLdt('');
-      if (currentNode && ioDeviceData?.isCioc) {
-        setFlowStep('pick-device');
+    } else if (manualCardType === 'eioc') {
+      payloads.push({
+        controller_name: currentNode.node_name,
+        card_number: cardNum,
+        channel_number: manualChannels[0] ?? null,
+        error_type: selectedErrorType,
+        error_description: desc,
+        bus_type: busType,
+        card_type: manualCardType,
+        port_number: manualPdt || null,
+        ldt: ldt,
+        device_name: manualDst?.trim() || null,
+      });
+    } else {
+      // devicenet, fieldbus, serial: port 1-5; optional multiple channels
+      const portStr = manualPort != null ? String(manualPort) : null;
+      const deviceName = manualDst?.trim() || null;
+      if (manualChannels.length > 0) {
+        manualChannels.forEach((ch) => {
+          payloads.push({
+            controller_name: currentNode.node_name,
+            card_number: cardNum,
+            channel_number: ch,
+            error_type: selectedErrorType,
+            error_description: desc,
+            bus_type: busType,
+            card_type: manualCardType,
+            port_number: portStr,
+            ldt: ldt,
+            device_name: deviceName,
+          });
+        });
       } else {
-        closeModal();
+        payloads.push({
+          controller_name: currentNode.node_name,
+          card_number: cardNum,
+          channel_number: null,
+          error_type: selectedErrorType,
+          error_description: desc,
+          bus_type: busType,
+          card_type: manualCardType,
+          port_number: portStr,
+          ldt: ldt,
+          device_name: deviceName,
+        });
       }
+    }
+
+    try {
+      for (const payload of payloads) {
+        await api.request(`/api/sessions/${sessionId}/diagnostics`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      }
+      soundSystem.playSuccess();
+      showMsg(`Added ${payloads.length} error(s) successfully. Add another?`, 'success');
+      await loadData();
+      resetManualForm();
     } catch (error) {
       soundSystem.playError();
       showMsg('Error saving diagnostic', 'error');
@@ -695,10 +749,36 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                 </h3>
                 <div className="text-sm text-gray-400">
                   {currentNode.node_type}{currentNode.model ? ` | ${currentNode.model}` : ''}
-                  {ioDeviceData && ` | ${ioDeviceData.totalDevices} devices from System Registry`}
+                  {ioDeviceData && addErrorTab === 'detected' && ` | ${ioDeviceData.totalDevices} devices from System Registry`}
                 </div>
               </div>
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-200 text-2xl">×</button>
+            </div>
+
+            {/* Tabs: Detected Cards | Manual Entry */}
+            <div className="flex border-b border-gray-700 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setAddErrorTab('detected')}
+                className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  addErrorTab === 'detected'
+                    ? 'border-blue-500 text-blue-400'
+                    : 'border-transparent text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                Detected Cards
+              </button>
+              <button
+                type="button"
+                onClick={() => setAddErrorTab('manual')}
+                className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  addErrorTab === 'manual'
+                    ? 'border-blue-500 text-blue-400'
+                    : 'border-transparent text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                Manual Entry
+              </button>
             </div>
 
             {/* Modal Body */}
@@ -707,6 +787,184 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                 <div className="flex items-center justify-center py-12">
                   <div className="spinner h-8 w-8"></div>
                   <span className="ml-3 text-gray-400">Loading I/O device data...</span>
+                </div>
+              ) : addErrorTab === 'manual' ? (
+                /* ─── MANUAL ENTRY TAB: card 1-100 single, channels 1-60 multi, port 1-5 ─── */
+                <div className="space-y-4">
+                  <h4 className="text-gray-200 font-medium">Manual Error Entry</h4>
+                  <div>
+                    <label className="form-label">Card Type</label>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                      {cardTypes.map(ct => (
+                        <button
+                          key={ct.value}
+                          type="button"
+                          onClick={() => setManualCardType(ct.value)}
+                          className={`p-3 rounded-lg border text-sm font-medium transition-all ${
+                            manualCardType === ct.value
+                              ? 'bg-blue-600 border-blue-400 text-white'
+                              : 'bg-gray-700/30 border-gray-600 text-gray-300 hover:border-gray-500'
+                          }`}
+                        >
+                          {ct.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="form-label">Card Number (1–100, select one)</label>
+                    <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                      {Array.from({ length: 100 }, (_, i) => i + 1).map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setManualCardNumber(manualCardNumber === n ? null : n)}
+                          className={`w-9 h-9 rounded border text-sm font-medium transition-all ${
+                            manualCardNumber === n
+                              ? 'bg-blue-600 border-blue-400 text-white'
+                              : 'bg-gray-700/30 border-gray-600 text-gray-300 hover:border-gray-500'
+                          }`}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {manualCardType === 'hart' && (
+                    <div>
+                      <label className="form-label">Channels (1–60, select multiple)</label>
+                      <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+                        {Array.from({ length: 60 }, (_, i) => i + 1).map((n) => {
+                          const selected = manualChannels.includes(n);
+                          return (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() => setManualChannels(selected ? manualChannels.filter((c) => c !== n) : [...manualChannels, n].sort((a, b) => a - b))}
+                              className={`w-9 h-9 rounded border text-sm font-medium transition-all ${
+                                selected ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-700/30 border-gray-600 text-gray-300 hover:border-gray-500'
+                              }`}
+                            >
+                              {n}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {manualChannels.length > 0 && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Selected: {manualChannels.sort((a, b) => a - b).join(', ')}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {(manualCardType === 'devicenet' || manualCardType === 'fieldbus' || manualCardType === 'serial') && (
+                    <>
+                      <div>
+                        <label className="form-label">Port (1–5, select one)</label>
+                        <div className="flex gap-2">
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() => setManualPort(manualPort === n ? null : n)}
+                              className={`w-10 h-10 rounded border text-sm font-medium transition-all ${
+                                manualPort === n ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-700/30 border-gray-600 text-gray-300 hover:border-gray-500'
+                              }`}
+                            >
+                              {n}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="form-label">Channels (optional, 1–60, select multiple)</label>
+                        <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+                          {Array.from({ length: 60 }, (_, i) => i + 1).map((n) => {
+                            const selected = manualChannels.includes(n);
+                            return (
+                              <button
+                                key={n}
+                                type="button"
+                                onClick={() => setManualChannels(selected ? manualChannels.filter((c) => c !== n) : [...manualChannels, n].sort((a, b) => a - b))}
+                                className={`w-9 h-9 rounded border text-sm font-medium transition-all ${
+                                  selected ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-700/30 border-gray-600 text-gray-300 hover:border-gray-500'
+                                }`}
+                              >
+                                {n}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {manualChannels.length > 0 && (
+                          <p className="text-xs text-gray-500 mt-1">Selected: {manualChannels.sort((a, b) => a - b).join(', ')}</p>
+                        )}
+                      </div>
+                    </>
+                  )}
+                  {manualCardType === 'eioc' && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="form-label">PDT</label>
+                        <input
+                          type="text"
+                          value={manualPdt}
+                          onChange={(e) => setManualPdt(e.target.value)}
+                          className="form-input"
+                          placeholder="PDT identifier"
+                        />
+                      </div>
+                      <div>
+                        <label className="form-label">LDT</label>
+                        <input
+                          type="text"
+                          value={manualLdt}
+                          onChange={(e) => setManualLdt(e.target.value)}
+                          className="form-input"
+                          placeholder="LDT identifier"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <div>
+                      <label className="form-label">DST (Device) – optional</label>
+                      <input
+                        type="text"
+                        value={manualDst}
+                        onChange={(e) => setManualDst(e.target.value)}
+                        className="form-input"
+                        placeholder="Device/DST if not from registry"
+                      />
+                    </div>
+                    <div>
+                    <label className="form-label">Error Type</label>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {errorTypes.map((type) => (
+                        <button
+                          key={type.value}
+                          type="button"
+                          onClick={() => { setSelectedErrorType(type.value); setErrorDescription(type.description); }}
+                          className={`p-3 rounded-lg border transition-all text-left ${
+                            selectedErrorType === type.value ? 'bg-blue-600 border-blue-400' : 'bg-gray-700/30 border-gray-600 hover:border-gray-500'
+                          }`}
+                        >
+                          <span className="text-lg">{type.icon}</span>
+                          <span className="ml-2 text-sm font-medium text-gray-200">{type.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  </div>
+                  <div>
+                    <label className="form-label">Description (optional)</label>
+                    <textarea
+                      value={errorDescription}
+                      onChange={(e) => setErrorDescription(e.target.value)}
+                      rows="2"
+                      className="form-textarea"
+                      placeholder="Additional details..."
+                    />
+                  </div>
                 </div>
               ) : flowStep === 'pick-error' ? (
                 /* ─── ERROR TYPE SELECTION ─── */
@@ -719,6 +977,18 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                       ? `Card ${manualCardNumber} (${manualCardType})`
                       : 'Manual entry'}
                   </p>
+                  {selectedDevices.length > 0 && (
+                    <div className="mb-4">
+                      <label className="form-label">DST (Device) – use if device doesn&apos;t have one</label>
+                      <input
+                        type="text"
+                        value={overrideDst}
+                        onChange={(e) => setOverrideDst(e.target.value)}
+                        className="form-input max-w-xs"
+                        placeholder="e.g. DST name when not from registry"
+                      />
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                     {errorTypes.map((type) => (
                       <button
@@ -854,12 +1124,6 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                       </button>
                     ))}
                   </div>
-                  <button
-                    onClick={() => setFlowStep('manual-entry')}
-                    className="text-sm text-blue-400 hover:text-blue-300"
-                  >
-                    Card not listed? Enter manually
-                  </button>
                 </div>
 
               ) : flowStep === 'pick-card-device' && selectedCard ? (
@@ -945,119 +1209,18 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                   </div>
                 </div>
 
-              ) : flowStep === 'manual-entry' ? (
-                /* ─── MANUAL ENTRY ─── */
-                <div>
-                  {ioDeviceData?.totalDevices > 0 && (
-                    <button onClick={() => setFlowStep('pick-card')}
-                      className="text-sm text-blue-400 hover:text-blue-300 mb-3 block">
-                      Back to card picker
-                    </button>
-                  )}
-                  <h4 className="text-gray-200 font-medium mb-3">Manual Error Entry</h4>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="form-label">Card Type</label>
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                        {cardTypes.map(ct => (
-                          <button
-                            key={ct.value}
-                            onClick={() => setManualCardType(ct.value)}
-                            className={`p-3 rounded-lg border text-sm font-medium transition-all ${
-                              manualCardType === ct.value
-                                ? 'bg-blue-600 border-blue-400 text-white'
-                                : 'bg-gray-700/30 border-gray-600 text-gray-300 hover:border-gray-500'
-                            }`}
-                          >
-                            {ct.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="form-label">Card Number</label>
-                        <input
-                          type="number"
-                          value={manualCardNumber}
-                          onChange={(e) => setManualCardNumber(e.target.value)}
-                          className="form-input"
-                          placeholder="e.g., 1"
-                        />
-                      </div>
-                      
-                      {manualCardType === 'hart' && (
-                        <div>
-                          <label className="form-label">Channel Number</label>
-                          <input
-                            type="number"
-                            value={manualChannel}
-                            onChange={(e) => setManualChannel(e.target.value)}
-                            className="form-input"
-                            placeholder="e.g., 1"
-                          />
-                        </div>
-                      )}
-                      
-                      {(manualCardType === 'devicenet' || manualCardType === 'fieldbus' || manualCardType === 'serial') && (
-                        <div>
-                          <label className="form-label">Port Number</label>
-                          <input
-                            type="text"
-                            value={manualPort}
-                            onChange={(e) => setManualPort(e.target.value)}
-                            className="form-input"
-                            placeholder="e.g., 1"
-                          />
-                        </div>
-                      )}
-                      
-                      {manualCardType === 'eioc' && (
-                        <>
-                          <div>
-                            <label className="form-label">PDT</label>
-                            <input
-                              type="text"
-                              value={manualPdt}
-                              onChange={(e) => setManualPdt(e.target.value)}
-                              className="form-input"
-                              placeholder="PDT identifier"
-                            />
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    
-                    {manualCardType === 'eioc' && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="form-label">LDT</label>
-                          <input
-                            type="text"
-                            value={manualLdt}
-                            onChange={(e) => setManualLdt(e.target.value)}
-                            className="form-input"
-                            placeholder="LDT identifier"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
               ) : null}
             </div>
 
             {/* Modal Footer */}
             <div className="px-6 py-4 border-t border-gray-700 flex justify-between items-center flex-shrink-0">
               <div>
-                {flowStep === 'pick-error' && (
+                {addErrorTab === 'detected' && flowStep === 'pick-error' && (
                   <button
+                    type="button"
                     onClick={() => {
                       if (selectedDevices.length > 0) {
                         setFlowStep(ioDeviceData?.isCioc ? 'pick-device' : 'pick-card-device');
-                      } else {
-                        setFlowStep('manual-entry');
                       }
                     }}
                     className="btn btn-secondary"
@@ -1067,11 +1230,31 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                 )}
               </div>
               <div className="flex gap-3">
-                <button onClick={closeModal} className="btn btn-secondary">Cancel</button>
-                
-                {flowStep === 'pick-error' ? (
+                <button type="button" onClick={closeModal} className="btn btn-secondary">Cancel</button>
+
+                {addErrorTab === 'manual' ? (
                   <button
-                    onClick={selectedDevices.length > 0 ? saveSmartErrors : saveManualErrors}
+                    type="button"
+                    onClick={saveManualErrors}
+                    disabled={
+                      !selectedErrorType ||
+                      !manualCardType ||
+                      manualCardNumber == null ||
+                      (manualCardType === 'hart' && manualChannels.length === 0) ||
+                      ((manualCardType === 'devicenet' || manualCardType === 'fieldbus' || manualCardType === 'serial') && manualPort == null) ||
+                      (manualCardType === 'eioc' && !manualPdt)
+                    }
+                    className="btn btn-primary"
+                  >
+                    Save Error{(
+                      (manualCardType === 'hart' && manualChannels.length > 1) ||
+                      ((manualCardType === 'devicenet' || manualCardType === 'fieldbus' || manualCardType === 'serial') && manualChannels.length > 1)
+                    ) ? 's' : ''}
+                  </button>
+                ) : flowStep === 'pick-error' ? (
+                  <button
+                    type="button"
+                    onClick={saveSmartErrors}
                     disabled={!selectedErrorType}
                     className="btn btn-primary"
                   >
@@ -1079,19 +1262,12 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                   </button>
                 ) : (flowStep === 'pick-device' || flowStep === 'pick-card-device') ? (
                   <button
+                    type="button"
                     onClick={() => setFlowStep('pick-error')}
                     disabled={selectedDevices.length === 0}
                     className="btn btn-primary"
                   >
                     Next: Select Error ({selectedDevices.length})
-                  </button>
-                ) : flowStep === 'manual-entry' ? (
-                  <button
-                    onClick={() => setFlowStep('pick-error')}
-                    disabled={!manualCardType || !manualCardNumber}
-                    className="btn btn-primary"
-                  >
-                    Next: Select Error
                   </button>
                 ) : null}
               </div>

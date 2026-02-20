@@ -73,15 +73,23 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
   let riskBreakdown = [];
   
   // Node maintenance risk: performance, I/O errors, HDD replacement
+  // Perf index 0-5: only <= 2 is risky. Free time 0-100%: only <= 28% is risky.
+  // Values 1-5 stored as free_time are treated as perf index (3,4,5 = good) and not flagged.
   nodeMaintenanceData.forEach(maintenance => {
     const nodeName = maintenance.node_name || `Node ${maintenance.node_id}`;
-    if (maintenance.performance_value != null && maintenance.performance_type) {
-      if (maintenance.performance_type === 'perf_index' && maintenance.performance_value <= 2) {
+    if (maintenance.performance_value == null || !maintenance.performance_type) return;
+    const pv = Number(maintenance.performance_value);
+    if (maintenance.performance_type === 'perf_index') {
+      if (pv <= 2) {
         const weight = 15;
         riskScore += weight;
         riskBreakdown.push(`${nodeName}: Poor performance index (${maintenance.performance_value}/5)`);
         moderateIssues.push(`${nodeName}: Performance index ${maintenance.performance_value}/5 indicates degraded controller performance`);
-      } else if (maintenance.performance_type === 'free_time' && maintenance.performance_value <= 28) {
+      }
+      // 3, 4, 5 = good, no risk
+    } else if (maintenance.performance_type === 'free_time') {
+      if (pv >= 1 && pv <= 5) return; // Likely mis-stored perf index (4 and 5 are good); do not flag as risky
+      if (pv <= 28) {
         const weight = 12;
         riskScore += weight;
         riskBreakdown.push(`${nodeName}: Low free time (${maintenance.performance_value}%)`);

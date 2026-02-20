@@ -373,6 +373,12 @@ export default function CustomerDetail() {
             <h3 className="text-lg font-semibold text-gray-100">ℹ️ Customer Information</h3>
           </div>
           <div className="card-body space-y-3">
+            {customer.alias && (
+              <div>
+                <div className="text-xs text-gray-500 uppercase">Alias</div>
+                <div className="text-gray-200 font-medium">{customer.alias}</div>
+              </div>
+            )}
             {customer.company_name && (
               <div>
                 <div className="text-xs text-gray-500 uppercase">Company Name</div>
@@ -685,6 +691,16 @@ export default function CustomerDetail() {
                     required
                     defaultValue={customer.name}
                     className="form-input"
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Alias</label>
+                  <input
+                    type="text"
+                    name="alias"
+                    defaultValue={customer.alias}
+                    className="form-input"
+                    placeholder="Short name for search and cards"
                   />
                 </div>
                 <div>

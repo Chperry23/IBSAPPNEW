@@ -43,6 +43,7 @@ const customerSchema = new mongoose.Schema({
   zip: { type: String },
   country: { type: String },
   dongle_id: { type: String },
+  alias: { type: String },
   uuid: { type: String, index: true },
   synced: { type: Number, default: 0 },
   device_id: { type: String, index: true },
@@ -549,6 +550,7 @@ const customerMetricHistorySchema = new mongoose.Schema({
   failed_components: { type: Number, default: 0 },
   cabinet_count: { type: Number, default: 0 },
   synced: { type: Number, default: 0 },
+  deleted: { type: Number, default: 0 },
   created_at: { type: Date, default: Date.now }
 }, { collection: 'customer_metric_history', versionKey: false });
 customerMetricHistorySchema.index({ customer_id: 1 });

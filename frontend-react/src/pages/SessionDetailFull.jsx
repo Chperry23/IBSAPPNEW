@@ -31,6 +31,7 @@ export default function SessionDetailFull() {
   const [selectedLocationId, setSelectedLocationId] = useState('');
   const [showCompleteSessionModal, setShowCompleteSessionModal] = useState(false);
   const [completeSaveToHistory, setCompleteSaveToHistory] = useState(true);
+  const [completionWarnings, setCompletionWarnings] = useState([]);
 
   useEffect(() => {
     loadSessionData();
@@ -315,9 +316,39 @@ export default function SessionDetailFull() {
     }
   };
 
-  const handleCompleteSession = () => {
+  const handleCompleteSession = async () => {
+    setCompletionWarnings([]);
     setShowCompleteSessionModal(true);
   };
+
+  useEffect(() => {
+    if (!showCompleteSessionModal || !id) return;
+    let cancelled = false;
+    const check = async () => {
+      const warnings = [];
+      try {
+        const [pmRes, _] = await Promise.all([
+          fetch(`/api/sessions/${id}/pm-notes`, { credentials: 'include' }),
+          Promise.resolve()
+        ]);
+        if (pmRes.ok) {
+          const pm = await pmRes.json();
+          const tasks = Array.isArray(pm?.common_tasks) ? pm.common_tasks : (typeof pm?.common_tasks === 'string' ? (() => { try { return JSON.parse(pm.common_tasks); } catch (_) { return []; } })() : []);
+          const hasNotes = (pm?.additional_work_notes?.trim()) || (pm?.troubleshooting_notes?.trim()) || (pm?.recommendations_notes?.trim()) || (Array.isArray(tasks) && tasks.length > 0);
+          if (!hasNotes) warnings.push('PM Notes');
+        } else warnings.push('PM Notes');
+      } catch (_) {
+        warnings.push('PM Notes');
+      }
+      const pendingCabinets = cabinets.filter(c => c.status !== 'completed').length;
+      if (cabinets.length > 0 && pendingCabinets > 0) {
+        warnings.push(`Cabinets (${pendingCabinets} not marked complete)`);
+      }
+      if (!cancelled) setCompletionWarnings(warnings);
+    };
+    check();
+    return () => { cancelled = true; };
+  }, [showCompleteSessionModal, id, cabinets]);
 
   const confirmCompleteSession = async () => {
     try {
@@ -429,6 +460,12 @@ export default function SessionDetailFull() {
                 <p className="text-gray-300 text-sm mb-4">
                   Mark &quot;{session.session_name}&quot; as completed? This will lock the session and create a snapshot of nodes.
                 </p>
+                {completionWarnings.length > 0 && (
+                  <div className="mb-4 p-3 rounded-lg bg-amber-900/30 border border-amber-600 text-amber-200 text-sm">
+                    <p className="font-medium mb-1">You didn&apos;t fill out: {completionWarnings.join(', ')}.</p>
+                    <p className="text-amber-200/90 text-xs">Are you sure you want to continue?</p>
+                  </div>
+                )}
                 <div className="mb-4 p-3 rounded-lg bg-gray-700/50 border border-gray-600">
                   <p className="text-xs text-gray-400 mb-3">
                     <strong className="text-gray-300">Optional:</strong> Save this session&apos;s metrics (error count, risk score, cabinet count, etc.) to this customer&apos;s history so you can view trends over time on the customer profile. You can choose to skip this.
@@ -444,8 +481,8 @@ export default function SessionDetailFull() {
                   </label>
                 </div>
                 <div className="flex gap-3 justify-end">
-                  <button onClick={() => setShowCompleteSessionModal(false)} className="btn btn-secondary">Cancel</button>
-                  <button onClick={confirmCompleteSession} className="btn btn-success">Complete session</button>
+                  <button onClick={() => { setShowCompleteSessionModal(false); setCompletionWarnings([]); }} className="btn btn-secondary">Cancel</button>
+                  <button onClick={confirmCompleteSession} className="btn btn-success">{completionWarnings.length > 0 ? 'Continue anyway' : 'Complete session'}</button>
                 </div>
               </div>
             </div>

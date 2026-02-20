@@ -217,6 +217,7 @@ class EnhancedMergeReplication {
   async pullFromMaster() {
     try {
       console.log('📥 Pulling changes from master database...');
+      await this.ensureSyncTablesSupportMasterIds();
       
       let totalPulled = 0;
       let totalConflicts = 0;
@@ -253,11 +254,6 @@ class EnhancedMergeReplication {
           const masterRecords = await Model.find(query).lean();
           console.log(`   📊 Found ${masterRecords.length} changed records on master`);
           
-          if (masterRecords.length === 0) {
-            results[tableName] = { pulled: 0, conflicts: 0, deleted: 0 };
-            continue;
-          }
-
           let pulledCount = 0;
           let conflictCount = 0;
           let deletedCount = 0;
@@ -283,12 +279,12 @@ class EnhancedMergeReplication {
             }
           }
 
-          // SECOND PASS: Check for records that exist on master but are missing/deleted locally
-          // This catches cases where local deleted a record but master has a newer/active version
+          // SECOND PASS: When we have lastSync, also pull records that exist on master but are missing locally.
+          // This fixes: local has 0 records (e.g. after wipe or dedupe on master) but master has many -
+          // the "changed since lastSync" query returns 0, so we must reconcile by pulling missing ones.
           if (lastSync) {
             console.log(`   🔍 Checking for missing/deleted local records...`);
             
-            // Get all active record IDs from master (limit to reasonable batch)
             const activeMasterIds = await Model.find({ deleted: { $ne: 1 } }).select('_id').limit(10000).lean();
             
             let reconciledCount = 0;
@@ -296,7 +292,6 @@ class EnhancedMergeReplication {
               try {
                 const localRecord = await this.getLocalRecord(tableName, _id);
                 
-                // If local doesn't exist OR local is deleted, pull from master
                 if (!localRecord || localRecord.deleted === 1) {
                   const masterRecord = await Model.findById(_id).lean();
                   if (masterRecord && masterRecord.deleted !== 1) {
@@ -358,9 +353,14 @@ class EnhancedMergeReplication {
     const masterData = this.convertMongoToSQLite(masterRecord);
     const recordId = masterData.id;
 
-    // Resolve customer_id by customer uuid so sessions/nodes link to the correct local customer
-    // (master and local can have different integer ids for the same customer)
-    if ((tableName === 'sessions' || tableName === 'nodes') && masterRecord.customer_id != null) {
+    // Resolve customer_id by customer uuid so sessions/nodes/sys_* link to the correct local customer
+    // (master and local can have different integer ids for the same customer; master may use ObjectId refs)
+    const tablesNeedingCustomerResolution = [
+      'sessions', 'nodes',
+      'sys_charms', 'sys_charms_io_cards', 'sys_controllers', 'sys_workstations', 'sys_smart_switches',
+      'sys_io_devices', 'sys_ams_systems', 'customer_metric_history'
+    ];
+    if (tablesNeedingCustomerResolution.includes(tableName) && masterRecord.customer_id != null) {
       masterData.customer_id = await this.resolveMasterCustomerIdToLocal(masterRecord.customer_id);
     }
 
@@ -916,6 +916,61 @@ class EnhancedMergeReplication {
   // ============================================================
   // SCHEMA SETUP & MIGRATION
   // ============================================================
+
+  /**
+   * Ensure sys_charms and sys_charms_io_cards use id TEXT so we can store
+   * MongoDB ObjectId from master. If table has id INTEGER, recreate with id TEXT and copy data.
+   */
+  async ensureSyncTablesSupportMasterIds() {
+    for (const tableName of ['sys_charms', 'sys_charms_io_cards']) {
+      try {
+        const columns = await new Promise((resolve, reject) => {
+          this.localDb.all(`PRAGMA table_info(${tableName})`, (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+          });
+        });
+        const idCol = columns.find((c) => c.name === 'id');
+        if (!idCol || String(idCol.type || '').toUpperCase().includes('TEXT')) {
+          continue;
+        }
+        const colList = columns.map((c) => {
+          const type = c.name === 'id' ? 'TEXT' : (c.type || 'TEXT');
+          const pk = c.name === 'id' ? ' PRIMARY KEY' : '';
+          return `${c.name} ${type}${pk}`;
+        }).join(', ');
+        const allNames = columns.map((c) => c.name).join(', ');
+        const selectList = columns.map((c) => c.name === 'id' ? 'CAST(id AS TEXT)' : c.name).join(', ');
+        await new Promise((resolve, reject) => {
+          this.localDb.run(`CREATE TABLE ${tableName}_sync_new (${colList})`, (err) => {
+            if (err) return reject(err);
+            resolve();
+          });
+        });
+        await new Promise((resolve, reject) => {
+          this.localDb.run(`INSERT INTO ${tableName}_sync_new (${allNames}) SELECT ${selectList} FROM ${tableName}`, (err) => {
+            if (err) return reject(err);
+            resolve();
+          });
+        });
+        await new Promise((resolve, reject) => {
+          this.localDb.run(`DROP TABLE ${tableName}`, (err) => {
+            if (err) return reject(err);
+            resolve();
+          });
+        });
+        await new Promise((resolve, reject) => {
+          this.localDb.run(`ALTER TABLE ${tableName}_sync_new RENAME TO ${tableName}`, (err) => {
+            if (err) return reject(err);
+            resolve();
+          });
+        });
+        console.log(`   🔧 Migrated ${tableName} to id TEXT for sync`);
+      } catch (e) {
+        console.warn(`   ⚠️ Migration ${tableName} (id TEXT) skipped:`, e.message);
+      }
+    }
+  }
 
   async ensureSyncColumns() {
     // Ensure device ID is initialized

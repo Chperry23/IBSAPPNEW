@@ -81,6 +81,7 @@ function initializeDatabase() {
         name TEXT NOT NULL,
         location TEXT,
         contact_info TEXT,
+        alias TEXT,
         uuid TEXT,
         synced INTEGER DEFAULT 0,
         device_id TEXT,
@@ -102,6 +103,7 @@ function initializeDatabase() {
       db.run(`ALTER TABLE customers ADD COLUMN synced INTEGER DEFAULT 0`, (err) => {});
       db.run(`ALTER TABLE customers ADD COLUMN device_id TEXT`, (err) => {});
       db.run(`ALTER TABLE customers ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {});
+      db.run(`ALTER TABLE customers ADD COLUMN alias TEXT`, (err) => {});
 
       // Sessions table
       db.run(`CREATE TABLE IF NOT EXISTS sessions (
@@ -415,6 +417,17 @@ function initializeDatabase() {
       addColumnIfNotExists('session_diagnostics', 'ldt', 'TEXT');
       addColumnIfNotExists('session_diagnostics', 'card_display', 'TEXT');
 
+      // Customer custom equipment models (e.g. Switch model names added by user; shared for that customer)
+      db.run(`CREATE TABLE IF NOT EXISTS customer_custom_equipment_models (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_id INTEGER NOT NULL,
+        equipment_type TEXT NOT NULL,
+        model_name TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(customer_id, equipment_type, model_name),
+        FOREIGN KEY (customer_id) REFERENCES customers(id)
+      )`);
+
       // Customer metric history: error count, risk score, etc. per PM completion (for trend over time)
       db.run(`CREATE TABLE IF NOT EXISTS customer_metric_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -429,10 +442,12 @@ function initializeDatabase() {
         failed_components INTEGER DEFAULT 0,
         cabinet_count INTEGER DEFAULT 0,
         synced INTEGER DEFAULT 0,
+        deleted INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (customer_id) REFERENCES customers(id),
         FOREIGN KEY (session_id) REFERENCES sessions(id)
       )`);
+      db.run(`ALTER TABLE customer_metric_history ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {});
 
       // Add new columns for enhanced node maintenance
       db.run(

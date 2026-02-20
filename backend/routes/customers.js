@@ -35,6 +35,47 @@ router.get('/with-counts', requireAuth, async (req, res) => {
   }
 });
 
+// Get custom equipment models for a customer by type (e.g. Switch)
+router.get('/:customerId/custom-models/:type', requireAuth, async (req, res) => {
+  const customerId = parseInt(req.params.customerId);
+  const equipmentType = (req.params.type || '').trim();
+  if (!equipmentType) {
+    return res.status(400).json({ error: 'Equipment type is required' });
+  }
+  try {
+    const rows = await db.prepare(
+      'SELECT model_name FROM customer_custom_equipment_models WHERE customer_id = ? AND equipment_type = ? ORDER BY model_name'
+    ).all([customerId, equipmentType]);
+    res.json(rows.map(r => r.model_name));
+  } catch (error) {
+    console.error('Get custom models error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Add custom equipment model for a customer (saved so others can use the selection)
+router.post('/:customerId/custom-models', requireAuth, async (req, res) => {
+  const customerId = parseInt(req.params.customerId);
+  const { equipment_type, model_name } = req.body;
+  const name = (model_name || '').trim();
+  const type = (equipment_type || '').trim();
+  if (!name || !type) {
+    return res.status(400).json({ error: 'equipment_type and model_name are required' });
+  }
+  try {
+    await db.prepare(
+      'INSERT OR IGNORE INTO customer_custom_equipment_models (customer_id, equipment_type, model_name) VALUES (?, ?, ?)'
+    ).run([customerId, type, name]);
+    const rows = await db.prepare(
+      'SELECT model_name FROM customer_custom_equipment_models WHERE customer_id = ? AND equipment_type = ? ORDER BY model_name'
+    ).all([customerId, type]);
+    res.json({ success: true, models: rows.map(r => r.model_name) });
+  } catch (error) {
+    console.error('Add custom model error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 // Get individual customer
 router.get('/:customerId', requireAuth, async (req, res) => {
   const customerId = parseInt(req.params.customerId);
@@ -55,16 +96,17 @@ router.get('/:customerId', requireAuth, async (req, res) => {
 
 // Create customer
 router.post('/', requireAuth, async (req, res) => {
-  const { name, location, contact_info } = req.body;
+  const { name, location, contact_info, alias } = req.body;
   
   try {
-    const result = await db.prepare('INSERT INTO customers (name, location, contact_info) VALUES (?, ?, ?)').run([name, location, contact_info]);
+    const result = await db.prepare('INSERT INTO customers (name, location, contact_info, alias) VALUES (?, ?, ?, ?)').run([name, location, contact_info || null, alias || null]);
     
     const customer = {
       id: result.lastInsertRowid,
       name,
       location,
       contact_info,
+      alias: alias || null,
       created_at: new Date().toISOString()
     };
     
@@ -80,7 +122,7 @@ router.put('/:customerId', requireAuth, async (req, res) => {
   const customerId = parseInt(req.params.customerId);
   const { 
     name, location, contact_info, contact_person, email, phone, address,
-    system_username, system_password, company_name, street_address, city, state, zip, country, dongle_id
+    system_username, system_password, company_name, street_address, city, state, zip, country, dongle_id, alias
   } = req.body;
   
   try {
@@ -89,14 +131,14 @@ router.put('/:customerId', requireAuth, async (req, res) => {
         name = ?, location = ?, contact_info = ?, 
         contact_person = ?, email = ?, phone = ?, address = ?,
         system_username = ?, system_password = ?,
-        company_name = ?, street_address = ?, city = ?, state = ?, zip = ?, country = ?, dongle_id = ?,
+        company_name = ?, street_address = ?, city = ?, state = ?, zip = ?, country = ?, dongle_id = ?, alias = ?,
         updated_at = CURRENT_TIMESTAMP 
       WHERE id = ?
     `).run([
       name, location, contact_info, 
       contact_person, email, phone, address,
       system_username, system_password,
-      company_name, street_address, city, state, zip, country, dongle_id,
+      company_name, street_address, city, state, zip, country, dongle_id, alias ?? null,
       customerId
     ]);
     

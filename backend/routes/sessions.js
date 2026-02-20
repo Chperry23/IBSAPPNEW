@@ -9,6 +9,7 @@ const { getSharedStyles, generateSingleCabinetHtml, generateRiskAssessmentPage, 
 const { generateMaintenanceReportPage } = require('../services/pdf/maintenanceReport');
 const { generateDiagnosticsSummary, generateControllerBreakdown } = require('../services/pdf/diagnosticsReport');
 const { generateRiskAssessment } = require('../utils/risk-assessment');
+const { getDefaultPerformanceType } = require('../utils/controllerType');
 
 // Helper function to check if session is completed
 async function isSessionCompleted(sessionId) {
@@ -338,24 +339,34 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
       nodes.push(...ws, ...ctrl, ...sw, ...cioc);
       const maintByNode = {};
       maintenanceRows.forEach(m => { maintByNode[m.node_id] = m; });
-      nodeMaintenanceData = nodes.map(n => ({
-        ...n,
-        serial: n.serial ?? null,
-        dv_checked: Boolean(maintByNode[n.id]?.dv_checked),
-        os_checked: Boolean(maintByNode[n.id]?.os_checked),
-        macafee_checked: Boolean(maintByNode[n.id]?.macafee_checked),
-        free_time: maintByNode[n.id]?.free_time || '',
-        redundancy_checked: Boolean(maintByNode[n.id]?.redundancy_checked),
-        cold_restart_checked: Boolean(maintByNode[n.id]?.cold_restart_checked),
-        no_errors_checked: maintByNode[n.id] !== undefined ? Boolean(maintByNode[n.id].no_errors_checked) : true,
-        hdd_replaced: Boolean(maintByNode[n.id]?.hdd_replaced),
-        performance_type: maintByNode[n.id]?.performance_type || 'free_time',
-        performance_value: maintByNode[n.id]?.performance_value ?? null,
-        hf_updated: Boolean(maintByNode[n.id]?.hf_updated),
-        firmware_updated_checked: Boolean(maintByNode[n.id]?.firmware_updated_checked),
-        notes: maintByNode[n.id]?.notes || '',
-        completed: Boolean(maintByNode[n.id]?.completed),
-      }));
+      nodeMaintenanceData = nodes.map(n => {
+        const storedType = maintByNode[n.id]?.performance_type || null;
+        const storedValue = maintByNode[n.id]?.performance_value ?? null;
+        // Infer performance_type when missing or when value 1-5 was wrongly stored as free_time (perf index scale)
+        let performance_type = storedType || 'free_time';
+        if (!storedType || (storedType === 'free_time' && storedValue >= 1 && storedValue <= 5)) {
+          const inferred = getDefaultPerformanceType(n);
+          if (inferred) performance_type = inferred;
+        }
+        return {
+          ...n,
+          serial: n.serial ?? null,
+          dv_checked: Boolean(maintByNode[n.id]?.dv_checked),
+          os_checked: Boolean(maintByNode[n.id]?.os_checked),
+          macafee_checked: Boolean(maintByNode[n.id]?.macafee_checked),
+          free_time: maintByNode[n.id]?.free_time || '',
+          redundancy_checked: Boolean(maintByNode[n.id]?.redundancy_checked),
+          cold_restart_checked: Boolean(maintByNode[n.id]?.cold_restart_checked),
+          no_errors_checked: maintByNode[n.id] !== undefined ? Boolean(maintByNode[n.id].no_errors_checked) : true,
+          hdd_replaced: Boolean(maintByNode[n.id]?.hdd_replaced),
+          performance_type,
+          performance_value: storedValue,
+          hf_updated: Boolean(maintByNode[n.id]?.hf_updated),
+          firmware_updated_checked: Boolean(maintByNode[n.id]?.firmware_updated_checked),
+          notes: maintByNode[n.id]?.notes || '',
+          completed: Boolean(maintByNode[n.id]?.completed),
+        };
+      });
     }
 
     const diagnostics = await db.prepare(`
@@ -645,23 +656,32 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
         nodes.push(...ws, ...ctrl, ...sw, ...cioc);
         const maintByNode = {};
         maintenanceRows.forEach((m) => { maintByNode[m.node_id] = m; });
-        const nodeMaintenanceData = nodes.map((n) => ({
-          ...n,
-          dv_checked: Boolean(maintByNode[n.id]?.dv_checked),
-          os_checked: Boolean(maintByNode[n.id]?.os_checked),
-          macafee_checked: Boolean(maintByNode[n.id]?.macafee_checked),
-          free_time: maintByNode[n.id]?.free_time || '',
-          redundancy_checked: Boolean(maintByNode[n.id]?.redundancy_checked),
-          cold_restart_checked: Boolean(maintByNode[n.id]?.cold_restart_checked),
-          no_errors_checked: maintByNode[n.id] !== undefined ? Boolean(maintByNode[n.id].no_errors_checked) : true,
-          hdd_replaced: Boolean(maintByNode[n.id]?.hdd_replaced),
-          performance_type: maintByNode[n.id]?.performance_type || 'free_time',
-          performance_value: maintByNode[n.id]?.performance_value ?? null,
-          hf_updated: Boolean(maintByNode[n.id]?.hf_updated),
-          firmware_updated_checked: Boolean(maintByNode[n.id]?.firmware_updated_checked),
-          notes: maintByNode[n.id]?.notes || '',
-          completed: Boolean(maintByNode[n.id]?.completed),
-        }));
+        const nodeMaintenanceData = nodes.map((n) => {
+          const storedType = maintByNode[n.id]?.performance_type || null;
+          const storedValue = maintByNode[n.id]?.performance_value ?? null;
+          let performance_type = storedType || 'free_time';
+          if (!storedType || (storedType === 'free_time' && storedValue >= 1 && storedValue <= 5)) {
+            const inferred = getDefaultPerformanceType(n);
+            if (inferred) performance_type = inferred;
+          }
+          return {
+            ...n,
+            dv_checked: Boolean(maintByNode[n.id]?.dv_checked),
+            os_checked: Boolean(maintByNode[n.id]?.os_checked),
+            macafee_checked: Boolean(maintByNode[n.id]?.macafee_checked),
+            free_time: maintByNode[n.id]?.free_time || '',
+            redundancy_checked: Boolean(maintByNode[n.id]?.redundancy_checked),
+            cold_restart_checked: Boolean(maintByNode[n.id]?.cold_restart_checked),
+            no_errors_checked: maintByNode[n.id] !== undefined ? Boolean(maintByNode[n.id].no_errors_checked) : true,
+            hdd_replaced: Boolean(maintByNode[n.id]?.hdd_replaced),
+            performance_type,
+            performance_value: storedValue,
+            hf_updated: Boolean(maintByNode[n.id]?.hf_updated),
+            firmware_updated_checked: Boolean(maintByNode[n.id]?.firmware_updated_checked),
+            notes: maintByNode[n.id]?.notes || '',
+            completed: Boolean(maintByNode[n.id]?.completed),
+          };
+        });
         const riskResult = generateRiskAssessment(cabinets, nodeMaintenanceData);
         const diagCount = await db.prepare(
           'SELECT COUNT(*) as c FROM session_diagnostics WHERE session_id = ? AND (deleted IS NULL OR deleted = 0)'
@@ -928,20 +948,37 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
     // Node maintenance will be created fresh when the user opens nodes in the new session
     console.log('🧹 Skipping node maintenance and diagnostics copy (cleared for new session)');
     
-    // Get the new session data
+    // Get the new session data and compute controller assignment stats (so UI shows correct count)
     const newSession = await db.prepare(`
       SELECT s.*, c.name as customer_name, c.location
       FROM sessions s
       LEFT JOIN customers c ON s.customer_id = c.id
       WHERE s.id = ?
     `).get([newSessionId]);
+    const newCabinets = await db.prepare('SELECT id FROM cabinets WHERE pm_session_id = ?').all([newSessionId]);
+    const newCabinetIds = newCabinets.map(c => c.id);
+    let controllerAssignmentStats = { assigned: 0, total: 0 };
+    const custId = newSession.customer_id;
+    if (custId) {
+      try {
+        const ctrlTotal = await db.prepare('SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ?').get([custId]);
+        const ciocTotal = await db.prepare('SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ?').get([custId]);
+        controllerAssignmentStats.total = (ctrlTotal?.count ?? 0) + (ciocTotal?.count ?? 0);
+        if (newCabinetIds.length > 0) {
+          const placeholders = newCabinetIds.map(() => '?').join(',');
+          const ctrlAssigned = await db.prepare(`SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ? AND assigned_cabinet_id IN (${placeholders})`).get([custId, ...newCabinetIds]);
+          const ciocAssigned = await db.prepare(`SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ? AND assigned_cabinet_id IN (${placeholders})`).get([custId, ...newCabinetIds]);
+          controllerAssignmentStats.assigned = (ctrlAssigned?.count ?? 0) + (ciocAssigned?.count ?? 0);
+        }
+      } catch (e) { /* ignore */ }
+    }
     
     console.log('✅ DUPLICATE SESSION COMPLETED');
     console.log('📋 New session data:', newSession);
     
     res.json({ 
       success: true, 
-      session: newSession,
+      session: { ...newSession, controllerAssignmentStats },
       message: 'Session duplicated successfully'
     });
   } catch (error) {

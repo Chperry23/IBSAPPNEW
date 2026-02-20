@@ -217,13 +217,29 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
     showMessage(`All computers ${field.replace(/_/g, ' ')} checked!`, 'success');
   };
 
+  // Align with backend: perf_index 0-5 (good when 3,4,5), free_time 0-100% (good when >28%)
   const getControllerType = (node) => {
     const model = (node.model || '').toLowerCase();
-    if (model.includes('mq') || model.includes('pk') || model.includes('sq') || model.includes('sz') || model.includes('sx'))
-      return { displayType: node.model, perfType: 'perf_index', min: 1, max: 5 };
-    if (model.includes('md') || model.includes('mx') || model.includes('ve'))
-      return { displayType: node.model, perfType: 'free_time', min: 1, max: 100 };
-    return { displayType: node.node_type, perfType: 'free_time', min: 1, max: 100 };
+    const nodeType = (node.node_type || '').toLowerCase();
+    const nodeName = (node.node_name || '').toLowerCase();
+    // Performance Index controllers: S-Series (SE*, SZ*, SX*, SQ*, MQ*), CSLS, SIS, PK, EIOC
+    if (nodeType.startsWith('se') || nodeType.startsWith('sz') || nodeType.startsWith('sx') ||
+        nodeType.startsWith('sq') || nodeType.startsWith('mq') || nodeType.includes('csls') ||
+        nodeType.includes('pk') || nodeType.includes('eioc') || nodeType.includes('sis') ||
+        (nodeType.includes('kl') && nodeType.includes('ba1')) || nodeName.includes('csls') || nodeName.includes('eioc') ||
+        model.includes('mq') || model.includes('pk') || model.includes('sq') || model.includes('sz') || model.includes('sx') ||
+        model.includes('sx controller') || model.includes('sz controller') || model.includes('sq controller') || model.includes('mq controller') ||
+        model.includes('csls') || model.includes('logic solver') || model.includes('sis') || model.includes('pk controller')) {
+      return { displayType: node.model || node.node_type, perfType: 'perf_index', min: 1, max: 5 };
+    }
+    // Free Time controllers: M-Series (VE*, MD*, MX*), SD Plus, CIOC
+    if (nodeType.startsWith('ve') || nodeType.startsWith('md') || nodeType.startsWith('mx') ||
+        nodeType.includes('sd plus') || nodeType.includes('cioc') ||
+        model.includes('md') || model.includes('mx') || model.includes('ve') ||
+        model.includes('md controller') || model.includes('mx controller') || model.includes('sd plus') || model.includes('cioc')) {
+      return { displayType: node.model || node.node_type, perfType: 'free_time', min: 1, max: 100 };
+    }
+    return { displayType: node.model || node.node_type, perfType: 'free_time', min: 1, max: 100 };
   };
 
   const addCustomNode = async (nodeType) => {
@@ -466,13 +482,21 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                                 value={maint.performance_value || ''}
                                 onChange={(e) => {
                                   const val = parseInt(e.target.value);
-                                  // Update state immediately
                                   const updated = { ...maintenanceData };
                                   if (!updated[controller.id]) updated[controller.id] = {};
                                   updated[controller.id].performance_value = val;
+                                  updated[controller.id].performance_type = typeInfo.perfType;
                                   setMaintenanceData(updated);
                                 }}
-                                onBlur={(e) => autoSave(controller.id, 'performance_value', parseInt(e.target.value))}
+                                onBlur={(e) => {
+                                  const val = parseInt(e.target.value);
+                                  const updated = { ...maintenanceData };
+                                  if (!updated[controller.id]) updated[controller.id] = {};
+                                  updated[controller.id].performance_value = val;
+                                  updated[controller.id].performance_type = typeInfo.perfType;
+                                  setMaintenanceData(updated);
+                                  performSave(updated);
+                                }}
                                 disabled={isCompleted}
                                 className="w-16 px-2 py-1 text-center bg-gray-700 border border-gray-600 rounded text-gray-200 text-sm"
                                 placeholder={`${typeInfo.min}-${typeInfo.max}`}

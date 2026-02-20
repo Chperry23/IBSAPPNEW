@@ -115,6 +115,7 @@ export default function Customers() {
       const search = searchTerm.toLowerCase();
       return (
         customer.name.toLowerCase().includes(search) ||
+        (customer.alias && customer.alias.toLowerCase().includes(search)) ||
         (customer.location && customer.location.toLowerCase().includes(search)) ||
         (customer.contact_info && customer.contact_info.toLowerCase().includes(search)) ||
         (customer.contact_person && customer.contact_person.toLowerCase().includes(search)) ||
@@ -183,7 +184,7 @@ export default function Customers() {
             <div className="flex-1">
               <input
                 type="text"
-                placeholder="🔍 Search customers by name, location, contact..."
+                placeholder="🔍 Search customers by name, alias, location, contact..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="form-input"
@@ -246,6 +247,11 @@ export default function Customers() {
                 <div className="card-header">
                   <h3 className="text-lg font-semibold text-gray-100">
                     {customer.dongle_id || customer.name}
+                    {customer.alias && (
+                      <span className="ml-2 text-xs px-2 py-0.5 rounded bg-blue-900/50 text-blue-200 font-normal">
+                        {customer.alias}
+                      </span>
+                    )}
                   </h3>
                 </div>
                 <div className="card-body">
@@ -371,6 +377,16 @@ export default function Customers() {
                     required
                     defaultValue={editingCustomer?.name}
                     className="form-input"
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Alias</label>
+                  <input
+                    type="text"
+                    name="alias"
+                    defaultValue={editingCustomer?.alias}
+                    className="form-input"
+                    placeholder="Short name for search and cards"
                   />
                 </div>
                 <div>

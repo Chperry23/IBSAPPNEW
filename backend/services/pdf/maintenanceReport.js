@@ -1,4 +1,4 @@
-const { getControllerType } = require('../../utils/controllerType');
+const { getControllerType, getDefaultPerformanceType } = require('../../utils/controllerType');
 
 function generateMaintenanceReportPage(nodeMaintenanceData) {
   if (!nodeMaintenanceData || nodeMaintenanceData.length === 0) {
@@ -45,47 +45,6 @@ function generateMaintenanceReportPage(nodeMaintenanceData) {
     return nodeType.includes('switch') || 
            nodeType.includes('network');
   });
-
-  const getDefaultPerformanceType = (node) => {
-    // Use node_type field (contains short codes like SE3007, KL2001X1-BA1) for performance detection
-    const nodeType = (node.node_type || '').toLowerCase();
-    const nodeName = (node.node_name || '').toLowerCase();
-    const model = (node.model || '').toLowerCase();
-    
-    // Performance Index controllers: S-Series codes (SE*, SZ*, SX*, SQ*, MQ*), CSLS, SIS, PK, EIOC
-    if (nodeType.startsWith('se') || nodeType.startsWith('sz') || 
-        nodeType.startsWith('sx') || nodeType.startsWith('sq') ||
-        nodeType.startsWith('mq') ||
-        nodeType.includes('csls') || nodeType.includes('pk') ||
-        nodeType.includes('eioc') || nodeType.includes('sis') ||
-        (nodeType.includes('kl') && nodeType.includes('ba1'))) { // CHARM Logic Solver codes
-      return 'perf_index';
-    }
-    
-    // Free Time controllers: M-Series codes (VE*, MD*, MX*), SD Plus, CIOC
-    if (nodeType.startsWith('ve') || nodeType.startsWith('md') || 
-        nodeType.startsWith('mx') ||
-        nodeType.includes('sd plus') || nodeType.includes('cioc')) {
-      return 'free_time';
-    }
-    
-         // Fallback to model field patterns (for full descriptions)
-     if (model.includes('sx controller') || model.includes('sz controller') || 
-         model.includes('sq controller') || model.includes('mq controller') ||
-         model.includes('csls') || model.includes('logic solver') || 
-         model.includes('sis') || model.includes('pk') || 
-         model.includes('pk controller')) {
-       return 'perf_index';
-     }
-    
-    if (model.includes('md controller') || model.includes('mx controller') || 
-        model.includes('md plus') || model.includes('sd plus') || 
-        model.includes('cioc')) {
-      return 'free_time';
-    }
-    
-    return null; // Unable to determine
-  };
 
   const formatPerformance = (node) => {
     if (!node.performance_value || !node.performance_type) return 'N/A';
