@@ -196,8 +196,28 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
       }
     }
     
-    // If this is an active session, merge with maintenance data (by node_id)
+    // If this is an active session, pull in custom nodes and merge with maintenance data
     if (sessionId) {
+      // Load custom nodes that were added to this session but live in the legacy nodes table
+      const customNodes = await db.prepare(`
+        SELECT n.id, n.node_name, n.node_type, n.model, n.serial, n.firmware, n.version,
+               'active' as status, n.redundant, n.customer_id,
+               n.assigned_cabinet_id
+        FROM nodes n
+        INNER JOIN session_node_maintenance m ON m.node_id = n.id
+        WHERE m.session_id = ? AND m.is_custom_node = 1
+      `).all([sessionId]);
+
+      const existingIds = new Set(nodes.map(n => String(n.id)));
+      for (const cn of customNodes) {
+        if (!existingIds.has(String(cn.id))) {
+          nodes.push(cn);
+        }
+      }
+      if (customNodes.length > 0) {
+        console.log(`   🔧 Merged ${customNodes.length} custom nodes from session ${sessionId}`);
+      }
+
       const maintenanceData = await db.prepare(`
         SELECT * FROM session_node_maintenance WHERE session_id = ?
       `).all([sessionId]);
@@ -219,7 +239,7 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
           node.cold_restart_checked = Boolean(maint.cold_restart_checked);
           node.no_errors_checked = Boolean(maint.no_errors_checked);
           node.hdd_replaced = Boolean(maint.hdd_replaced);
-          node.performance_type = maint.performance_type || 'free_time';
+          node.performance_type = maint.performance_type || null;
           node.performance_value = maint.performance_value;
           node.firmware_updated_checked = Boolean(maint.firmware_updated_checked);
           node.notes = maint.notes || '';
@@ -235,7 +255,7 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
           node.cold_restart_checked = false;
           node.no_errors_checked = true; // Default to "No Error"
           node.hdd_replaced = false;
-          node.performance_type = 'free_time';
+          node.performance_type = null;
           node.performance_value = null;
           node.firmware_updated_checked = false;
           node.notes = '';

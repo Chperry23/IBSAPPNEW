@@ -50,6 +50,20 @@ function createApp(options = {}) {
     cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 },
   }));
 
+  // Build version endpoint — serves build-info.json (no auth required)
+  app.get('/api/version', (req, res) => {
+    const infoPath = path.join(appRoot, 'build-info.json');
+    try {
+      if (fs.existsSync(infoPath)) {
+        const info = JSON.parse(fs.readFileSync(infoPath, 'utf8'));
+        return res.json(info);
+      }
+    } catch (e) { /* fall through */ }
+    // Fallback when no build-info.json exists (dev mode)
+    const pkg = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));
+    res.json({ version: pkg.version, buildId: 'dev', buildDate: null, git: null });
+  });
+
   app.use(express.static(staticPath));
   if (staticPath !== path.join(appRoot, 'frontend', 'public')) {
     app.use('/assets', express.static(path.join(staticPath, 'assets')));

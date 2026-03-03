@@ -324,7 +324,7 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
       });
     }
 
-    // Node maintenance data: use same node source as UI (sys_*) and merge with session_node_maintenance by node_id
+    // Node maintenance data: use same node source as UI (sys_* + custom nodes) and merge with session_node_maintenance by node_id
     let nodeMaintenanceData = [];
     if (session.customer_id) {
       const maintenanceRows = await db.prepare(`
@@ -337,6 +337,17 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
       const sw = await db.prepare(`SELECT id, name as node_name, 'Smart Network Devices' as node_type, model, serial_number as serial FROM sys_smart_switches WHERE customer_id = ?`).all([session.customer_id]);
       const cioc = await db.prepare(`SELECT id, name as node_name, 'CIOC' as node_type, model, serial_number as serial FROM sys_charms_io_cards WHERE customer_id = ?`).all([session.customer_id]);
       nodes.push(...ws, ...ctrl, ...sw, ...cioc);
+      // Include custom nodes from legacy nodes table
+      const customNodes = await db.prepare(`
+        SELECT n.id, n.node_name, n.node_type, n.model, n.serial
+        FROM nodes n
+        INNER JOIN session_node_maintenance m ON m.node_id = n.id
+        WHERE m.session_id = ? AND m.is_custom_node = 1
+      `).all([sessionId]);
+      const existingIds = new Set(nodes.map(n => String(n.id)));
+      for (const cn of customNodes) {
+        if (!existingIds.has(String(cn.id))) nodes.push(cn);
+      }
       const maintByNode = {};
       maintenanceRows.forEach(m => { maintByNode[m.node_id] = m; });
       nodeMaintenanceData = nodes.map(n => {
@@ -649,11 +660,22 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
           FROM session_node_maintenance WHERE session_id = ?
         `).all([sessionId]);
         const nodes = [];
-        const ws = await db.prepare('SELECT id, name as node_name, type as node_type FROM sys_workstations WHERE customer_id = ?').all([session.customer_id]);
-        const ctrl = await db.prepare("SELECT id, name as node_name, 'Controller' as node_type FROM sys_controllers WHERE customer_id = ?").all([session.customer_id]);
-        const sw = await db.prepare("SELECT id, name as node_name, 'Smart Network Devices' as node_type FROM sys_smart_switches WHERE customer_id = ?").all([session.customer_id]);
-        const cioc = await db.prepare("SELECT id, name as node_name, 'CIOC' as node_type FROM sys_charms_io_cards WHERE customer_id = ?").all([session.customer_id]);
+        const ws = await db.prepare('SELECT id, name as node_name, type as node_type, model FROM sys_workstations WHERE customer_id = ?').all([session.customer_id]);
+        const ctrl = await db.prepare("SELECT id, name as node_name, 'Controller' as node_type, model FROM sys_controllers WHERE customer_id = ?").all([session.customer_id]);
+        const sw = await db.prepare("SELECT id, name as node_name, 'Smart Network Devices' as node_type, model FROM sys_smart_switches WHERE customer_id = ?").all([session.customer_id]);
+        const cioc = await db.prepare("SELECT id, name as node_name, 'CIOC' as node_type, model FROM sys_charms_io_cards WHERE customer_id = ?").all([session.customer_id]);
         nodes.push(...ws, ...ctrl, ...sw, ...cioc);
+        // Include custom nodes from legacy nodes table
+        const histCustomNodes = await db.prepare(`
+          SELECT n.id, n.node_name, n.node_type, n.model
+          FROM nodes n
+          INNER JOIN session_node_maintenance m ON m.node_id = n.id
+          WHERE m.session_id = ? AND m.is_custom_node = 1
+        `).all([sessionId]);
+        const histExistingIds = new Set(nodes.map(n => String(n.id)));
+        for (const cn of histCustomNodes) {
+          if (!histExistingIds.has(String(cn.id))) nodes.push(cn);
+        }
         const maintByNode = {};
         maintenanceRows.forEach((m) => { maintByNode[m.node_id] = m; });
         const nodeMaintenanceData = nodes.map((n) => {

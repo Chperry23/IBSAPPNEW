@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import SoundToggle from './SoundToggle';
@@ -6,6 +7,14 @@ export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = window.location.pathname;
+  const [buildInfo, setBuildInfo] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/version')
+      .then(r => r.ok ? r.json() : null)
+      .then(info => { if (info) setBuildInfo(info); })
+      .catch(() => {});
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -80,6 +89,14 @@ export default function Layout({ children }) {
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              {buildInfo && (
+                <span
+                  className="text-xs text-gray-500 font-mono cursor-default"
+                  title={`Build: ${buildInfo.buildId}\n${buildInfo.buildDateHuman || ''}\nGit: ${buildInfo.git?.commit || 'N/A'}`}
+                >
+                  v{buildInfo.version}{buildInfo.buildId !== 'dev' ? `-${buildInfo.buildId.split('-').slice(1, 2)[0]}` : '-dev'}
+                </span>
+              )}
               {user && (
                 <>
                   <span className="text-sm text-gray-400">👤 {user.username}</span>

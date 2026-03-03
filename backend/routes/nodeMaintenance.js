@@ -30,7 +30,7 @@ router.get('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
         cold_restart_checked: Boolean(item.cold_restart_checked),
         no_errors_checked: Boolean(item.no_errors_checked),
         hdd_replaced: Boolean(item.hdd_replaced),
-        performance_type: item.performance_type || 'free_time',
+        performance_type: item.performance_type || null,
         performance_value: item.performance_value || null,
         hf_updated: Boolean(item.hf_updated),
         firmware_updated_checked: Boolean(item.firmware_updated_checked),
@@ -67,7 +67,8 @@ router.post('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
                      (maintenance.no_errors_checked !== undefined) ||
                      maintenance.hdd_replaced || maintenance.hf_updated ||
                      maintenance.firmware_updated_checked || (maintenance.free_time && String(maintenance.free_time).trim()) ||
-                     maintenance.performance_value != null || (maintenance.notes && String(maintenance.notes).trim()) ||
+                     maintenance.performance_type || maintenance.performance_value != null ||
+                     (maintenance.notes && String(maintenance.notes).trim()) ||
                      maintenance.is_custom_node || maintenance.completed;
       
       if (!hasData) continue;

@@ -92,10 +92,17 @@ export default function CustomerDetail() {
     if (fileInput) {
       const reader = new FileReader();
       reader.onload = async (event) => {
-        xmlText = event.target.result;
+        const buf = new Uint8Array(event.target.result);
+        let encoding = 'UTF-8';
+        if (buf.length >= 2) {
+          if (buf[0] === 0xFF && buf[1] === 0xFE) encoding = 'UTF-16LE';
+          else if (buf[0] === 0xFE && buf[1] === 0xFF) encoding = 'UTF-16BE';
+        }
+        const decoder = new TextDecoder(encoding);
+        xmlText = decoder.decode(buf);
         await processXMLImport(xmlText);
       };
-      reader.readAsText(fileInput);
+      reader.readAsArrayBuffer(fileInput);
       return;
     } else if (textInput) {
       xmlText = textInput;

@@ -13,7 +13,16 @@ const path = require('path');
 console.log('================================================================');
 console.log('  ECI CABINET PM - STANDALONE EXECUTABLE BUILDER');
 console.log('================================================================\n');
+
+// Generate build info first
+console.log('📋 Generating build info...');
+const buildInfo = require('./generate-build-info');
+const BUILD_TAG = buildInfo.buildId; // e.g. 2.0.0-20260303.1349-eb8069
+const EXE_NAME = `CabinetPM-${BUILD_TAG}.exe`;
+console.log('');
+
 console.log('🔨 Building standalone .exe with Node.js embedded...');
+console.log(`   Output: dist/${EXE_NAME}`);
 console.log('   Tablets will NOT need Node.js installed!\n');
 
 // Ensure dist folder exists
@@ -45,8 +54,8 @@ function buildExecutable() {
   console.log('⚠️  Note: SQLite3 uses native modules, so we keep it external');
   console.log('   The deployment will include node_modules/sqlite3/\n');
   
-  // Build for Windows 64-bit with Node 18 - no compression to avoid issues
-  const buildCommand = 'npx pkg server-tablet.js --targets node18-win-x64 --output dist/CabinetPM.exe';
+  const exePath = `dist/${EXE_NAME}`;
+  const buildCommand = `npx pkg server-tablet.js --targets node18-win-x64 --output "${exePath}"`;
   
   exec(buildCommand, { maxBuffer: 30 * 1024 * 1024 }, (error, stdout, stderr) => {
     if (error) {
@@ -64,11 +73,10 @@ function buildExecutable() {
     if (stdout) console.log(stdout);
     if (stderr && !error) console.log('Build warnings:', stderr);
     
-    if (fs.existsSync('dist/CabinetPM.exe')) {
-      const stats = fs.statSync('dist/CabinetPM.exe');
+    if (fs.existsSync(exePath)) {
+      const stats = fs.statSync(exePath);
       const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
       
-      // Validate size (should be at least 40 MB with Node.js)
       if (stats.size < 10 * 1024 * 1024) {
         console.error('\n❌ WARNING: Executable is too small (' + sizeMB + ' MB)!');
         console.error('   Expected: 40-80 MB with Node.js embedded');
@@ -79,11 +87,16 @@ function buildExecutable() {
         console.error('   3. Run: npm run build:exe again\n');
         process.exit(1);
       }
+
+      // Also copy as CabinetPM.exe so the batch launcher still works
+      fs.copyFileSync(exePath, 'dist/CabinetPM.exe');
       
       console.log('\n================================================================');
       console.log('  ✅ STANDALONE EXECUTABLE CREATED SUCCESSFULLY!');
       console.log('================================================================');
-      console.log(`\n📦 File: dist/CabinetPM.exe`);
+      console.log(`\n📦 File: ${exePath}`);
+      console.log(`📦 Copy: dist/CabinetPM.exe (for batch launcher)`);
+      console.log(`🏷️  Build: ${BUILD_TAG}`);
       console.log(`💾 Size: ${sizeMB} MB (includes Node.js!)`);
       console.log(`\n✨ What's Inside:`);
       console.log(`   ✅ Node.js 18 runtime (embedded)`);
@@ -100,7 +113,7 @@ function buildExecutable() {
       console.log('================================================================\n');
     } else {
       console.error('\n❌ Executable file not found after build');
-      console.error('   Expected: dist/CabinetPM.exe');
+      console.error(`   Expected: ${exePath}`);
       console.error('\n💡 Check:');
       console.error('   1. Do you have write permissions to dist/ folder?');
       console.error('   2. Is antivirus blocking the file creation?\n');

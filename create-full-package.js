@@ -14,9 +14,15 @@ const path = require('path');
 const archiver = require('archiver');
 const { exec } = require('child_process');
 
-const OUTPUT_FILE = 'ECI-Cabinet-PM-Complete.zip';
+let OUTPUT_FILE = 'ECI-Cabinet-PM-Complete.zip'; // overwritten after build info loads
 
 console.log('📦 Creating COMPLETE deployment package with executable...\n');
+
+// Step 0: Generate build info
+console.log('Step 0: Generating build info...');
+const buildInfo = require('./generate-build-info');
+const BUILD_TAG = buildInfo.buildId;
+console.log('');
 
 // Step 1: Build the executable first
 console.log('Step 1: Building standalone executable...');
@@ -34,6 +40,7 @@ exec('node build-exe.js', { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stder
 });
 
 function createPackage(includeExe) {
+  OUTPUT_FILE = `ECI-Cabinet-PM-${BUILD_TAG}.zip`;
   const output = fs.createWriteStream(OUTPUT_FILE);
   const archive = archiver('zip', {
     zlib: { level: 9 }
@@ -50,7 +57,8 @@ function createPackage(includeExe) {
   // Core files for deployment
   const files = [
     'README-TABLET.txt',
-    'TABLET-DEPLOYMENT-GUIDE.md'
+    'TABLET-DEPLOYMENT-GUIDE.md',
+    'build-info.json'
   ];
   
   // Add appropriate launcher based on what's available

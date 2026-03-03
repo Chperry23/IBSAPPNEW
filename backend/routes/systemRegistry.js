@@ -28,16 +28,32 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       charkey: 'value'
     });
     
-    // Try to clean common XML issues before parsing
+    // Clean common XML issues before parsing
     let cleanedXml = xmlData;
     
-    // Replace common problematic characters that should be escaped
-    // But be careful not to break valid entities
+    // Strip BOM (UTF-8: EF BB BF, UTF-16: FEFF/FFFE)
+    cleanedXml = cleanedXml.replace(/^\uFEFF/, '');
+    
+    // Remove null bytes that sneak in from UTF-16 mis-reads
+    cleanedXml = cleanedXml.replace(/\0/g, '');
+    
+    // Strip control characters (0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F) except tab/newline/carriage-return
+    cleanedXml = cleanedXml.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+    
+    // Normalize the encoding declaration — once it's a JS string it's always UTF-8 compatible
+    cleanedXml = cleanedXml.replace(
+      /(<\?xml[^?]*?)encoding\s*=\s*["'][^"']*["']/i,
+      '$1encoding="utf-8"'
+    );
+    
+    // Fix unescaped ampersands (preserve valid entities)
     const entityPattern = /&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;)/g;
     if (entityPattern.test(cleanedXml)) {
       console.log('⚠️ [SYSTEM REGISTRY] Found unescaped ampersands, attempting to fix...');
       cleanedXml = cleanedXml.replace(entityPattern, '&amp;');
     }
+    
+    console.log('🔵 [SYSTEM REGISTRY] XML cleaned (BOM, encoding, control chars handled)');
     
     const result = await parser.parseStringPromise(cleanedXml);
     

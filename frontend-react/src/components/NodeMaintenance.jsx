@@ -217,29 +217,34 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
     showMessage(`All computers ${field.replace(/_/g, ' ')} checked!`, 'success');
   };
 
-  // Align with backend: perf_index 0-5 (good when 3,4,5), free_time 0-100% (good when >28%)
   const getControllerType = (node) => {
     const model = (node.model || '').toLowerCase();
     const nodeType = (node.node_type || '').toLowerCase();
     const nodeName = (node.node_name || '').toLowerCase();
-    // Performance Index controllers: S-Series (SE*, SZ*, SX*, SQ*, MQ*), CSLS, SIS, PK, EIOC
+    // Performance Index controllers: S-Series, CSLS, SIS, PK, EIOC, MD/MD Plus
     if (nodeType.startsWith('se') || nodeType.startsWith('sz') || nodeType.startsWith('sx') ||
         nodeType.startsWith('sq') || nodeType.startsWith('mq') || nodeType.includes('csls') ||
         nodeType.includes('pk') || nodeType.includes('eioc') || nodeType.includes('sis') ||
+        nodeType.startsWith('md') ||
         (nodeType.includes('kl') && nodeType.includes('ba1')) || nodeName.includes('csls') || nodeName.includes('eioc') ||
-        model.includes('mq') || model.includes('pk') || model.includes('sq') || model.includes('sz') || model.includes('sx') ||
-        model.includes('sx controller') || model.includes('sz controller') || model.includes('sq controller') || model.includes('mq controller') ||
+        model.includes('md') || model.includes('mq') || model.includes('pk') || model.includes('sq') || model.includes('sz') || model.includes('sx') ||
         model.includes('csls') || model.includes('logic solver') || model.includes('sis') || model.includes('pk controller')) {
       return { displayType: node.model || node.node_type, perfType: 'perf_index', min: 1, max: 5 };
     }
-    // Free Time controllers: M-Series (VE*, MD*, MX*), SD Plus, CIOC
-    if (nodeType.startsWith('ve') || nodeType.startsWith('md') || nodeType.startsWith('mx') ||
+    // Free Time controllers: VE*, MX*, SD Plus, CIOC
+    if (nodeType.startsWith('ve') || nodeType.startsWith('mx') ||
         nodeType.includes('sd plus') || nodeType.includes('cioc') ||
-        model.includes('md') || model.includes('mx') || model.includes('ve') ||
-        model.includes('md controller') || model.includes('mx controller') || model.includes('sd plus') || model.includes('cioc')) {
+        model.includes('mx') || model.includes('ve') ||
+        model.includes('sd plus') || model.includes('cioc')) {
       return { displayType: node.model || node.node_type, perfType: 'free_time', min: 1, max: 100 };
     }
+    // Custom/unknown nodes default to free_time
     return { displayType: node.model || node.node_type, perfType: 'free_time', min: 1, max: 100 };
+  };
+
+  const getPerfConfig = (perfType) => {
+    if (perfType === 'perf_index') return { label: 'Perf Index', min: 1, max: 5 };
+    return { label: 'Free Time', min: 1, max: 100 };
   };
 
   const addCustomNode = async (nodeType) => {
@@ -471,37 +476,55 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                           </td>
                           <td className="px-3 py-2 text-gray-400 text-xs">{controller.serial || 'N/A'}</td>
                           <td className="px-3 py-2">
-                            <div className="flex flex-col gap-1">
-                              <div className="text-xs text-center text-gray-400">
-                                {typeInfo.perfType === 'perf_index' ? 'Perf Index' : 'Free Time'}
-                              </div>
-                              <input
-                                type="number"
-                                min={typeInfo.min}
-                                max={typeInfo.max}
-                                value={maint.performance_value || ''}
-                                onChange={(e) => {
-                                  const val = parseInt(e.target.value);
-                                  const updated = { ...maintenanceData };
-                                  if (!updated[controller.id]) updated[controller.id] = {};
-                                  updated[controller.id].performance_value = val;
-                                  updated[controller.id].performance_type = typeInfo.perfType;
-                                  setMaintenanceData(updated);
-                                }}
-                                onBlur={(e) => {
-                                  const val = parseInt(e.target.value);
-                                  const updated = { ...maintenanceData };
-                                  if (!updated[controller.id]) updated[controller.id] = {};
-                                  updated[controller.id].performance_value = val;
-                                  updated[controller.id].performance_type = typeInfo.perfType;
-                                  setMaintenanceData(updated);
-                                  performSave(updated);
-                                }}
-                                disabled={isCompleted}
-                                className="w-16 px-2 py-1 text-center bg-gray-700 border border-gray-600 rounded text-gray-200 text-sm"
-                                placeholder={`${typeInfo.min}-${typeInfo.max}`}
-                              />
-                            </div>
+                            {(() => {
+                              const activePerfType = maint.performance_type || typeInfo.perfType;
+                              const cfg = getPerfConfig(activePerfType);
+                              return (
+                                <div className="flex flex-col gap-1">
+                                  <select
+                                    value={activePerfType}
+                                    onChange={(e) => {
+                                      const newType = e.target.value;
+                                      const updated = { ...maintenanceData };
+                                      if (!updated[controller.id]) updated[controller.id] = {};
+                                      updated[controller.id].performance_type = newType;
+                                      updated[controller.id].performance_value = '';
+                                      setMaintenanceData(updated);
+                                      performSave(updated);
+                                    }}
+                                    disabled={isCompleted}
+                                    className="w-full px-1 py-0.5 text-xs bg-gray-700 border border-gray-600 rounded text-gray-300"
+                                  >
+                                    <option value="free_time">Free Time</option>
+                                    <option value="perf_index">Perf Index</option>
+                                  </select>
+                                  <input
+                                    type="number"
+                                    min={cfg.min}
+                                    max={cfg.max}
+                                    value={maint.performance_value ?? ''}
+                                    onChange={(e) => {
+                                      const val = parseInt(e.target.value);
+                                      const updated = { ...maintenanceData };
+                                      if (!updated[controller.id]) updated[controller.id] = {};
+                                      updated[controller.id].performance_value = val;
+                                      updated[controller.id].performance_type = activePerfType;
+                                      setMaintenanceData(updated);
+                                    }}
+                                    onBlur={() => {
+                                      const updated = { ...maintenanceData };
+                                      if (!updated[controller.id]) updated[controller.id] = {};
+                                      updated[controller.id].performance_type = activePerfType;
+                                      setMaintenanceData(updated);
+                                      performSave(updated);
+                                    }}
+                                    disabled={isCompleted}
+                                    className="w-16 px-2 py-1 text-center bg-gray-700 border border-gray-600 rounded text-gray-200 text-sm"
+                                    placeholder={`${cfg.min}-${cfg.max}`}
+                                  />
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="px-3 py-2 text-center">
                             <input
