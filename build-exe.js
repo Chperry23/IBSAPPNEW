@@ -57,7 +57,7 @@ function buildExecutable() {
   const exePath = `dist/${EXE_NAME}`;
   const buildCommand = `npx pkg server-tablet.js --targets node18-win-x64 --output "${exePath}"`;
   
-  exec(buildCommand, { maxBuffer: 30 * 1024 * 1024 }, (error, stdout, stderr) => {
+  exec(buildCommand, { maxBuffer: 30 * 1024 * 1024 }, async (error, stdout, stderr) => {
     if (error) {
       console.error('❌ Build failed:', error.message);
       if (stderr) {
@@ -86,6 +86,33 @@ function buildExecutable() {
         console.error('   2. Run: npm install pkg --save-dev');
         console.error('   3. Run: npm run build:exe again\n');
         process.exit(1);
+      }
+
+      // Stamp icon and version info onto the exe using rcedit
+      const iconPath = path.resolve('app-icon.ico');
+      if (fs.existsSync(iconPath)) {
+        console.log('\n🎨 Stamping icon and version info onto exe...');
+        try {
+          const rcedit = require('rcedit');
+          await rcedit(exePath, {
+            icon: iconPath,
+            'version-string': {
+              ProductName: 'ECI Cabinet PM',
+              FileDescription: 'ECI Cabinet PM - Preventive Maintenance',
+              CompanyName: 'ECI Industrial Solutions',
+              LegalCopyright: `© ${new Date().getFullYear()} ECI Industrial Solutions`,
+              OriginalFilename: EXE_NAME,
+            },
+            'file-version': buildInfo.version,
+            'product-version': BUILD_TAG,
+          });
+          console.log('   ✅ Icon and version info applied!');
+        } catch (rcErr) {
+          console.warn('   ⚠️  rcedit failed (icon not applied):', rcErr.message);
+          console.warn('   💡 Install rcedit: npm install rcedit --save-dev');
+        }
+      } else {
+        console.log('\n⚠️  app-icon.ico not found, skipping icon stamp');
       }
 
       // Also copy as CabinetPM.exe so the batch launcher still works

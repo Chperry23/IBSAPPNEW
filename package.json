@@ -18,7 +18,6 @@
     "build:frontend": "cd frontend-react && npm run build",
     "build:info": "node generate-build-info.js",
     "build:exe": "node build-exe.js",
-    "build:package": "node create-deployment-package.js",
     "build:full": "node create-full-package.js",
     "deploy": "npm run build:frontend && npm run build:exe && npm run build:full"
   },
@@ -37,10 +36,12 @@
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
-    "pkg": "^5.8.1"
+    "pkg": "^5.8.1",
+    "rcedit": "^5.0.2"
   },
   "pkg": {
     "assets": [
+      "app-icon.ico",
       "build-info.json",
       "frontend-react/dist/**/*",
       "backend/**/*",

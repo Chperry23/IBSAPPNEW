@@ -67,7 +67,6 @@ function createPackage(includeExe) {
   } else {
     files.push('START-CABINET-PM.bat');
     files.push('INSTALL-ON-TABLET.bat');
-    files.push('CREATE-DESKTOP-SHORTCUT.vbs');
     files.push('server-tablet.js');
     files.push('package.json');
     files.push('package-lock.json');
