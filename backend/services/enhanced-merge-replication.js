@@ -195,10 +195,13 @@ class EnhancedMergeReplication {
         console.log(`❌ Errors: ${syncResults.errors.length}`);
       }
 
+      const syncMs = (pullResults.totalMs || 0) + (pushResults.totalMs || 0);
+      console.log(`⏱️  Total sync time: ${syncMs}ms (pull: ${pullResults.totalMs || 0}ms, push: ${pushResults.totalMs || 0}ms)`);
       return {
         success: syncResults.errors.length === 0,
         ...syncResults,
-        message: `Merge sync complete: Pulled ${syncResults.totalPulled}, Pushed ${syncResults.totalPushed}, Conflicts ${syncResults.totalConflicts}`
+        totalMs: syncMs,
+        message: `Merge sync complete: Pulled ${syncResults.totalPulled}, Pushed ${syncResults.totalPushed}, Conflicts ${syncResults.totalConflicts} in ${syncMs}ms`
       };
 
     } catch (error) {
@@ -217,8 +220,9 @@ class EnhancedMergeReplication {
   async pullFromMaster() {
     try {
       console.log('📥 Pulling changes from master database...');
+      const pullStart = Date.now();
       await this.ensureSyncTablesSupportMasterIds();
-      
+
       let totalPulled = 0;
       let totalConflicts = 0;
       const conflictsResolved = [];
@@ -279,36 +283,69 @@ class EnhancedMergeReplication {
             }
           }
 
-          // SECOND PASS: When we have lastSync, also pull records that exist on master but are missing locally.
-          // This fixes: local has 0 records (e.g. after wipe or dedupe on master) but master has many -
-          // the "changed since lastSync" query returns 0, so we must reconcile by pulling missing ones.
+          // SECOND PASS: Only when we have a prior sync AND record counts differ between master and local.
+          // This fixes: local was wiped/reset but master has records — the timestamp-based pull returns 0,
+          // so we must reconcile. Using a fast COUNT check to skip the expensive reconcile when not needed.
           if (lastSync) {
-            console.log(`   🔍 Checking for missing/deleted local records...`);
-            
-            const activeMasterIds = await Model.find({ deleted: { $ne: 1 } }).select('_id').limit(10000).lean();
-            
-            let reconciledCount = 0;
-            for (const { _id } of activeMasterIds) {
-              try {
-                const localRecord = await this.getLocalRecord(tableName, _id);
-                
-                if (!localRecord || localRecord.deleted === 1) {
-                  const masterRecord = await Model.findById(_id).lean();
-                  if (masterRecord && masterRecord.deleted !== 1) {
+            const [masterCount, localCountRow] = await Promise.all([
+              Model.countDocuments({ deleted: { $ne: 1 } }),
+              new Promise((res, rej) => {
+                // COALESCE so NULL deleted values are treated as 0 (not excluded by != 1)
+                this.localDb.get(
+                  `SELECT COUNT(*) as c FROM ${tableName} WHERE COALESCE(deleted, 0) != 1`,
+                  (err, row) => err ? rej(err) : res(row)
+                );
+              })
+            ]);
+            const localCount = localCountRow ? localCountRow.c : 0;
+
+            if (masterCount !== localCount) {
+              console.log(`   🔍 Count mismatch (master: ${masterCount}, local: ${localCount}) — reconciling...`);
+
+              // Fetch all master active IDs and all local IDs in two bulk queries
+              const [activeMasterIds, localRows] = await Promise.all([
+                Model.find({ deleted: { $ne: 1 } }).select('_id').limit(10000).lean(),
+                new Promise((res, rej) => {
+                  this.localDb.all(`SELECT id, deleted FROM ${tableName}`, (err, rows) => {
+                    if (err) rej(err); else res(rows || []);
+                  });
+                })
+              ]);
+
+              const localMap = new Map(localRows.map(r => [r.id, r]));
+
+              // Find master IDs that are absent or explicitly deleted locally
+              // Treat NULL deleted same as 0 (not deleted) to match the COUNT query above
+              const missingIds = activeMasterIds
+                .map(({ _id }) => _id)
+                .filter(_id => {
+                  const local = localMap.get(_id);
+                  return !local || (local.deleted != null && local.deleted === 1);
+                });
+
+              let reconciledCount = 0;
+              if (missingIds.length > 0) {
+                const missingRecords = await Model.find({
+                  _id: { $in: missingIds },
+                  deleted: { $ne: 1 }
+                }).lean();
+
+                for (const masterRecord of missingRecords) {
+                  try {
                     const result = await this.mergeRecordFromMaster(tableName, masterRecord);
                     if (result.action === 'inserted' || result.action === 'updated') {
                       reconciledCount++;
                     }
+                  } catch (err) {
+                    // Skip individual record errors
                   }
                 }
-              } catch (err) {
-                // Skip errors for individual records
               }
-            }
-            
-            if (reconciledCount > 0) {
-              console.log(`   🔄 Reconciled ${reconciledCount} missing/deleted records from master`);
-              pulledCount += reconciledCount;
+
+              if (reconciledCount > 0) {
+                console.log(`   🔄 Reconciled ${reconciledCount} missing/deleted records from master`);
+                pulledCount += reconciledCount;
+              }
             }
           }
 
@@ -326,13 +363,16 @@ class EnhancedMergeReplication {
         }
       }
 
+      const totalMs = Date.now() - pullStart;
+      console.log(`\n📥 Pull complete in ${totalMs}ms`);
       return {
         success: true,
         totalPulled,
         totalConflicts,
+        totalMs,
         conflictsResolved,
         results,
-        message: `Pull complete: ${totalPulled} records, ${totalConflicts} conflicts`
+        message: `Pull complete: ${totalPulled} records, ${totalConflicts} conflicts in ${totalMs}ms`
       };
 
     } catch (error) {
@@ -526,70 +566,85 @@ class EnhancedMergeReplication {
   async pushToMaster() {
     try {
       console.log('📤 Pushing local changes to master database...');
-      
+      const pushStart = Date.now();
+
       let totalPushed = 0;
       let totalDeleted = 0;
       const results = {};
 
       for (const tableName of this.syncTables) {
+        const tableStart = Date.now();
         try {
           console.log(`\n📤 Processing table: ${tableName}`);
-          
-          // Get all unsynced local records (including deletions)
+
           const unsyncedRecords = await this.getUnsyncedLocalRecords(tableName);
           console.log(`   📊 Found ${unsyncedRecords.length} unsynced local changes`);
-          
+
           if (unsyncedRecords.length === 0) {
-            results[tableName] = { pushed: 0, deleted: 0 };
+            results[tableName] = { pushed: 0, deleted: 0, ms: 0 };
             continue;
           }
 
           const Model = this.modelMap[tableName];
-          let pushedCount = 0;
-          let deletedCount = 0;
 
-          for (const record of unsyncedRecords) {
-            try {
-              // Check if this is a deletion
-              if (record.deleted === 1) {
-                // Delete from master
-                await Model.deleteOne({ _id: record.id });
-                console.log(`   🗑️  Deleted from master: ${tableName}.${record.id}`);
-                
-                // Mark as synced locally (keep tombstone for now)
-                await this.markRecordAsSynced(tableName, record.id);
-                deletedCount++;
-              } else {
-                // When pushing sessions/nodes, resolve local customer_id to master customer _id (by uuid)
-                let recordToPush = record;
-                if ((tableName === 'sessions' || tableName === 'nodes') && record.customer_id != null) {
-                  const masterCustId = await this.resolveLocalCustomerIdToMaster(record.customer_id);
-                  recordToPush = { ...record, customer_id: masterCustId };
-                }
-                // Upsert to master
-                const mongoRecord = this.convertSQLiteToMongo(recordToPush, tableName);
-                
-                await Model.findOneAndUpdate(
-                  { _id: mongoRecord._id },
-                  {
-                    ...mongoRecord,
-                    device_id: this.deviceId,
-                    updated_at: new Date()
-                  },
-                  { upsert: true, new: true }
-                );
-                
-                // Mark as synced locally
-                await this.markRecordAsSynced(tableName, record.id);
-                pushedCount++;
-              }
-            } catch (recordError) {
-              console.error(`   ❌ Error pushing record ${record.id}:`, recordError.message);
-            }
+          // Split into deletions vs upserts
+          const toDelete = unsyncedRecords.filter(r => r.deleted === 1);
+          const toUpsert  = unsyncedRecords.filter(r => r.deleted !== 1);
+          const syncedIds = [];
+
+          // --- Batch deletes (one deleteMany instead of N deleteOne) ---
+          let deletedCount = 0;
+          if (toDelete.length > 0) {
+            const deleteIds = toDelete.map(r => r.id);
+            await Model.deleteMany({ _id: { $in: deleteIds } });
+            deletedCount = toDelete.length;
+            syncedIds.push(...deleteIds);
+            console.log(`   🗑️  Deleted ${deletedCount} records from master`);
           }
 
-          console.log(`   ✅ Pushed: ${pushedCount}, Deleted: ${deletedCount}`);
-          results[tableName] = { pushed: pushedCount, deleted: deletedCount };
+          // --- Batch upserts via bulkWrite (one round-trip per table) ---
+          let pushedCount = 0;
+          if (toUpsert.length > 0) {
+            // Pre-resolve customer_id mappings for sessions/nodes in parallel
+            let customerIdMap = {};
+            if (tableName === 'sessions' || tableName === 'nodes') {
+              const uniqueCustomerIds = [...new Set(
+                toUpsert.map(r => r.customer_id).filter(id => id != null)
+              )];
+              await Promise.all(uniqueCustomerIds.map(async (localId) => {
+                customerIdMap[localId] = await this.resolveLocalCustomerIdToMaster(localId);
+              }));
+            }
+
+            const bulkOps = toUpsert.map(record => {
+              let recordToPush = record;
+              if ((tableName === 'sessions' || tableName === 'nodes') && record.customer_id != null) {
+                recordToPush = { ...record, customer_id: customerIdMap[record.customer_id] ?? record.customer_id };
+              }
+              const mongoRecord = this.convertSQLiteToMongo(recordToPush, tableName);
+              return {
+                replaceOne: {
+                  filter: { _id: mongoRecord._id },
+                  replacement: { ...mongoRecord, device_id: this.deviceId, updated_at: new Date() },
+                  upsert: true
+                }
+              };
+            });
+
+            const bulkResult = await Model.bulkWrite(bulkOps, { ordered: false });
+            pushedCount = toUpsert.length;
+            syncedIds.push(...toUpsert.map(r => r.id));
+            console.log(`   📤 bulkWrite: ${bulkResult.upsertedCount} inserted, ${bulkResult.modifiedCount} updated`);
+          }
+
+          // Bulk-mark all touched records as synced in one SQL statement
+          if (syncedIds.length > 0) {
+            await this.markRecordsAsSynced(tableName, syncedIds);
+          }
+
+          const tableMs = Date.now() - tableStart;
+          console.log(`   ✅ Pushed: ${pushedCount}, Deleted: ${deletedCount} (${tableMs}ms)`);
+          results[tableName] = { pushed: pushedCount, deleted: deletedCount, ms: tableMs };
           totalPushed += pushedCount;
           totalDeleted += deletedCount;
 
@@ -599,20 +654,20 @@ class EnhancedMergeReplication {
         }
       }
 
+      const totalMs = Date.now() - pushStart;
+      console.log(`\n📤 Push complete in ${totalMs}ms`);
       return {
         success: true,
         totalPushed,
         totalDeleted,
+        totalMs,
         results,
-        message: `Push complete: ${totalPushed} records, ${totalDeleted} deleted`
+        message: `Push complete: ${totalPushed} records, ${totalDeleted} deleted in ${totalMs}ms`
       };
 
     } catch (error) {
       console.error('❌ Push to master failed:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+      return { success: false, error: error.message };
     }
   }
 
@@ -700,11 +755,24 @@ class EnhancedMergeReplication {
         `UPDATE ${tableName} SET synced = 1 WHERE id = ?`,
         [recordId],
         function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(this.changes);
-          }
+          if (err) reject(err);
+          else resolve(this.changes);
+        }
+      );
+    });
+  }
+
+  // Bulk version — one SQL statement for N ids instead of N round-trips
+  async markRecordsAsSynced(tableName, ids) {
+    if (!ids || ids.length === 0) return 0;
+    const placeholders = ids.map(() => '?').join(',');
+    return new Promise((resolve, reject) => {
+      this.localDb.run(
+        `UPDATE ${tableName} SET synced = 1 WHERE id IN (${placeholders})`,
+        ids,
+        function(err) {
+          if (err) reject(err);
+          else resolve(this.changes);
         }
       );
     });

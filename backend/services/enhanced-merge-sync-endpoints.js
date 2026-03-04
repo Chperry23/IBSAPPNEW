@@ -17,11 +17,20 @@ function setupEnhancedMergeSyncEndpoints(app, localDb, mongoConnectionString) {
   app.post('/api/sync/enhanced-merge/full', async (req, res) => {
     try {
       console.log('📡 API: Full merge sync requested');
+      if (!syncManager.isConnected) {
+        const ok = await syncManager.connectToMongoDB();
+        if (!ok) {
+          return res.status(503).json({ success: false, error: 'Cannot reach cloud — check your network connection.' });
+        }
+      }
       const result = await syncManager.performFullMergeSync();
       
       res.json({
         success: result.success,
         message: result.message,
+        totalPulled: result.totalPulled,
+        totalPushed: result.totalPushed,
+        totalMs: result.totalMs,
         data: {
           pulled: result.totalPulled,
           pushed: result.totalPushed,
@@ -45,11 +54,20 @@ function setupEnhancedMergeSyncEndpoints(app, localDb, mongoConnectionString) {
   app.post('/api/sync/enhanced-merge/pull', async (req, res) => {
     try {
       console.log('📡 API: Pull from master requested');
+      if (!syncManager.isConnected) {
+        const ok = await syncManager.connectToMongoDB();
+        if (!ok) {
+          return res.status(503).json({ success: false, error: 'Cannot reach cloud — check your network connection.' });
+        }
+      }
       const result = await syncManager.pullFromMaster();
       
       res.json({
         success: result.success,
         message: result.message,
+        totalPulled: result.totalPulled,
+        totalConflicts: result.totalConflicts,
+        totalMs: result.totalMs,
         data: {
           pulled: result.totalPulled,
           conflicts: result.totalConflicts,
@@ -70,11 +88,20 @@ function setupEnhancedMergeSyncEndpoints(app, localDb, mongoConnectionString) {
   app.post('/api/sync/enhanced-merge/push', async (req, res) => {
     try {
       console.log('📡 API: Push to master requested');
+      if (!syncManager.isConnected) {
+        const ok = await syncManager.connectToMongoDB();
+        if (!ok) {
+          return res.status(503).json({ success: false, error: 'Cannot reach cloud — check your network connection.' });
+        }
+      }
       const result = await syncManager.pushToMaster();
       
       res.json({
         success: result.success,
         message: result.message,
+        totalPushed: result.totalPushed,
+        totalDeleted: result.totalDeleted,
+        totalMs: result.totalMs,
         data: {
           pushed: result.totalPushed,
           deleted: result.totalDeleted,
@@ -371,15 +398,10 @@ function setupEnhancedMergeSyncEndpoints(app, localDb, mongoConnectionString) {
     }
   });
 
-  // Test MongoDB connection
+  // Test MongoDB connection — leaves the connection open for reuse
   app.get('/api/sync/connection/test', async (req, res) => {
     try {
       const connected = await syncManager.connectToMongoDB();
-      
-      if (connected) {
-        await syncManager.disconnectFromMongoDB();
-      }
-      
       res.json({
         success: connected,
         message: connected ? 'MongoDB connection successful' : 'MongoDB connection failed'

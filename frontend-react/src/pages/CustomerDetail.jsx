@@ -14,6 +14,8 @@ export default function CustomerDetail() {
   const [activeTab, setActiveTab] = useState('active');
   const [showEditModal, setShowEditModal] = useState(false);
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
+  const [newSessionType, setNewSessionType] = useState('pm');
+  const [newSessionDate, setNewSessionDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [showEditSessionModal, setShowEditSessionModal] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
   const [showSystemRegModal, setShowSystemRegModal] = useState(false);
@@ -205,6 +207,15 @@ export default function CustomerDetail() {
     } catch (error) {
       showMessage('Error updating customer', 'error');
     }
+  };
+
+  const generateNewSessionName = (type, dateStr) => {
+    const d = dateStr ? new Date(dateStr + 'T12:00:00') : new Date();
+    const m = d.getMonth() + 1;
+    const day = d.getDate();
+    const yr = d.getFullYear();
+    const prefix = type === 'ii' ? 'I&I' : 'PM';
+    return `${prefix}-${m}/${day}/${yr}`;
   };
 
   const handleCreateSession = async (e) => {
@@ -524,7 +535,12 @@ export default function CustomerDetail() {
           </div>
           <div className="card-body space-y-2">
             <button
-              onClick={() => setShowNewSessionModal(true)}
+              onClick={() => {
+                const today = new Date().toISOString().split('T')[0];
+                setNewSessionType('pm');
+                setNewSessionDate(today);
+                setShowNewSessionModal(true);
+              }}
               className="btn btn-primary w-full"
             >
               ➕ New PM Session
@@ -545,7 +561,9 @@ export default function CustomerDetail() {
             )}
             <button
               onClick={() => {
-                // Set the modal to I&I type
+                const today = new Date().toISOString().split('T')[0];
+                setNewSessionType('ii');
+                setNewSessionDate(today);
                 setShowNewSessionModal(true);
               }}
               className="btn btn-warning w-full text-lg font-bold border-2 border-yellow-400"
@@ -871,11 +889,12 @@ export default function CustomerDetail() {
                   <select
                     name="session_type"
                     required
-                    defaultValue="pm"
+                    value={newSessionType}
+                    onChange={e => setNewSessionType(e.target.value)}
                     className="form-select"
                   >
                     <option value="pm">PM - Preventive Maintenance</option>
-                    <option value="ii">I&I - Installation & Integration</option>
+                    <option value="ii">I&amp;I - Installation &amp; Integration</option>
                   </select>
                 </div>
                 <div>
@@ -884,25 +903,30 @@ export default function CustomerDetail() {
                     type="date"
                     name="session_date"
                     required
-                    defaultValue={new Date().toISOString().split('T')[0]}
+                    value={newSessionDate}
+                    onChange={e => setNewSessionDate(e.target.value)}
                     className="form-input"
                   />
                 </div>
                 <div>
-                  <label className="form-label">Session Name *</label>
+                  <label className="form-label">Session Name (Auto-generated)</label>
                   <input
                     type="text"
                     name="session_name"
-                    required
-                    placeholder="e.g., PM-1/22/2026 or I&I-Building A"
-                    className="form-input"
+                    readOnly
+                    value={generateNewSessionName(newSessionType, newSessionDate)}
+                    className="form-input bg-gray-700 cursor-default"
                   />
                 </div>
               </div>
               <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowNewSessionModal(false)}
+                  onClick={() => {
+                    setShowNewSessionModal(false);
+                    setNewSessionType('pm');
+                    setNewSessionDate(new Date().toISOString().split('T')[0]);
+                  }}
                   className="btn btn-secondary"
                 >
                   Cancel

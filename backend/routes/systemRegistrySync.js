@@ -14,11 +14,15 @@ router.post('/:customerId/sync-to-nodes', requireAuth, async (req, res) => {
   
   try {
     console.log(`🔄 [SYSREG→NODES] Starting sync for customer ${customerId}`);
-    
+    const syncStart = Date.now();
+
     let totalSynced = 0;
     let totalCreated = 0;
     let totalUpdated = 0;
-    
+
+    // Wrap all writes in one transaction: avoids N individual auto-commits
+    await new Promise((resolve, reject) => db.run('BEGIN', err => err ? reject(err) : resolve()));
+
     // ========================================
     // 1. WORKSTATIONS
     // ========================================
@@ -282,9 +286,12 @@ router.post('/:customerId/sync-to-nodes', requireAuth, async (req, res) => {
     }
     
     totalSynced = totalCreated + totalUpdated;
-    
-    console.log(`✅ [SYSREG→NODES] Sync complete: ${totalCreated} created, ${totalUpdated} updated`);
-    
+
+    await new Promise((resolve, reject) => db.run('COMMIT', err => err ? reject(err) : resolve()));
+
+    const syncMs = Date.now() - syncStart;
+    console.log(`✅ [SYSREG→NODES] Sync complete: ${totalCreated} created, ${totalUpdated} updated (${syncMs}ms)`);
+
     res.json({
       success: true,
       message: `Synced ${totalSynced} nodes from System Registry`,
@@ -295,11 +302,14 @@ router.post('/:customerId/sync-to-nodes', requireAuth, async (req, res) => {
         workstations: workstations.length,
         controllers: controllers.length,
         switches: switches.length,
-        ciocs: ciocs.length
+        ciocs: ciocs.length,
+        ms: syncMs
       }
     });
-    
+
   } catch (error) {
+    // Best-effort rollback — if BEGIN never ran, ROLLBACK is a no-op
+    await new Promise((resolve) => db.run('ROLLBACK', () => resolve()));
     console.error('❌ [SYSREG→NODES] Sync error:', error);
     res.status(500).json({
       success: false,

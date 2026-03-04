@@ -93,7 +93,7 @@ function buildExecutable() {
       if (fs.existsSync(iconPath)) {
         console.log('\n🎨 Stamping icon and version info onto exe...');
         try {
-          const rcedit = require('rcedit');
+          const { rcedit } = require('rcedit');
           await rcedit(exePath, {
             icon: iconPath,
             'version-string': {

@@ -51,6 +51,14 @@ try {
             console.error('Database connection failed:', err.message);
         } else {
             console.log('Database connected successfully');
+            // Performance tuning — applied once at connection time
+            db.serialize(() => {
+                db.run("PRAGMA journal_mode=WAL");       // readers don't block writers
+                db.run("PRAGMA synchronous=NORMAL");     // safe + faster (vs FULL)
+                db.run("PRAGMA cache_size=-20000");      // 20 MB page cache
+                db.run("PRAGMA busy_timeout=5000");      // wait up to 5s instead of "locked" error
+                db.run("PRAGMA temp_store=MEMORY");      // temp tables/indexes stay in RAM
+            });
         }
     });
 } catch (error) {

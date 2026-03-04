@@ -16,11 +16,11 @@ export default function Sync() {
   }, []);
 
   const loadAllData = async () => {
-    await Promise.all([
-      loadDeviceInfo(),
-      testConnection(),
-      refreshStatus(),
-    ]);
+    // Load device info immediately (no MongoDB needed)
+    loadDeviceInfo();
+    // Ensure MongoDB is connected before fetching status (which queries cloud counts)
+    await testConnection();
+    await refreshStatus();
   };
 
   const loadDeviceInfo = async () => {
@@ -34,13 +34,25 @@ export default function Sync() {
 
   const testConnection = async () => {
     try {
-      // Use GET method instead of POST
       const result = await api.request('/api/sync/connection/test');
       setConnectionStatus(result);
+      return result.success;
     } catch (error) {
       console.error('Error testing connection:', error);
       setConnectionStatus({ success: false, error: error.message });
+      return false;
     }
+  };
+
+  // Ensures MongoDB is open before a sync operation; shows status to user
+  const ensureConnected = async () => {
+    if (connectionStatus?.success) return true;
+    showMessage('Connecting to cloud...', 'info');
+    const ok = await testConnection();
+    if (!ok) {
+      showMessage('❌ Cannot reach cloud — check your connection and try again.', 'error');
+    }
+    return ok;
   };
 
   const refreshStatus = async () => {
@@ -75,6 +87,7 @@ export default function Sync() {
   };
 
   const downloadFromCloud = async () => {
+    if (!(await ensureConnected())) return;
     setSyncing(true);
     showMessage('Downloading latest data from cloud...', 'info');
     try {
@@ -103,6 +116,7 @@ export default function Sync() {
     if (!confirm('This will make this device match the cloud: local-only records not on the cloud will be removed. Continue?')) {
       return;
     }
+    if (!(await ensureConnected())) return;
     setSyncing(true);
     showMessage('Downloading and matching to cloud (removing local-only orphans)...', 'info');
     try {
@@ -127,6 +141,7 @@ export default function Sync() {
   };
 
   const uploadToCloud = async () => {
+    if (!(await ensureConnected())) return;
     setSyncing(true);
     showMessage('Uploading your changes to cloud...', 'info');
     try {
@@ -148,6 +163,7 @@ export default function Sync() {
   };
 
   const syncAll = async () => {
+    if (!(await ensureConnected())) return;
     setSyncing(true);
     showMessage('Syncing all data with cloud...', 'info');
     try {
