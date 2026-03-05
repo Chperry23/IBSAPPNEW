@@ -3,7 +3,8 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
-const puppeteer = require('puppeteer');
+const _pptr = 'puppeteer';
+function getPuppeteer() { return require(_pptr); }
 const { findChrome } = require('../utils/chrome');
 const { getSharedStyles, generateSingleCabinetHtml, generateRiskAssessmentPage, generateCoverPage, generateCabinetsSectionDividerPage } = require('../services/pdf/cabinetReport');
 const { generateMaintenanceReportPage } = require('../services/pdf/maintenanceReport');
@@ -77,7 +78,7 @@ router.put('/:sessionId', requireAuth, async (req, res) => {
   const { session_name, status } = req.body;
   
   try {
-    const result = await db.prepare('UPDATE sessions SET session_name = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run([session_name, status, sessionId]);
+    const result = await db.prepare('UPDATE sessions SET session_name = ?, status = ?, updated_at = CURRENT_TIMESTAMP, synced = 0 WHERE id = ?').run([session_name, status, sessionId]);
     
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Session not found' });
@@ -493,7 +494,7 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
       </html>
     `;
 
-    const browser = await puppeteer.launch({
+    const browser = await getPuppeteer().launch({
       executablePath: await findChrome(),
       headless: 'new',
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-web-security'],

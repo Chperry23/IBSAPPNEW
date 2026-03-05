@@ -1,7 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const puppeteer = require('puppeteer');
+// Opaque dynamic require — prevents pkg from statically analysing and
+// trying to bundle Chromium (~300 MB) into the exe snapshot.
+const _pptr = 'puppeteer';
+function getPuppeteer() { return require(_pptr); }
 
 // Chrome detection function for PDF generation
 async function findChrome() {
@@ -41,7 +44,7 @@ async function findChrome() {
   
   // If no Chrome found, try to use Puppeteer's bundled Chromium
   try {
-    const puppeteerChrome = puppeteer.executablePath();
+    const puppeteerChrome = getPuppeteer().executablePath();
     if (fs.existsSync(puppeteerChrome)) {
       console.log(`🌐 Using Puppeteer bundled Chromium: ${puppeteerChrome}`);
       return puppeteerChrome;

@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
-const puppeteer = require('puppeteer');
+const _pptr = 'puppeteer';
+function getPuppeteer() { return require(_pptr); }
 const { findChrome } = require('../utils/chrome');
 const { generateIIPDF, generateCombinedIIPDF } = require('../services/pdf/iiReport');
 const { v4: uuidv4 } = require('uuid');
@@ -316,7 +317,7 @@ router.post('/api/ii-documents/:documentId/export-pdf', requireAuth, async (req,
     const pdfContent = generateIIPDF(document, session, checklistItems, equipmentUsed);
     
     // Generate PDF using Puppeteer
-    const browser = await puppeteer.launch({
+    const browser = await getPuppeteer().launch({
       executablePath: await findChrome(),
       headless: "new",
       args: [
@@ -390,7 +391,7 @@ router.post('/api/sessions/:sessionId/export-all-ii-pdfs', requireAuth, async (r
     console.log(`✅ DEBUG: PDF content generation completed`);
     
     // Generate PDF using Puppeteer
-    const browser = await puppeteer.launch({
+    const browser = await getPuppeteer().launch({
       executablePath: await findChrome(),
       headless: "new",
       args: [

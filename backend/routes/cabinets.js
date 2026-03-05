@@ -4,7 +4,8 @@ const { v4: uuidv4 } = require('uuid');
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
 const Logger = require('../utils/logger');
-const puppeteer = require('puppeteer');
+const _pptr = 'puppeteer';
+function getPuppeteer() { return require(_pptr); }
 const { findChrome } = require('../utils/chrome');
 const { generatePDFHtml } = require('../services/pdf/cabinetReport');
 
@@ -282,7 +283,7 @@ router.post('/:cabinetId/pdf', requireAuth, async (req, res) => {
       WHERE s.id = ?
     `).get([row.pm_session_id]) || {};
     const pdfContent = generatePDFHtml({ cabinet, sessionInfo });
-    const browser = await puppeteer.launch({
+    const browser = await getPuppeteer().launch({
       executablePath: await findChrome(),
       headless: 'new',
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-web-security'],

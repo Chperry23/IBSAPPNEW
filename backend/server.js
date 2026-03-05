@@ -86,11 +86,13 @@ function createApp(options = {}) {
   app.use('/api', locationRoutes);
 
   if (!catchAllPath) {
+    // React SPA — all non-API page routes serve index.html and let the
+    // client-side router handle navigation.
     app.get('/dashboard', requireAuth, (req, res) => {
-      res.sendFile(path.join(staticPath, 'dashboard.html'));
+      res.sendFile(path.join(staticPath, 'index.html'));
     });
     app.get('/sync', requireAuth, (req, res) => {
-      res.sendFile(path.join(staticPath, 'mongo-sync.html'));
+      res.sendFile(path.join(staticPath, 'index.html'));
     });
   }
 

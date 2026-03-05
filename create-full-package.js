@@ -64,6 +64,7 @@ function createPackage(includeExe) {
   // Add appropriate launcher based on what's available
   if (includeExe) {
     files.push('START-CABINET-PM-EXE.bat');
+    files.push('DIAGNOSE.bat');
   } else {
     files.push('START-CABINET-PM.bat');
     files.push('INSTALL-ON-TABLET.bat');

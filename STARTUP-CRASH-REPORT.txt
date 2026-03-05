@@ -1,0 +1,547 @@
+Cabinet PM started successfully at 3/5/2026, 1:39:49 PM
+URL: http://localhost:3000
+Log: C:\IBS APP\logs\cabinet-pm-2026-03-05_13-39-44.log
+[2026-03-05T18:39:49.354Z] [LOG] 
+[2026-03-05T18:39:49.355Z] [LOG] ============================================================
+[2026-03-05T18:39:49.356Z] [LOG]   ✅ Cabinet PM running on http://localhost:3000
+[2026-03-05T18:39:49.357Z] [LOG]   📋 Default login: admin / cabinet123
+[2026-03-05T18:39:49.357Z] [LOG] ============================================================
+[2026-03-05T18:39:49.358Z] [LOG] 
+[2026-03-05T18:39:49.375Z] [LOG] ✓ Synced cabinet_location to cabinet_name
+[2026-03-05T18:39:49.377Z] [LOG] 📱 Using existing device ID: L5420-H52Z4M3_1770401623666_ef11a6a2
+[2026-03-05T18:40:02.192Z] [LOG] 🔗 Connecting to MongoDB master server...
+[2026-03-05T18:40:02.262Z] [LOG] ✅ Connected to MongoDB master server
+[2026-03-05T18:40:04.222Z] [LOG] 📡 API: Pull from master requested
+[2026-03-05T18:40:04.224Z] [LOG] 📥 Pulling changes from master database...
+[2026-03-05T18:40:04.227Z] [LOG] 
+📥 Processing table: users
+[2026-03-05T18:40:04.228Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:42.496Z
+[2026-03-05T18:40:04.264Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:04.270Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:04.277Z] [LOG]    ⏰ Set last sync time for users: 2026-03-05T18:40:04.272Z (changes: 1)
+[2026-03-05T18:40:04.279Z] [LOG]    ✅ Verified last sync time for users: 2026-03-05T18:40:04.272Z
+[2026-03-05T18:40:04.281Z] [LOG] 
+📥 Processing table: customers
+[2026-03-05T18:40:04.284Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:42.513Z
+[2026-03-05T18:40:04.303Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:04.315Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:04.320Z] [LOG]    ⏰ Set last sync time for customers: 2026-03-05T18:40:04.318Z (changes: 1)
+[2026-03-05T18:40:04.323Z] [LOG]    ✅ Verified last sync time for customers: 2026-03-05T18:40:04.318Z
+[2026-03-05T18:40:04.332Z] [LOG] 
+📥 Processing table: sessions
+[2026-03-05T18:40:04.335Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:42.597Z
+[2026-03-05T18:40:04.353Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:04.361Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:04.368Z] [LOG]    ⏰ Set last sync time for sessions: 2026-03-05T18:40:04.366Z (changes: 1)
+[2026-03-05T18:40:04.371Z] [LOG]    ✅ Verified last sync time for sessions: 2026-03-05T18:40:04.366Z
+[2026-03-05T18:40:04.372Z] [LOG] 
+📥 Processing table: cabinets
+[2026-03-05T18:40:04.377Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:42.632Z
+[2026-03-05T18:40:04.416Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:04.423Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:04.434Z] [LOG]    ⏰ Set last sync time for cabinets: 2026-03-05T18:40:04.430Z (changes: 1)
+[2026-03-05T18:40:04.437Z] [LOG]    ✅ Verified last sync time for cabinets: 2026-03-05T18:40:04.430Z
+[2026-03-05T18:40:04.438Z] [LOG] 
+📥 Processing table: nodes
+[2026-03-05T18:40:04.453Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:42.656Z
+[2026-03-05T18:40:04.485Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:04.494Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:04.502Z] [LOG]    ⏰ Set last sync time for nodes: 2026-03-05T18:40:04.501Z (changes: 1)
+[2026-03-05T18:40:04.504Z] [LOG]    ✅ Verified last sync time for nodes: 2026-03-05T18:40:04.501Z
+[2026-03-05T18:40:04.506Z] [LOG] 
+📥 Processing table: session_node_maintenance
+[2026-03-05T18:40:04.518Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:42.987Z
+[2026-03-05T18:40:04.538Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:04.558Z] [LOG]    🔍 Count mismatch (master: 1031, local: 889) — reconciling...
+[2026-03-05T18:40:04.912Z] [LOG]    🔄 Reconciled 142 missing/deleted records from master
+[2026-03-05T18:40:04.917Z] [LOG]    ✅ Pulled: 142, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:04.919Z] [LOG]    ⏰ Set last sync time for session_node_maintenance: 2026-03-05T18:40:04.918Z (changes: 1)
+[2026-03-05T18:40:04.920Z] [LOG]    ✅ Verified last sync time for session_node_maintenance: 2026-03-05T18:40:04.918Z
+[2026-03-05T18:40:04.921Z] [LOG] 
+📥 Processing table: cabinet_locations
+[2026-03-05T18:40:04.925Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:43.002Z
+[2026-03-05T18:40:04.953Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:04.967Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:04.970Z] [LOG]    ⏰ Set last sync time for cabinet_locations: 2026-03-05T18:40:04.969Z (changes: 1)
+[2026-03-05T18:40:04.975Z] [LOG]    ✅ Verified last sync time for cabinet_locations: 2026-03-05T18:40:04.969Z
+[2026-03-05T18:40:04.985Z] [LOG] 
+📥 Processing table: session_pm_notes
+[2026-03-05T18:40:04.987Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:43.026Z
+[2026-03-05T18:40:05.016Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:05.027Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:05.036Z] [LOG]    ⏰ Set last sync time for session_pm_notes: 2026-03-05T18:40:05.034Z (changes: 1)
+[2026-03-05T18:40:05.038Z] [LOG]    ✅ Verified last sync time for session_pm_notes: 2026-03-05T18:40:05.034Z
+[2026-03-05T18:40:05.044Z] [LOG] 
+📥 Processing table: session_ii_documents
+[2026-03-05T18:40:05.053Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:43.062Z
+[2026-03-05T18:40:05.071Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:05.085Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:05.089Z] [LOG]    ⏰ Set last sync time for session_ii_documents: 2026-03-05T18:40:05.086Z (changes: 1)
+[2026-03-05T18:40:05.104Z] [LOG]    ✅ Verified last sync time for session_ii_documents: 2026-03-05T18:40:05.086Z
+[2026-03-05T18:40:05.119Z] [LOG] 
+📥 Processing table: session_ii_equipment
+[2026-03-05T18:40:05.137Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:43.100Z
+[2026-03-05T18:40:05.170Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:05.189Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:05.201Z] [LOG]    ⏰ Set last sync time for session_ii_equipment: 2026-03-05T18:40:05.196Z (changes: 1)
+[2026-03-05T18:40:05.209Z] [LOG]    ✅ Verified last sync time for session_ii_equipment: 2026-03-05T18:40:05.196Z
+[2026-03-05T18:40:05.237Z] [LOG] 
+📥 Processing table: session_ii_checklist
+[2026-03-05T18:40:05.242Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:43.134Z
+[2026-03-05T18:40:05.271Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:05.287Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:05.300Z] [LOG]    ⏰ Set last sync time for session_ii_checklist: 2026-03-05T18:40:05.289Z (changes: 1)
+[2026-03-05T18:40:05.303Z] [LOG]    ✅ Verified last sync time for session_ii_checklist: 2026-03-05T18:40:05.289Z
+[2026-03-05T18:40:05.309Z] [LOG] 
+📥 Processing table: session_ii_equipment_used
+[2026-03-05T18:40:05.318Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:43.180Z
+[2026-03-05T18:40:05.335Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:05.351Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:05.354Z] [LOG]    ⏰ Set last sync time for session_ii_equipment_used: 2026-03-05T18:40:05.353Z (changes: 1)
+[2026-03-05T18:40:05.370Z] [LOG]    ✅ Verified last sync time for session_ii_equipment_used: 2026-03-05T18:40:05.353Z
+[2026-03-05T18:40:05.378Z] [LOG] 
+📥 Processing table: sys_workstations
+[2026-03-05T18:40:05.389Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:43.253Z
+[2026-03-05T18:40:05.420Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:05.429Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:05.438Z] [LOG]    ⏰ Set last sync time for sys_workstations: 2026-03-05T18:40:05.433Z (changes: 1)
+[2026-03-05T18:40:05.442Z] [LOG]    ✅ Verified last sync time for sys_workstations: 2026-03-05T18:40:05.433Z
+[2026-03-05T18:40:05.452Z] [LOG] 
+📥 Processing table: sys_smart_switches
+[2026-03-05T18:40:05.455Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:43.307Z
+[2026-03-05T18:40:05.483Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:05.489Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:05.500Z] [LOG]    ⏰ Set last sync time for sys_smart_switches: 2026-03-05T18:40:05.496Z (changes: 1)
+[2026-03-05T18:40:05.503Z] [LOG]    ✅ Verified last sync time for sys_smart_switches: 2026-03-05T18:40:05.496Z
+[2026-03-05T18:40:05.505Z] [LOG] 
+📥 Processing table: sys_io_devices
+[2026-03-05T18:40:05.510Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:43.338Z
+[2026-03-05T18:40:05.550Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:05.560Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:05.568Z] [LOG]    ⏰ Set last sync time for sys_io_devices: 2026-03-05T18:40:05.566Z (changes: 1)
+[2026-03-05T18:40:05.570Z] [LOG]    ✅ Verified last sync time for sys_io_devices: 2026-03-05T18:40:05.566Z
+[2026-03-05T18:40:05.571Z] [LOG] 
+📥 Processing table: sys_controllers
+[2026-03-05T18:40:05.572Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:43.374Z
+[2026-03-05T18:40:05.604Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:05.619Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:05.623Z] [LOG]    ⏰ Set last sync time for sys_controllers: 2026-03-05T18:40:05.621Z (changes: 1)
+[2026-03-05T18:40:05.635Z] [LOG]    ✅ Verified last sync time for sys_controllers: 2026-03-05T18:40:05.621Z
+[2026-03-05T18:40:05.636Z] [LOG] 
+📥 Processing table: sys_charms_io_cards
+[2026-03-05T18:40:05.641Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:43.432Z
+[2026-03-05T18:40:05.669Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:05.685Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:05.688Z] [LOG]    ⏰ Set last sync time for sys_charms_io_cards: 2026-03-05T18:40:05.687Z (changes: 1)
+[2026-03-05T18:40:05.693Z] [LOG]    ✅ Verified last sync time for sys_charms_io_cards: 2026-03-05T18:40:05.687Z
+[2026-03-05T18:40:05.701Z] [LOG] 
+📥 Processing table: sys_charms
+[2026-03-05T18:40:05.703Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:43.482Z
+[2026-03-05T18:40:05.734Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:05.745Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:05.752Z] [LOG]    ⏰ Set last sync time for sys_charms: 2026-03-05T18:40:05.751Z (changes: 1)
+[2026-03-05T18:40:05.755Z] [LOG]    ✅ Verified last sync time for sys_charms: 2026-03-05T18:40:05.751Z
+[2026-03-05T18:40:05.760Z] [LOG] 
+📥 Processing table: sys_ams_systems
+[2026-03-05T18:40:05.768Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:43.548Z
+[2026-03-05T18:40:05.788Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:05.805Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:05.823Z] [LOG]    ⏰ Set last sync time for sys_ams_systems: 2026-03-05T18:40:05.819Z (changes: 1)
+[2026-03-05T18:40:05.836Z] [LOG]    ✅ Verified last sync time for sys_ams_systems: 2026-03-05T18:40:05.819Z
+[2026-03-05T18:40:05.840Z] [LOG] 
+📥 Processing table: customer_metric_history
+[2026-03-05T18:40:05.853Z] [LOG]    ⏰ Last sync: 2026-03-04T18:12:43.635Z
+[2026-03-05T18:40:05.886Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T18:40:05.903Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T18:40:05.905Z] [LOG]    ⏰ Set last sync time for customer_metric_history: 2026-03-05T18:40:05.904Z (changes: 1)
+[2026-03-05T18:40:05.919Z] [LOG]    ✅ Verified last sync time for customer_metric_history: 2026-03-05T18:40:05.904Z
+[2026-03-05T18:40:05.923Z] [LOG] 
+📥 Pull complete in 1695ms
+[2026-03-05T18:53:48.258Z] [LOG] 🔍 [NODES] GET request: {
+  "customerId": "167",
+  "sessionId": "a2e8c87a-f56e-43ad-b794-7e8855d2fe0c"
+}
+[2026-03-05T18:53:48.262Z] [LOG] 🔍 [NODES] Session status: completed
+[2026-03-05T18:53:48.263Z] [LOG] 🔍 [NODES] Loading snapshots for completed session...
+[2026-03-05T18:53:48.266Z] [LOG] 🔍 [NODES] Found 0 snapshots
+[2026-03-05T20:48:25.467Z] [LOG] 🔗 Connecting to MongoDB master server...
+[2026-03-05T20:48:25.473Z] [LOG] ✅ Connected to MongoDB master server
+[2026-03-05T20:48:27.027Z] [LOG] 📡 API: Pull from master requested
+[2026-03-05T20:48:27.029Z] [LOG] 📥 Pulling changes from master database...
+[2026-03-05T20:48:27.033Z] [LOG] 
+📥 Processing table: users
+[2026-03-05T20:48:27.035Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:04.272Z
+[2026-03-05T20:48:27.044Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:27.058Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:27.141Z] [LOG]    ⏰ Set last sync time for users: 2026-03-05T20:48:27.122Z (changes: 1)
+[2026-03-05T20:48:27.166Z] [LOG]    ✅ Verified last sync time for users: 2026-03-05T20:48:27.122Z
+[2026-03-05T20:48:27.184Z] [LOG] 
+📥 Processing table: customers
+[2026-03-05T20:48:27.198Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:04.318Z
+[2026-03-05T20:48:27.225Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:27.239Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:27.305Z] [LOG]    ⏰ Set last sync time for customers: 2026-03-05T20:48:27.243Z (changes: 1)
+[2026-03-05T20:48:27.322Z] [LOG]    ✅ Verified last sync time for customers: 2026-03-05T20:48:27.243Z
+[2026-03-05T20:48:27.328Z] [LOG] 
+📥 Processing table: sessions
+[2026-03-05T20:48:27.339Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:04.366Z
+[2026-03-05T20:48:27.353Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:27.384Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:27.430Z] [LOG]    ⏰ Set last sync time for sessions: 2026-03-05T20:48:27.416Z (changes: 1)
+[2026-03-05T20:48:27.458Z] [LOG]    ✅ Verified last sync time for sessions: 2026-03-05T20:48:27.416Z
+[2026-03-05T20:48:27.467Z] [LOG] 
+📥 Processing table: cabinets
+[2026-03-05T20:48:27.490Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:04.430Z
+[2026-03-05T20:48:27.509Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:27.543Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:27.563Z] [LOG]    ⏰ Set last sync time for cabinets: 2026-03-05T20:48:27.548Z (changes: 1)
+[2026-03-05T20:48:27.586Z] [LOG]    ✅ Verified last sync time for cabinets: 2026-03-05T20:48:27.548Z
+[2026-03-05T20:48:27.597Z] [LOG] 
+📥 Processing table: nodes
+[2026-03-05T20:48:27.670Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:04.501Z
+[2026-03-05T20:48:27.756Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:27.789Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:27.811Z] [LOG]    ⏰ Set last sync time for nodes: 2026-03-05T20:48:27.796Z (changes: 1)
+[2026-03-05T20:48:27.837Z] [LOG]    ✅ Verified last sync time for nodes: 2026-03-05T20:48:27.796Z
+[2026-03-05T20:48:27.846Z] [LOG] 
+📥 Processing table: session_node_maintenance
+[2026-03-05T20:48:27.893Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:04.918Z
+[2026-03-05T20:48:27.930Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:27.973Z] [LOG]    🔍 Count mismatch (master: 1031, local: 889) — reconciling...
+[2026-03-05T20:48:29.589Z] [LOG]    🔄 Reconciled 142 missing/deleted records from master
+[2026-03-05T20:48:29.604Z] [LOG]    ✅ Pulled: 142, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:29.622Z] [LOG]    ⏰ Set last sync time for session_node_maintenance: 2026-03-05T20:48:29.618Z (changes: 1)
+[2026-03-05T20:48:29.642Z] [LOG]    ✅ Verified last sync time for session_node_maintenance: 2026-03-05T20:48:29.618Z
+[2026-03-05T20:48:29.676Z] [LOG] 
+📥 Processing table: cabinet_locations
+[2026-03-05T20:48:29.772Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:04.969Z
+[2026-03-05T20:48:29.841Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:29.883Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:29.902Z] [LOG]    ⏰ Set last sync time for cabinet_locations: 2026-03-05T20:48:29.892Z (changes: 1)
+[2026-03-05T20:48:29.933Z] [LOG]    ✅ Verified last sync time for cabinet_locations: 2026-03-05T20:48:29.892Z
+[2026-03-05T20:48:29.955Z] [LOG] 
+📥 Processing table: session_pm_notes
+[2026-03-05T20:48:29.981Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:05.034Z
+[2026-03-05T20:48:30.006Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:30.030Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:30.043Z] [LOG]    ⏰ Set last sync time for session_pm_notes: 2026-03-05T20:48:30.039Z (changes: 1)
+[2026-03-05T20:48:30.047Z] [LOG]    ✅ Verified last sync time for session_pm_notes: 2026-03-05T20:48:30.039Z
+[2026-03-05T20:48:30.058Z] [LOG] 
+📥 Processing table: session_ii_documents
+[2026-03-05T20:48:30.061Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:05.086Z
+[2026-03-05T20:48:30.076Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:30.094Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:30.103Z] [LOG]    ⏰ Set last sync time for session_ii_documents: 2026-03-05T20:48:30.099Z (changes: 1)
+[2026-03-05T20:48:30.115Z] [LOG]    ✅ Verified last sync time for session_ii_documents: 2026-03-05T20:48:30.099Z
+[2026-03-05T20:48:30.124Z] [LOG] 
+📥 Processing table: session_ii_equipment
+[2026-03-05T20:48:30.133Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:05.196Z
+[2026-03-05T20:48:30.157Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:30.173Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:30.177Z] [LOG]    ⏰ Set last sync time for session_ii_equipment: 2026-03-05T20:48:30.176Z (changes: 1)
+[2026-03-05T20:48:30.183Z] [LOG]    ✅ Verified last sync time for session_ii_equipment: 2026-03-05T20:48:30.176Z
+[2026-03-05T20:48:30.192Z] [LOG] 
+📥 Processing table: session_ii_checklist
+[2026-03-05T20:48:30.195Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:05.289Z
+[2026-03-05T20:48:30.212Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:30.231Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:30.242Z] [LOG]    ⏰ Set last sync time for session_ii_checklist: 2026-03-05T20:48:30.241Z (changes: 1)
+[2026-03-05T20:48:30.249Z] [LOG]    ✅ Verified last sync time for session_ii_checklist: 2026-03-05T20:48:30.241Z
+[2026-03-05T20:48:30.259Z] [LOG] 
+📥 Processing table: session_ii_equipment_used
+[2026-03-05T20:48:30.273Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:05.353Z
+[2026-03-05T20:48:30.286Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:30.303Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:30.317Z] [LOG]    ⏰ Set last sync time for session_ii_equipment_used: 2026-03-05T20:48:30.311Z (changes: 1)
+[2026-03-05T20:48:30.336Z] [LOG]    ✅ Verified last sync time for session_ii_equipment_used: 2026-03-05T20:48:30.311Z
+[2026-03-05T20:48:30.405Z] [LOG] 
+📥 Processing table: sys_workstations
+[2026-03-05T20:48:30.425Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:05.433Z
+[2026-03-05T20:48:30.470Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:30.505Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:30.584Z] [LOG]    ⏰ Set last sync time for sys_workstations: 2026-03-05T20:48:30.520Z (changes: 1)
+[2026-03-05T20:48:30.613Z] [LOG]    ✅ Verified last sync time for sys_workstations: 2026-03-05T20:48:30.520Z
+[2026-03-05T20:48:30.630Z] [LOG] 
+📥 Processing table: sys_smart_switches
+[2026-03-05T20:48:30.649Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:05.496Z
+[2026-03-05T20:48:30.694Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:30.741Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:30.780Z] [LOG]    ⏰ Set last sync time for sys_smart_switches: 2026-03-05T20:48:30.743Z (changes: 1)
+[2026-03-05T20:48:30.834Z] [LOG]    ✅ Verified last sync time for sys_smart_switches: 2026-03-05T20:48:30.743Z
+[2026-03-05T20:48:30.858Z] [LOG] 
+📥 Processing table: sys_io_devices
+[2026-03-05T20:48:30.868Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:05.566Z
+[2026-03-05T20:48:30.892Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:30.910Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:30.917Z] [LOG]    ⏰ Set last sync time for sys_io_devices: 2026-03-05T20:48:30.912Z (changes: 1)
+[2026-03-05T20:48:30.981Z] [LOG]    ✅ Verified last sync time for sys_io_devices: 2026-03-05T20:48:30.912Z
+[2026-03-05T20:48:31.046Z] [LOG] 
+📥 Processing table: sys_controllers
+[2026-03-05T20:48:31.077Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:05.621Z
+[2026-03-05T20:48:31.109Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:31.143Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:31.170Z] [LOG]    ⏰ Set last sync time for sys_controllers: 2026-03-05T20:48:31.159Z (changes: 1)
+[2026-03-05T20:48:31.204Z] [LOG]    ✅ Verified last sync time for sys_controllers: 2026-03-05T20:48:31.159Z
+[2026-03-05T20:48:31.210Z] [LOG] 
+📥 Processing table: sys_charms_io_cards
+[2026-03-05T20:48:31.235Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:05.687Z
+[2026-03-05T20:48:31.257Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:31.303Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:31.319Z] [LOG]    ⏰ Set last sync time for sys_charms_io_cards: 2026-03-05T20:48:31.311Z (changes: 1)
+[2026-03-05T20:48:31.328Z] [LOG]    ✅ Verified last sync time for sys_charms_io_cards: 2026-03-05T20:48:31.311Z
+[2026-03-05T20:48:31.343Z] [LOG] 
+📥 Processing table: sys_charms
+[2026-03-05T20:48:31.358Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:05.751Z
+[2026-03-05T20:48:31.375Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:31.421Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:31.444Z] [LOG]    ⏰ Set last sync time for sys_charms: 2026-03-05T20:48:31.432Z (changes: 1)
+[2026-03-05T20:48:31.477Z] [LOG]    ✅ Verified last sync time for sys_charms: 2026-03-05T20:48:31.432Z
+[2026-03-05T20:48:31.488Z] [LOG] 
+📥 Processing table: sys_ams_systems
+[2026-03-05T20:48:31.499Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:05.819Z
+[2026-03-05T20:48:31.552Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:31.658Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:31.670Z] [LOG]    ⏰ Set last sync time for sys_ams_systems: 2026-03-05T20:48:31.661Z (changes: 1)
+[2026-03-05T20:48:31.690Z] [LOG]    ✅ Verified last sync time for sys_ams_systems: 2026-03-05T20:48:31.661Z
+[2026-03-05T20:48:31.758Z] [LOG] 
+📥 Processing table: customer_metric_history
+[2026-03-05T20:48:31.762Z] [LOG]    ⏰ Last sync: 2026-03-05T18:40:05.904Z
+[2026-03-05T20:48:31.791Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:31.811Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:31.868Z] [LOG]    ⏰ Set last sync time for customer_metric_history: 2026-03-05T20:48:31.826Z (changes: 1)
+[2026-03-05T20:48:31.886Z] [LOG]    ✅ Verified last sync time for customer_metric_history: 2026-03-05T20:48:31.826Z
+[2026-03-05T20:48:31.977Z] [LOG] 
+📥 Pull complete in 4910ms
+[2026-03-05T20:48:45.004Z] [LOG] 🔗 Connecting to MongoDB master server...
+[2026-03-05T20:48:45.007Z] [LOG] ✅ Connected to MongoDB master server
+[2026-03-05T20:48:47.456Z] [LOG] 📡 API: Pull with orphan cleanup requested
+[2026-03-05T20:48:47.460Z] [LOG] 📥 Starting enhanced pull with orphan cleanup...
+[2026-03-05T20:48:47.466Z] [LOG] 📥 Pulling changes from master database...
+[2026-03-05T20:48:47.469Z] [LOG] 
+📥 Processing table: users
+[2026-03-05T20:48:47.472Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:27.122Z
+[2026-03-05T20:48:47.525Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:47.626Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:47.707Z] [LOG]    ⏰ Set last sync time for users: 2026-03-05T20:48:47.659Z (changes: 1)
+[2026-03-05T20:48:47.726Z] [LOG]    ✅ Verified last sync time for users: 2026-03-05T20:48:47.659Z
+[2026-03-05T20:48:47.742Z] [LOG] 
+📥 Processing table: customers
+[2026-03-05T20:48:47.754Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:27.243Z
+[2026-03-05T20:48:47.776Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:47.825Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:47.856Z] [LOG]    ⏰ Set last sync time for customers: 2026-03-05T20:48:47.842Z (changes: 1)
+[2026-03-05T20:48:47.876Z] [LOG]    ✅ Verified last sync time for customers: 2026-03-05T20:48:47.842Z
+[2026-03-05T20:48:47.897Z] [LOG] 
+📥 Processing table: sessions
+[2026-03-05T20:48:47.925Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:27.416Z
+[2026-03-05T20:48:47.947Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:47.973Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:47.992Z] [LOG]    ⏰ Set last sync time for sessions: 2026-03-05T20:48:47.980Z (changes: 1)
+[2026-03-05T20:48:48.044Z] [LOG]    ✅ Verified last sync time for sessions: 2026-03-05T20:48:47.980Z
+[2026-03-05T20:48:48.075Z] [LOG] 
+📥 Processing table: cabinets
+[2026-03-05T20:48:48.107Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:27.548Z
+[2026-03-05T20:48:48.141Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:48.208Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:48.242Z] [LOG]    ⏰ Set last sync time for cabinets: 2026-03-05T20:48:48.226Z (changes: 1)
+[2026-03-05T20:48:48.274Z] [LOG]    ✅ Verified last sync time for cabinets: 2026-03-05T20:48:48.226Z
+[2026-03-05T20:48:48.279Z] [LOG] 
+📥 Processing table: nodes
+[2026-03-05T20:48:48.309Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:27.796Z
+[2026-03-05T20:48:48.339Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:48.358Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:48.369Z] [LOG]    ⏰ Set last sync time for nodes: 2026-03-05T20:48:48.361Z (changes: 1)
+[2026-03-05T20:48:48.375Z] [LOG]    ✅ Verified last sync time for nodes: 2026-03-05T20:48:48.361Z
+[2026-03-05T20:48:48.384Z] [LOG] 
+📥 Processing table: session_node_maintenance
+[2026-03-05T20:48:48.392Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:29.618Z
+[2026-03-05T20:48:48.421Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:48.452Z] [LOG]    🔍 Count mismatch (master: 1031, local: 889) — reconciling...
+[2026-03-05T20:48:49.021Z] [LOG]    🔄 Reconciled 142 missing/deleted records from master
+[2026-03-05T20:48:49.027Z] [LOG]    ✅ Pulled: 142, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:49.043Z] [LOG]    ⏰ Set last sync time for session_node_maintenance: 2026-03-05T20:48:49.039Z (changes: 1)
+[2026-03-05T20:48:49.058Z] [LOG]    ✅ Verified last sync time for session_node_maintenance: 2026-03-05T20:48:49.039Z
+[2026-03-05T20:48:49.064Z] [LOG] 
+📥 Processing table: cabinet_locations
+[2026-03-05T20:48:49.074Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:29.892Z
+[2026-03-05T20:48:49.088Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:49.105Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:49.112Z] [LOG]    ⏰ Set last sync time for cabinet_locations: 2026-03-05T20:48:49.109Z (changes: 1)
+[2026-03-05T20:48:49.123Z] [LOG]    ✅ Verified last sync time for cabinet_locations: 2026-03-05T20:48:49.109Z
+[2026-03-05T20:48:49.127Z] [LOG] 
+📥 Processing table: session_pm_notes
+[2026-03-05T20:48:49.135Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:30.039Z
+[2026-03-05T20:48:49.151Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:49.164Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:49.176Z] [LOG]    ⏰ Set last sync time for session_pm_notes: 2026-03-05T20:48:49.174Z (changes: 1)
+[2026-03-05T20:48:49.183Z] [LOG]    ✅ Verified last sync time for session_pm_notes: 2026-03-05T20:48:49.174Z
+[2026-03-05T20:48:49.193Z] [LOG] 
+📥 Processing table: session_ii_documents
+[2026-03-05T20:48:49.204Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:30.099Z
+[2026-03-05T20:48:49.214Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:49.229Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:49.242Z] [LOG]    ⏰ Set last sync time for session_ii_documents: 2026-03-05T20:48:49.239Z (changes: 1)
+[2026-03-05T20:48:49.250Z] [LOG]    ✅ Verified last sync time for session_ii_documents: 2026-03-05T20:48:49.239Z
+[2026-03-05T20:48:49.257Z] [LOG] 
+📥 Processing table: session_ii_equipment
+[2026-03-05T20:48:49.261Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:30.176Z
+[2026-03-05T20:48:49.278Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:49.301Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:49.318Z] [LOG]    ⏰ Set last sync time for session_ii_equipment: 2026-03-05T20:48:49.310Z (changes: 1)
+[2026-03-05T20:48:49.334Z] [LOG]    ✅ Verified last sync time for session_ii_equipment: 2026-03-05T20:48:49.310Z
+[2026-03-05T20:48:49.342Z] [LOG] 
+📥 Processing table: session_ii_checklist
+[2026-03-05T20:48:49.346Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:30.241Z
+[2026-03-05T20:48:49.362Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:49.376Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:49.388Z] [LOG]    ⏰ Set last sync time for session_ii_checklist: 2026-03-05T20:48:49.385Z (changes: 1)
+[2026-03-05T20:48:49.392Z] [LOG]    ✅ Verified last sync time for session_ii_checklist: 2026-03-05T20:48:49.385Z
+[2026-03-05T20:48:49.397Z] [LOG] 
+📥 Processing table: session_ii_equipment_used
+[2026-03-05T20:48:49.409Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:30.311Z
+[2026-03-05T20:48:49.424Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:49.438Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:49.453Z] [LOG]    ⏰ Set last sync time for session_ii_equipment_used: 2026-03-05T20:48:49.441Z (changes: 1)
+[2026-03-05T20:48:49.461Z] [LOG]    ✅ Verified last sync time for session_ii_equipment_used: 2026-03-05T20:48:49.441Z
+[2026-03-05T20:48:49.470Z] [LOG] 
+📥 Processing table: sys_workstations
+[2026-03-05T20:48:49.479Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:30.520Z
+[2026-03-05T20:48:49.492Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:49.509Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:49.514Z] [LOG]    ⏰ Set last sync time for sys_workstations: 2026-03-05T20:48:49.512Z (changes: 1)
+[2026-03-05T20:48:49.524Z] [LOG]    ✅ Verified last sync time for sys_workstations: 2026-03-05T20:48:49.512Z
+[2026-03-05T20:48:49.531Z] [LOG] 
+📥 Processing table: sys_smart_switches
+[2026-03-05T20:48:49.541Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:30.743Z
+[2026-03-05T20:48:49.556Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:49.570Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:49.576Z] [LOG]    ⏰ Set last sync time for sys_smart_switches: 2026-03-05T20:48:49.575Z (changes: 1)
+[2026-03-05T20:48:49.586Z] [LOG]    ✅ Verified last sync time for sys_smart_switches: 2026-03-05T20:48:49.575Z
+[2026-03-05T20:48:49.592Z] [LOG] 
+📥 Processing table: sys_io_devices
+[2026-03-05T20:48:49.606Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:30.912Z
+[2026-03-05T20:48:49.618Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:49.635Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:49.644Z] [LOG]    ⏰ Set last sync time for sys_io_devices: 2026-03-05T20:48:49.641Z (changes: 1)
+[2026-03-05T20:48:49.658Z] [LOG]    ✅ Verified last sync time for sys_io_devices: 2026-03-05T20:48:49.641Z
+[2026-03-05T20:48:49.666Z] [LOG] 
+📥 Processing table: sys_controllers
+[2026-03-05T20:48:49.676Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:31.159Z
+[2026-03-05T20:48:49.692Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:49.716Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:49.733Z] [LOG]    ⏰ Set last sync time for sys_controllers: 2026-03-05T20:48:49.727Z (changes: 1)
+[2026-03-05T20:48:49.741Z] [LOG]    ✅ Verified last sync time for sys_controllers: 2026-03-05T20:48:49.727Z
+[2026-03-05T20:48:49.746Z] [LOG] 
+📥 Processing table: sys_charms_io_cards
+[2026-03-05T20:48:49.757Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:31.311Z
+[2026-03-05T20:48:49.767Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:49.781Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:49.791Z] [LOG]    ⏰ Set last sync time for sys_charms_io_cards: 2026-03-05T20:48:49.789Z (changes: 1)
+[2026-03-05T20:48:49.797Z] [LOG]    ✅ Verified last sync time for sys_charms_io_cards: 2026-03-05T20:48:49.789Z
+[2026-03-05T20:48:49.808Z] [LOG] 
+📥 Processing table: sys_charms
+[2026-03-05T20:48:49.816Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:31.432Z
+[2026-03-05T20:48:49.831Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:49.855Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:49.866Z] [LOG]    ⏰ Set last sync time for sys_charms: 2026-03-05T20:48:49.859Z (changes: 1)
+[2026-03-05T20:48:49.876Z] [LOG]    ✅ Verified last sync time for sys_charms: 2026-03-05T20:48:49.859Z
+[2026-03-05T20:48:49.887Z] [LOG] 
+📥 Processing table: sys_ams_systems
+[2026-03-05T20:48:49.893Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:31.661Z
+[2026-03-05T20:48:49.909Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:49.923Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:49.930Z] [LOG]    ⏰ Set last sync time for sys_ams_systems: 2026-03-05T20:48:49.926Z (changes: 1)
+[2026-03-05T20:48:49.939Z] [LOG]    ✅ Verified last sync time for sys_ams_systems: 2026-03-05T20:48:49.926Z
+[2026-03-05T20:48:49.942Z] [LOG] 
+📥 Processing table: customer_metric_history
+[2026-03-05T20:48:49.948Z] [LOG]    ⏰ Last sync: 2026-03-05T20:48:31.826Z
+[2026-03-05T20:48:49.960Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-05T20:48:49.973Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-05T20:48:49.978Z] [LOG]    ⏰ Set last sync time for customer_metric_history: 2026-03-05T20:48:49.976Z (changes: 1)
+[2026-03-05T20:48:49.988Z] [LOG]    ✅ Verified last sync time for customer_metric_history: 2026-03-05T20:48:49.976Z
+[2026-03-05T20:48:49.993Z] [LOG] 
+📥 Pull complete in 2524ms
+[2026-03-05T20:48:50.004Z] [LOG] 
+🧹 Starting orphan detection and cleanup...
+[2026-03-05T20:48:50.014Z] [LOG]    (Finding local records that no longer exist in master)
+[2026-03-05T20:48:50.025Z] [LOG] 
+🔍 Checking users for orphans...
+[2026-03-05T20:48:50.034Z] [LOG]    📊 Checking 2 local records against master...
+[2026-03-05T20:48:50.092Z] [LOG]    ✅ Removed 0 orphaned records from users
+[2026-03-05T20:48:50.099Z] [LOG] 
+🔍 Checking customers for orphans...
+[2026-03-05T20:48:50.109Z] [LOG]    📊 Checking 246 local records against master...
+[2026-03-05T20:48:51.563Z] [LOG]    ✅ Removed 0 orphaned records from customers
+[2026-03-05T20:48:51.572Z] [LOG] 
+🔍 Checking sessions for orphans...
+[2026-03-05T20:48:51.579Z] [LOG]    📊 Checking 30 local records against master...
+[2026-03-05T20:48:51.800Z] [LOG]    ✅ Removed 0 orphaned records from sessions
+[2026-03-05T20:48:51.809Z] [LOG] 
+🔍 Checking cabinets for orphans...
+[2026-03-05T20:48:51.821Z] [LOG]    📊 Checking 193 local records against master...
+[2026-03-05T20:48:53.035Z] [LOG]    ✅ Removed 0 orphaned records from cabinets
+[2026-03-05T20:48:53.041Z] [LOG] 
+🔍 Checking nodes for orphans...
+[2026-03-05T20:48:53.054Z] [LOG]    📊 Checking 1586 local records against master...
+[2026-03-05T20:49:01.617Z] [LOG]    ✅ Removed 0 orphaned records from nodes
+[2026-03-05T20:49:01.623Z] [LOG] 
+🔍 Checking session_node_maintenance for orphans...
+[2026-03-05T20:49:01.639Z] [LOG]    📊 Checking 889 local records against master...
+[2026-03-05T20:49:06.336Z] [LOG]    ✅ Removed 0 orphaned records from session_node_maintenance
+[2026-03-05T20:49:06.342Z] [LOG] 
+🔍 Checking cabinet_locations for orphans...
+[2026-03-05T20:49:06.352Z] [LOG]    📊 Checking 38 local records against master...
+[2026-03-05T20:49:06.607Z] [LOG]    ✅ Removed 0 orphaned records from cabinet_locations
+[2026-03-05T20:49:06.614Z] [LOG] 
+🔍 Checking session_pm_notes for orphans...
+[2026-03-05T20:49:06.625Z] [LOG]    📊 Checking 22 local records against master...
+[2026-03-05T20:49:06.789Z] [LOG]    ✅ Removed 0 orphaned records from session_pm_notes
+[2026-03-05T20:49:06.792Z] [LOG] 
+🔍 Checking session_ii_documents for orphans...
+[2026-03-05T20:49:06.799Z] [LOG]    📊 Checking 4 local records against master...
+[2026-03-05T20:49:06.858Z] [LOG]    ✅ Removed 0 orphaned records from session_ii_documents
+[2026-03-05T20:49:06.861Z] [LOG] 
+🔍 Checking session_ii_equipment for orphans...
+[2026-03-05T20:49:06.876Z] [LOG]    📊 Checking 2 local records against master...
+[2026-03-05T20:49:06.919Z] [LOG]    ✅ Removed 0 orphaned records from session_ii_equipment
+[2026-03-05T20:49:06.924Z] [LOG] 
+🔍 Checking session_ii_checklist for orphans...
+[2026-03-05T20:49:06.927Z] [LOG]    📊 Checking 58 local records against master...
+[2026-03-05T20:49:07.246Z] [LOG]    ✅ Removed 0 orphaned records from session_ii_checklist
+[2026-03-05T20:49:07.256Z] [LOG] 
+🔍 Checking session_ii_equipment_used for orphans...
+[2026-03-05T20:49:07.261Z] [LOG]    ✅ No records to check
+[2026-03-05T20:49:07.273Z] [LOG] 
+🔍 Checking sys_workstations for orphans...
+[2026-03-05T20:49:07.276Z] [LOG]    📊 Checking 78 local records against master...
+[2026-03-05T20:49:07.709Z] [LOG]    ✅ Removed 0 orphaned records from sys_workstations
+[2026-03-05T20:49:07.718Z] [LOG] 
+🔍 Checking sys_smart_switches for orphans...
+[2026-03-05T20:49:07.725Z] [LOG]    📊 Checking 51 local records against master...
+[2026-03-05T20:49:08.040Z] [LOG]    ✅ Removed 0 orphaned records from sys_smart_switches
+[2026-03-05T20:49:08.042Z] [LOG] 
+🔍 Checking sys_io_devices for orphans...
+[2026-03-05T20:49:08.053Z] [LOG]    📊 Checking 970 local records against master...
+[2026-03-05T20:49:13.067Z] [LOG]    ✅ Removed 0 orphaned records from sys_io_devices
+[2026-03-05T20:49:13.073Z] [LOG] 
+🔍 Checking sys_controllers for orphans...
+[2026-03-05T20:49:13.078Z] [LOG]    📊 Checking 46 local records against master...
+[2026-03-05T20:49:13.343Z] [LOG]    ✅ Removed 0 orphaned records from sys_controllers
+[2026-03-05T20:49:13.352Z] [LOG] 
+🔍 Checking sys_charms_io_cards for orphans...
+[2026-03-05T20:49:13.360Z] [LOG]    📊 Checking 70 local records against master...
+[2026-03-05T20:49:13.763Z] [LOG]    ✅ Removed 0 orphaned records from sys_charms_io_cards
+[2026-03-05T20:49:13.774Z] [LOG] 
+🔍 Checking sys_charms for orphans...
+[2026-03-05T20:49:13.819Z] [LOG]    📊 Checking 5764 local records against master...
+[2026-03-05T20:49:41.812Z] [LOG]    ✅ Removed 0 orphaned records from sys_charms
+[2026-03-05T20:49:41.823Z] [LOG] 
+🔍 Checking sys_ams_systems for orphans...
+[2026-03-05T20:49:41.826Z] [LOG]    📊 Checking 9 local records against master...
+[2026-03-05T20:49:41.935Z] [LOG]    ✅ Removed 0 orphaned records from sys_ams_systems
+[2026-03-05T20:49:41.949Z] [LOG] 
+🔍 Checking customer_metric_history for orphans...
+[2026-03-05T20:49:41.970Z] [LOG]    📊 Checking 4 local records against master...
+[2026-03-05T20:49:42.037Z] [LOG]    ✅ Removed 0 orphaned records from customer_metric_history
+[2026-03-05T20:49:42.045Z] [LOG] 
+✅ Orphan cleanup complete: 0 orphaned records removed

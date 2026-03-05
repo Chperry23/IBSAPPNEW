@@ -55,9 +55,17 @@ function buildExecutable() {
   console.log('   The deployment will include node_modules/sqlite3/\n');
   
   const exePath = `dist/${EXE_NAME}`;
-  const buildCommand = `npx pkg server-tablet.js --targets node18-win-x64 --output "${exePath}"`;
+
+  // Use pkg's built-in --icon flag so the icon is embedded DURING the build.
+  // Do NOT use rcedit after the fact — rcedit shifts PE offsets which breaks
+  // pkg's snapshot lookup and causes "Pkg: Error reading from file." on startup.
+  const iconPath = path.resolve('app-icon.ico');
+  const iconFlag = fs.existsSync(iconPath) ? ` --icon "${iconPath}"` : '';
+  if (iconFlag) console.log('🎨 Icon will be embedded by pkg during build\n');
+
+  const buildCommand = `npx pkg server-tablet.js --targets node18-win-x64 --output "${exePath}"${iconFlag}`;
   
-  exec(buildCommand, { maxBuffer: 30 * 1024 * 1024 }, async (error, stdout, stderr) => {
+  exec(buildCommand, { maxBuffer: 30 * 1024 * 1024 }, (error, stdout, stderr) => {
     if (error) {
       console.error('❌ Build failed:', error.message);
       if (stderr) {
@@ -88,31 +96,8 @@ function buildExecutable() {
         process.exit(1);
       }
 
-      // Stamp icon and version info onto the exe using rcedit
-      const iconPath = path.resolve('app-icon.ico');
-      if (fs.existsSync(iconPath)) {
-        console.log('\n🎨 Stamping icon and version info onto exe...');
-        try {
-          const { rcedit } = require('rcedit');
-          await rcedit(exePath, {
-            icon: iconPath,
-            'version-string': {
-              ProductName: 'ECI Cabinet PM',
-              FileDescription: 'ECI Cabinet PM - Preventive Maintenance',
-              CompanyName: 'ECI Industrial Solutions',
-              LegalCopyright: `© ${new Date().getFullYear()} ECI Industrial Solutions`,
-              OriginalFilename: EXE_NAME,
-            },
-            'file-version': buildInfo.version,
-            'product-version': BUILD_TAG,
-          });
-          console.log('   ✅ Icon and version info applied!');
-        } catch (rcErr) {
-          console.warn('   ⚠️  rcedit failed (icon not applied):', rcErr.message);
-          console.warn('   💡 Install rcedit: npm install rcedit --save-dev');
-        }
-      } else {
-        console.log('\n⚠️  app-icon.ico not found, skipping icon stamp');
+      if (iconFlag) {
+        console.log('🎨 Icon embedded by pkg during build (no rcedit needed)');
       }
 
       // Also copy as CabinetPM.exe so the batch launcher still works
