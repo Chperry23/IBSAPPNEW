@@ -1146,6 +1146,59 @@ function initializeDatabase() {
       addColumnIfNotExists('sys_ams_systems', 'device_id', 'TEXT');
       addColumnIfNotExists('sys_ams_systems', 'deleted', 'INTEGER DEFAULT 0');
 
+      // Customer site notes
+      db.run(
+        `CREATE TABLE IF NOT EXISTS customer_notes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id INTEGER NOT NULL,
+          note TEXT NOT NULL,
+          created_by TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (customer_id) REFERENCES customers(id)
+        )`,
+        (err) => {
+          if (err) console.error('❌ Error creating customer_notes table:', err);
+          else console.log('✅ Created (or found) customer_notes table');
+        }
+      );
+      addColumnIfNotExists('customer_notes', 'created_by', 'TEXT');
+
+      // Fix NULL ids in sys_charms_io_cards and sys_charms.
+      // The TEXT column migration (for MongoDB ObjectId support) removed AUTOINCREMENT,
+      // so records inserted after that migration got id = NULL. Fix by assigning the
+      // SQLite ROWID (always unique, matches original integer for pre-migration rows).
+      db.run(
+        `UPDATE sys_charms_io_cards SET id = CAST(rowid AS TEXT) WHERE id IS NULL`,
+        function(err) {
+          if (!err && this.changes > 0)
+            console.log(`🔧 Fixed ${this.changes} NULL id(s) in sys_charms_io_cards`);
+        }
+      );
+      db.run(
+        `UPDATE sys_charms SET id = CAST(rowid AS TEXT) WHERE id IS NULL`,
+        function(err) {
+          if (!err && this.changes > 0)
+            console.log(`🔧 Fixed ${this.changes} NULL id(s) in sys_charms`);
+        }
+      );
+
+      // One-time cleanup: remove sys_charms rows where every data field is
+      // "Not available" or blank — these are empty hardware slots with no real
+      // device installed and only waste space.
+      db.run(
+        `DELETE FROM sys_charms
+         WHERE (model      IS NULL OR LOWER(TRIM(model))             IN ('', 'not available'))
+           AND (software_revision IS NULL OR LOWER(TRIM(software_revision)) IN ('', 'not available'))
+           AND (hardware_revision IS NULL OR LOWER(TRIM(hardware_revision)) IN ('', 'not available'))
+           AND (serial_number    IS NULL OR LOWER(TRIM(serial_number))      IN ('', 'not available'))`,
+        function(err) {
+          if (!err && this.changes > 0) {
+            console.log(`🧹 Cleaned up ${this.changes} empty "Not available" sys_charms rows`);
+          }
+        }
+      );
+
       console.log('✅ Database tables initialized successfully');
 
       // Debug: Check cabinet data after initialization

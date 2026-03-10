@@ -90,7 +90,7 @@ router.post('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
           performance_type=excluded.performance_type, performance_value=excluded.performance_value,
           hf_updated=excluded.hf_updated, firmware_updated_checked=excluded.firmware_updated_checked,
           notes=excluded.notes, is_custom_node=excluded.is_custom_node, completed=excluded.completed,
-          updated_at=CURRENT_TIMESTAMP
+          synced=0, updated_at=CURRENT_TIMESTAMP
       `).run([
         sessionId, nid,
         maintenance.dv_checked ? 1 : 0, maintenance.os_checked ? 1 : 0, maintenance.macafee_checked ? 1 : 0,

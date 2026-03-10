@@ -219,5 +219,75 @@ router.get('/:customerId/sessions', requireAuth, async (req, res) => {
   }
 });
 
+// ── Site Notes ──────────────────────────────────────────────────────────────
+
+// Get all notes for a customer
+router.get('/:customerId/notes', requireAuth, async (req, res) => {
+  const customerId = parseInt(req.params.customerId);
+  try {
+    const notes = await db.prepare(
+      `SELECT * FROM customer_notes WHERE customer_id = ? ORDER BY created_at DESC`
+    ).all([customerId]);
+    res.json(notes);
+  } catch (error) {
+    console.error('Get customer notes error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Add a note
+router.post('/:customerId/notes', requireAuth, async (req, res) => {
+  const customerId = parseInt(req.params.customerId);
+  const { note, created_by } = req.body;
+  if (!note || !note.trim()) {
+    return res.status(400).json({ error: 'Note text is required' });
+  }
+  try {
+    const result = await db.prepare(
+      `INSERT INTO customer_notes (customer_id, note, created_by) VALUES (?, ?, ?)`
+    ).run([customerId, note.trim(), created_by || req.user?.username || null]);
+    const created = await db.prepare(
+      `SELECT * FROM customer_notes WHERE id = ?`
+    ).get([result.lastInsertRowid]);
+    res.status(201).json(created);
+  } catch (error) {
+    console.error('Add customer note error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Update a note
+router.put('/:customerId/notes/:noteId', requireAuth, async (req, res) => {
+  const { noteId } = req.params;
+  const { note } = req.body;
+  if (!note || !note.trim()) {
+    return res.status(400).json({ error: 'Note text is required' });
+  }
+  try {
+    await db.prepare(
+      `UPDATE customer_notes SET note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+    ).run([note.trim(), noteId]);
+    const updated = await db.prepare(
+      `SELECT * FROM customer_notes WHERE id = ?`
+    ).get([noteId]);
+    res.json(updated);
+  } catch (error) {
+    console.error('Update customer note error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Delete a note
+router.delete('/:customerId/notes/:noteId', requireAuth, async (req, res) => {
+  const { noteId } = req.params;
+  try {
+    await db.prepare(`DELETE FROM customer_notes WHERE id = ?`).run([noteId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete customer note error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 module.exports = router;
 

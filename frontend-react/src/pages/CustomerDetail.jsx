@@ -12,6 +12,12 @@ export default function CustomerDetail() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
   const [activeTab, setActiveTab] = useState('active');
+  const [notes, setNotes] = useState([]);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [newNote, setNewNote] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [editingNote, setEditingNote] = useState(null);
+  const [editNoteText, setEditNoteText] = useState('');
   const [showEditModal, setShowEditModal] = useState(false);
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
   const [newSessionType, setNewSessionType] = useState('pm');
@@ -30,6 +36,7 @@ export default function CustomerDetail() {
   useEffect(() => {
     loadCustomerData();
     loadSystemRegSummary();
+    loadNotes();
   }, [id]);
 
   const loadCustomerData = async () => {
@@ -70,6 +77,58 @@ export default function CustomerDetail() {
   const openTrendModal = () => {
     setShowTrendModal(true);
     loadMetricHistory();
+  };
+
+  const loadNotes = async () => {
+    if (!id) return;
+    setNotesLoading(true);
+    try {
+      const data = await api.getCustomerNotes(id);
+      setNotes(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Error loading notes:', err);
+    } finally {
+      setNotesLoading(false);
+    }
+  };
+
+  const handleAddNote = async () => {
+    if (!newNote.trim()) return;
+    setSavingNote(true);
+    try {
+      const created = await api.addCustomerNote(id, newNote.trim());
+      setNotes(prev => [created, ...prev]);
+      setNewNote('');
+      showMessage('Note added', 'success');
+    } catch (err) {
+      showMessage('Error saving note', 'error');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const handleSaveEditNote = async (noteId) => {
+    if (!editNoteText.trim()) return;
+    try {
+      const updated = await api.updateCustomerNote(id, noteId, editNoteText.trim());
+      setNotes(prev => prev.map(n => n.id === noteId ? updated : n));
+      setEditingNote(null);
+      setEditNoteText('');
+      showMessage('Note updated', 'success');
+    } catch (err) {
+      showMessage('Error updating note', 'error');
+    }
+  };
+
+  const handleDeleteNote = async (noteId) => {
+    if (!confirm('Delete this note?')) return;
+    try {
+      await api.deleteCustomerNote(id, noteId);
+      setNotes(prev => prev.filter(n => n.id !== noteId));
+      showMessage('Note deleted', 'success');
+    } catch (err) {
+      showMessage('Error deleting note', 'error');
+    }
   };
 
   const loadSystemRegSummary = async () => {
@@ -574,7 +633,7 @@ export default function CustomerDetail() {
         </div>
       </div>
 
-      {/* Sessions Tabs */}
+      {/* Sessions / Notes Tabs */}
       <div className="card">
         <div className="card-header">
           <div className="flex gap-4 border-b border-gray-700">
@@ -598,9 +657,108 @@ export default function CustomerDetail() {
             >
               Completed Sessions ({completedSessions.length})
             </button>
+            <button
+              onClick={() => setActiveTab('notes')}
+              className={`pb-2 px-4 font-medium transition-colors ${
+                activeTab === 'notes'
+                  ? 'text-yellow-400 border-b-2 border-yellow-400'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              📋 Site Notes ({notes.length})
+            </button>
           </div>
         </div>
-        <div className="overflow-x-auto">
+        {/* Site Notes Panel */}
+        {activeTab === 'notes' && (
+          <div className="p-6 space-y-4">
+            {/* Add note */}
+            <div className="space-y-2">
+              <label className="form-label">New Site Note</label>
+              <textarea
+                className="form-input w-full"
+                rows={3}
+                placeholder="e.g. Customer is strict about blowing out computers. Main server room is in Building B."
+                value={newNote}
+                onChange={e => setNewNote(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) handleAddNote(); }}
+              />
+              <button
+                className="btn btn-primary"
+                onClick={handleAddNote}
+                disabled={savingNote || !newNote.trim()}
+              >
+                {savingNote ? 'Saving...' : '+ Add Note'}
+              </button>
+            </div>
+
+            {/* Notes list */}
+            {notesLoading ? (
+              <p className="text-gray-400 text-sm">Loading notes...</p>
+            ) : notes.length === 0 ? (
+              <p className="text-gray-500 text-sm italic">No site notes yet. Add one above.</p>
+            ) : (
+              <div className="space-y-3">
+                {notes.map(note => (
+                  <div key={note.id} className="bg-gray-700 rounded-lg p-4 border border-gray-600">
+                    {editingNote === note.id ? (
+                      <div className="space-y-2">
+                        <textarea
+                          className="form-input w-full"
+                          rows={3}
+                          value={editNoteText}
+                          onChange={e => setEditNoteText(e.target.value)}
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => handleSaveEditNote(note.id)}
+                          >
+                            Save
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => { setEditingNote(null); setEditNoteText(''); }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-gray-100 whitespace-pre-wrap">{note.note}</p>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-xs text-gray-500">
+                            {note.created_by && <span className="mr-2">By {note.created_by}</span>}
+                            {new Date(note.created_at).toLocaleString()}
+                            {note.updated_at !== note.created_at && ' (edited)'}
+                          </span>
+                          <div className="flex gap-3">
+                            <button
+                              className="text-blue-400 hover:text-blue-300 text-sm"
+                              onClick={() => { setEditingNote(note.id); setEditNoteText(note.note); }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="text-red-400 hover:text-red-300 text-sm"
+                              onClick={() => handleDeleteNote(note.id)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="overflow-x-auto" style={{ display: activeTab === 'notes' ? 'none' : undefined }}>
           <table className="table-dark">
             <thead>
               <tr>

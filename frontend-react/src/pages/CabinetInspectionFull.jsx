@@ -316,13 +316,13 @@ export default function CabinetInspectionFull() {
     });
   };
 
-  // Voltage validation specs
+  // Voltage validation specs — must match VOLTAGE_RANGES in backend/utils/risk-assessment.js
   const voltageSpecs = {
     line_neutral: { min: 100, max: 130, unit: 'V' },
     line_ground: { min: 100, max: 130, unit: 'V' },
     neutral_ground: { min: 0, max: 1000, unit: 'mV' },
-    '24VDC': { min: 21.6, max: 26.4, unit: 'V' },
-    '12VDC': { min: 10.8, max: 13.2, unit: 'V' },
+    '24VDC': { min: 22.8, max: 25.2, unit: 'V' },
+    '12VDC': { min: 11.4, max: 12.6, unit: 'V' },
   };
 
   const validateVoltage = (value, type, voltageType = null) => {
@@ -886,11 +886,11 @@ export default function CabinetInspectionFull() {
   const autoCalculateStatus = (ps) => {
     const voltageType = ps.voltage_type || '12VDC';
     
-    // Define voltage specs
+    // Define voltage specs — must match VOLTAGE_RANGES in backend/utils/risk-assessment.js
     const specs = {
-      '12VDC': { ac_min: 100, ac_max: 130, dc_min: 10.8, dc_max: 13.2, neutral_min: 0, neutral_max: 1000 },
-      '24VDC': { ac_min: 100, ac_max: 130, dc_min: 21.6, dc_max: 26.4, neutral_min: 0, neutral_max: 1000 },
-      '48VDC': { ac_min: 100, ac_max: 130, dc_min: 43.2, dc_max: 52.8, neutral_min: 0, neutral_max: 1000 },
+      '12VDC': { ac_min: 100, ac_max: 130, dc_min: 11.4, dc_max: 12.6, neutral_min: 0, neutral_max: 1000 },
+      '24VDC': { ac_min: 100, ac_max: 130, dc_min: 22.8, dc_max: 25.2, neutral_min: 0, neutral_max: 1000 },
+      '48VDC': { ac_min: 100, ac_max: 130, dc_min: 45.6, dc_max: 50.4, neutral_min: 0, neutral_max: 1000 },
       '120VAC': { ac_min: 100, ac_max: 130, neutral_min: 0, neutral_max: 1000 },
     };
 
@@ -1604,9 +1604,9 @@ export default function CabinetInspectionFull() {
                             }`}
                             placeholder={
                               ps.voltage_type === '24VDC'
-                                ? '21.6-26.4V'
+                                ? '22.8-25.2V'
                                 : ps.voltage_type === '12VDC'
-                                ? '10.8-13.2V'
+                                ? '11.4-12.6V'
                                 : '0.00'
                             }
                           />
@@ -1886,7 +1886,7 @@ export default function CabinetInspectionFull() {
                                     : ''
                                 }`}
                                 placeholder={
-                                  (block.voltage_type || '24VDC') === '24VDC' ? '21.6-26.4V' : '10.8-13.2V'
+                                  (block.voltage_type || '24VDC') === '24VDC' ? '22.8-25.2V' : '11.4-12.6V'
                                 }
                               />
                               {block.dc_reading && validateVoltage(block.dc_reading, 'dc_reading', block.voltage_type) && (
@@ -1968,7 +1968,7 @@ export default function CabinetInspectionFull() {
                                     : ''
                                 }`}
                                 placeholder={
-                                  diode.voltage_type === '24VDC' ? '21.6-26.4V' : '10.8-13.2V'
+                                  diode.voltage_type === '24VDC' ? '22.8-25.2V' : '11.4-12.6V'
                                 }
                               />
                               {diode.dc_reading && validateVoltage(diode.dc_reading, 'dc_reading', diode.voltage_type) && (

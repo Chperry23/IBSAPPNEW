@@ -169,13 +169,16 @@ const sessionNodeMaintenanceSchema = new mongoose.Schema({
   performance_value: { type: Number },
   hf_updated: { type: Number },
   firmware_updated_checked: { type: Number },
+  notes: { type: String },
+  is_custom_node: { type: Number },
+  completed: { type: Number, default: 0 },
   uuid: { type: String },
   synced: { type: Number, default: 0 },
   device_id: { type: String },
   deleted: { type: Number, default: 0 },
   created_at: { type: Date, default: Date.now },
   updated_at: { type: Date, default: Date.now }
-}, { 
+}, {
   collection: 'session_node_maintenance',
   versionKey: false
 });

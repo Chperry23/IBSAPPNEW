@@ -85,7 +85,13 @@ export default function SessionDetailFull() {
       if (result.success) {
         soundSystem.playSuccess();
         setShowNewCabinetModal(false);
-        loadSessionData();
+        await loadSessionData();
+        // Move the newest cabinet (highest id) to the front
+        setCabinets(prev => {
+          const sorted = [...prev];
+          sorted.sort((a, b) => (b.id > a.id ? 1 : b.id < a.id ? -1 : 0));
+          return sorted;
+        });
         showMessage('Cabinet created successfully', 'success');
         e.target.reset();
       } else {
@@ -114,7 +120,12 @@ export default function SessionDetailFull() {
       if (result.success) {
         soundSystem.playSuccess();
         setShowAddRackModal(false);
-        loadSessionData();
+        await loadSessionData();
+        setCabinets(prev => {
+          const sorted = [...prev];
+          sorted.sort((a, b) => (b.id > a.id ? 1 : b.id < a.id ? -1 : 0));
+          return sorted;
+        });
         showMessage('Rack created successfully', 'success');
         e.target.reset();
       } else {
@@ -620,15 +631,26 @@ export default function SessionDetailFull() {
           <div className="card mb-6">
             <div className="card-body">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input
-                  type="text"
-                  placeholder="🔍 Search cabinets by name..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="form-input"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search cabinets by name..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="form-input pr-8"
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-lg leading-none"
+                      title="Clear search"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
                 <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="form-select">
-                  <option value="location">Sort by Location</option>
+                  <option value="location">Group by Location</option>
                   <option value="date">Sort by Date</option>
                   <option value="status">Sort by Status</option>
                   <option value="created">Sort by Created</option>
@@ -659,14 +681,32 @@ export default function SessionDetailFull() {
             </div>
           ) : (
             <div className="space-y-6">
+              {/* No-results message when search text matches nothing */}
+              {searchTerm.trim() && !cabinets.some(c =>
+                (c.cabinet_name || '').toLowerCase().includes(searchTerm.trim().toLowerCase())
+              ) && (
+                <div className="card">
+                  <div className="card-body text-center py-10">
+                    <div className="text-4xl mb-3">🔍</div>
+                    <p className="text-gray-400">No cabinets match &quot;{searchTerm}&quot;</p>
+                    <button onClick={() => setSearchTerm('')} className="btn btn-secondary mt-4 text-sm">
+                      Clear search
+                    </button>
+                  </div>
+                </div>
+              )}
               {/* Render each location container, then unassigned at the end */}
               {[...locations, { id: null, location_name: 'Unassigned' }].map((loc) => {
-                const locationCabinets = cabinets.filter(c => 
-                  loc.id ? c.location_id === loc.id : (!c.location_id)
-                );
+                const searchFilter = searchTerm.trim().toLowerCase();
+                const locationCabinets = cabinets.filter(c => {
+                  const inLocation = loc.id ? c.location_id === loc.id : !c.location_id;
+                  if (!inLocation) return false;
+                  if (!searchFilter) return true;
+                  return (c.cabinet_name || '').toLowerCase().includes(searchFilter);
+                });
                 
-                // Skip empty location groups (except Unassigned always shows)
-                if (locationCabinets.length === 0 && loc.id) return null;
+                // Skip empty location groups when searching or when a named location is empty
+                if (locationCabinets.length === 0 && (loc.id || searchFilter)) return null;
                 
                 return (
                   <div key={loc.id || 'unassigned'} className="rounded-lg border border-gray-600 bg-gray-800/30">

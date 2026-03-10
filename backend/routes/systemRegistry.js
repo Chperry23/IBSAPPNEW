@@ -419,7 +419,15 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
     if (root.CharmsIOCard) {
       const cards = Array.isArray(root.CharmsIOCard) ? root.CharmsIOCard : [root.CharmsIOCard];
       console.log('🔵 [SYSTEM REGISTRY] Processing', cards.length, 'Charms I/O cards');
-      
+
+      // Returns true when every data field is blank / "Not available" — these are
+      // empty hardware slots with no real device installed; skip them to avoid
+      // cluttering the database with thousands of useless placeholder rows.
+      const isCharmEmpty = (model, swRev, hwRev, serial) => {
+        const NA = (v) => !v || v.trim() === '' || v.trim().toLowerCase() === 'not available';
+        return NA(model) && NA(swRev) && NA(hwRev) && NA(serial);
+      };
+
       // Clear existing Charms for this customer before importing (to avoid duplicates from schema changes)
       await db.prepare('DELETE FROM sys_charms WHERE customer_id = ?').run([customerId]);
       console.log('🔵 [SYSTEM REGISTRY] Cleared existing Charms for fresh import');
@@ -445,6 +453,14 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
             console.log('🔵 [SYSTEM REGISTRY] Found', charms.length, 'nested Charms in', ciocName);
             
             for (const charm of charms) {
+              const model   = getField(charm, 'Model');
+              const swRev   = getField(charm, 'SoftwareRevision');
+              const hwRev   = getField(charm, 'HardwareRevision');
+              const serial  = getField(charm, 'SerialNumber');
+
+              // Skip placeholder charms that carry no useful hardware data
+              if (isCharmEmpty(model, swRev, hwRev, serial)) continue;
+
               try {
                 await db.prepare(`
                   INSERT INTO sys_charms (
@@ -453,12 +469,9 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
                   ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 `).run([
                   customerId,
-                  ciocName, // Store which CIOC this charm belongs to
+                  ciocName,
                   getField(charm, 'Name') || '',
-                  getField(charm, 'Model'),
-                  getField(charm, 'SoftwareRevision'),
-                  getField(charm, 'HardwareRevision'),
-                  getField(charm, 'SerialNumber')
+                  model, swRev, hwRev, serial
                 ]);
                 stats.charms++;
               } catch (err) {
@@ -477,12 +490,29 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       const charms = Array.isArray(root.Charm) ? root.Charm : [root.Charm];
       console.log('🔵 [SYSTEM REGISTRY] Processing', charms.length, 'standalone Charms');
       
+      // Reuse the same helper defined above for nested charms (or define it if
+      // standalone charms appear without a CharmsIOCard section)
+      const _isCharmEmpty = typeof isCharmEmpty === 'function'
+        ? isCharmEmpty
+        : (model, swRev, hwRev, serial) => {
+            const NA = (v) => !v || v.trim() === '' || v.trim().toLowerCase() === 'not available';
+            return NA(model) && NA(swRev) && NA(hwRev) && NA(serial);
+          };
+
       for (const charm of charms) {
         try {
           const getField = (obj, fieldName) => {
             return obj[fieldName] || obj[fieldName.toUpperCase()] || obj[fieldName.toLowerCase()] || null;
           };
-          
+
+          const model  = getField(charm, 'Model');
+          const swRev  = getField(charm, 'SoftwareRevision');
+          const hwRev  = getField(charm, 'HardwareRevision');
+          const serial = getField(charm, 'SerialNumber');
+
+          // Skip placeholder charms with no useful hardware data
+          if (_isCharmEmpty(model, swRev, hwRev, serial)) continue;
+
           await db.prepare(`
             INSERT INTO sys_charms (
               customer_id, charms_io_card_name, name, model, software_revision, 
@@ -490,12 +520,9 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
             ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
           `).run([
             customerId,
-            null, // No parent CIOC for standalone charms
+            null,
             getField(charm, 'Name') || '',
-            getField(charm, 'Model'),
-            getField(charm, 'SoftwareRevision'),
-            getField(charm, 'HardwareRevision'),
-            getField(charm, 'SerialNumber')
+            model, swRev, hwRev, serial
           ]);
           stats.charms++;
         } catch (err) {
@@ -504,6 +531,11 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       }
     }
     
+    // After all CIOC/Charm inserts: repair any NULL ids caused by the TEXT column
+    // migration removing AUTOINCREMENT. Assign ROWID so every record has a stable id.
+    await db.prepare(`UPDATE sys_charms_io_cards SET id = CAST(rowid AS TEXT) WHERE customer_id = ? AND id IS NULL`).run([customerId]);
+    await db.prepare(`UPDATE sys_charms SET id = CAST(rowid AS TEXT) WHERE customer_id = ? AND id IS NULL`).run([customerId]);
+
     // Parse AMSSystem table
     if (root.AMSSystem) {
       const ams = Array.isArray(root.AMSSystem) ? root.AMSSystem[0] : root.AMSSystem;

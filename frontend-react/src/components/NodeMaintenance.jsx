@@ -221,23 +221,38 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
     const model = (node.model || '').toLowerCase();
     const nodeType = (node.node_type || '').toLowerCase();
     const nodeName = (node.node_name || '').toLowerCase();
-    // Performance Index controllers: S-Series, CSLS, SIS, PK, EIOC, MD/MD Plus
+
+    // Free Time first pass: MD Plus and plain MD controllers → Free Time
+    // (MD is DeltaV's primary controller but runs at 100% free-time scale)
+    if (nodeType.startsWith('md') || model.startsWith('md') ||
+        nodeType.includes('md plus') || model.includes('md plus')) {
+      return { displayType: node.model || node.node_type, perfType: 'free_time', min: 1, max: 100 };
+    }
+
+    // Perf Index controllers: S-Series, CSLS, SIS, PK, EIOC, MQ, CIOC 2
+    // CIOC 2 is a specific card type distinct from generic CIOC (which is free-time)
     if (nodeType.startsWith('se') || nodeType.startsWith('sz') || nodeType.startsWith('sx') ||
         nodeType.startsWith('sq') || nodeType.startsWith('mq') || nodeType.includes('csls') ||
         nodeType.includes('pk') || nodeType.includes('eioc') || nodeType.includes('sis') ||
-        nodeType.startsWith('md') ||
-        (nodeType.includes('kl') && nodeType.includes('ba1')) || nodeName.includes('csls') || nodeName.includes('eioc') ||
-        model.includes('md') || model.includes('mq') || model.includes('pk') || model.includes('sq') || model.includes('sz') || model.includes('sx') ||
-        model.includes('csls') || model.includes('logic solver') || model.includes('sis') || model.includes('pk controller')) {
+        nodeType.includes('cioc 2') || nodeType.includes('cioc2') ||
+        (nodeType.includes('kl') && nodeType.includes('ba1')) ||
+        nodeName.includes('csls') || nodeName.includes('eioc') ||
+        model.includes('mq') || model.includes('pk') || model.includes('sq') ||
+        model.includes('sz') || model.includes('sx') ||
+        model.includes('csls') || model.includes('logic solver') ||
+        model.includes('sis') || model.includes('pk controller') ||
+        model.includes('cioc 2') || model.includes('cioc2')) {
       return { displayType: node.model || node.node_type, perfType: 'perf_index', min: 1, max: 5 };
     }
-    // Free Time controllers: VE*, MX*, SD Plus, CIOC
+
+    // Free Time controllers: VE*, MX*, SD Plus, generic CIOC (Charm I/O Card)
     if (nodeType.startsWith('ve') || nodeType.startsWith('mx') ||
         nodeType.includes('sd plus') || nodeType.includes('cioc') ||
         model.includes('mx') || model.includes('ve') ||
         model.includes('sd plus') || model.includes('cioc')) {
       return { displayType: node.model || node.node_type, perfType: 'free_time', min: 1, max: 100 };
     }
+
     // Custom/unknown nodes default to free_time
     return { displayType: node.model || node.node_type, perfType: 'free_time', min: 1, max: 100 };
   };

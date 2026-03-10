@@ -486,7 +486,30 @@ class EnhancedMergeReplication {
               }))
               .catch(reject);
           } else {
-            // Local wins - keep local BUT mark as synced to prevent re-pushing
+            // Local wins - keep local BUT mark as synced to prevent re-pushing.
+            // Exception: for sessions, always apply master's session_name if master is
+            // the source of a name change (master's session_name differs from local's).
+            // This ensures a rename pushed from one device always propagates even when
+            // the receiving device has newer unsynced changes (e.g., cabinet completion).
+            if (tableName === 'sessions' && masterData.session_name &&
+                masterData.session_name !== localRecord.session_name) {
+              const masterNameTime = new Date(masterData.updated_at || masterData.created_at).getTime();
+              const localNameTime  = new Date(localRecord.updated_at || localRecord.created_at).getTime();
+              if (masterNameTime > localNameTime) {
+                console.log(`   🏷️  Applying master session_name "${masterData.session_name}" to local-wins session ${recordId}`);
+                this.localDb.run(
+                  `UPDATE sessions SET session_name = ?, synced = 0 WHERE id = ?`,
+                  [masterData.session_name, recordId],
+                  (updateErr) => {
+                    if (updateErr) console.warn(`   ⚠️  Could not apply session_name: ${updateErr.message}`);
+                    this.markRecordAsSynced(tableName, recordId)
+                      .then(() => resolve({ action: 'kept_local_name_merged', conflict: true, resolution: 'local_wins_name_merged' }))
+                      .catch(reject);
+                  }
+                );
+                return;
+              }
+            }
             console.log(`   🏠 Keeping local changes (marking as handled)`);
             this.markRecordAsSynced(tableName, recordId)
               .then(() => resolve({ 
@@ -632,9 +655,24 @@ class EnhancedMergeReplication {
             });
 
             const bulkResult = await Model.bulkWrite(bulkOps, { ordered: false });
-            pushedCount = toUpsert.length;
-            syncedIds.push(...toUpsert.map(r => r.id));
-            console.log(`   📤 bulkWrite: ${bulkResult.upsertedCount} inserted, ${bulkResult.modifiedCount} updated`);
+            const writeErrors = bulkResult.getWriteErrors ? bulkResult.getWriteErrors() : [];
+            const writeErrorIds = new Set(writeErrors.map(e => {
+              const op = bulkOps[e.index];
+              return op ? String(op.replaceOne.filter._id) : null;
+            }).filter(Boolean));
+
+            if (writeErrors.length > 0) {
+              console.warn(`   ⚠️  bulkWrite had ${writeErrors.length} write error(s):`);
+              writeErrors.slice(0, 5).forEach(e => console.warn(`      [${e.index}] ${e.errmsg}`));
+            }
+
+            // Only mark records synced when MongoDB actually accepted the write
+            const successfulIds = toUpsert
+              .map(r => r.id)
+              .filter(id => !writeErrorIds.has(String(id)));
+            syncedIds.push(...successfulIds);
+            pushedCount = successfulIds.length;
+            console.log(`   📤 bulkWrite: ${bulkResult.upsertedCount} inserted, ${bulkResult.modifiedCount} updated${writeErrors.length ? `, ${writeErrors.length} errors` : ''}`);
           }
 
           // Bulk-mark all touched records as synced in one SQL statement
@@ -762,14 +800,19 @@ class EnhancedMergeReplication {
     });
   }
 
-  // Bulk version — one SQL statement for N ids instead of N round-trips
+  // Bulk version — one SQL statement for N ids instead of N round-trips.
+  // Normalises ids: numeric strings are cast to Number so the WHERE clause
+  // matches regardless of whether the column is TEXT or INTEGER affinity.
   async markRecordsAsSynced(tableName, ids) {
     if (!ids || ids.length === 0) return 0;
-    const placeholders = ids.map(() => '?').join(',');
+    const normIds = ids.map(id =>
+      (id !== null && id !== undefined && id !== '' && !isNaN(Number(id))) ? Number(id) : id
+    );
+    const placeholders = normIds.map(() => '?').join(',');
     return new Promise((resolve, reject) => {
       this.localDb.run(
         `UPDATE ${tableName} SET synced = 1 WHERE id IN (${placeholders})`,
-        ids,
+        normIds,
         function(err) {
           if (err) reject(err);
           else resolve(this.changes);
@@ -785,8 +828,15 @@ class EnhancedMergeReplication {
   convertSQLiteToMongo(record, tableName) {
     const mongoRecord = { ...record };
     
-    // Convert id to _id for MongoDB
-    mongoRecord._id = record.id;
+    // Convert id to _id for MongoDB.
+    // All schemas in this app use Number for _id. SQLite TEXT columns (migrated
+    // from INTEGER) return ids as JS strings — cast back to Number so the
+    // replaceOne filter matches existing MongoDB docs and avoids silent type-
+    // mismatch failures in bulkWrite.
+    const rawId = record.id;
+    mongoRecord._id = (rawId !== null && rawId !== undefined && rawId !== '' && !isNaN(Number(rawId)))
+      ? Number(rawId)
+      : rawId;
     delete mongoRecord.id;
     
     // Convert date strings to Date objects
@@ -986,11 +1036,13 @@ class EnhancedMergeReplication {
   // ============================================================
 
   /**
-   * Ensure sys_charms and sys_charms_io_cards use id TEXT so we can store
-   * MongoDB ObjectId from master. If table has id INTEGER, recreate with id TEXT and copy data.
+   * Originally intended to migrate sys_charms/sys_charms_io_cards to TEXT ids to
+   * support MongoDB ObjectIds. However, both MongoDB schemas use Number _id (not
+   * ObjectId), so the TEXT migration was incorrect and broke SQLite AUTOINCREMENT,
+   * causing new records to receive id = NULL. This function is now a no-op.
    */
   async ensureSyncTablesSupportMasterIds() {
-    for (const tableName of ['sys_charms', 'sys_charms_io_cards']) {
+    for (const tableName of []) { // disabled — TEXT id migration caused NULL ids
       try {
         const columns = await new Promise((resolve, reject) => {
           this.localDb.all(`PRAGMA table_info(${tableName})`, (err, rows) => {

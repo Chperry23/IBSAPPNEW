@@ -62,6 +62,30 @@ class ApiService {
     return this.request(`/api/customers/${customerId}/metric-history`);
   }
 
+  async getCustomerNotes(customerId) {
+    return this.request(`/api/customers/${customerId}/notes`);
+  }
+
+  async addCustomerNote(customerId, note) {
+    return this.request(`/api/customers/${customerId}/notes`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    });
+  }
+
+  async updateCustomerNote(customerId, noteId, note) {
+    return this.request(`/api/customers/${customerId}/notes/${noteId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ note }),
+    });
+  }
+
+  async deleteCustomerNote(customerId, noteId) {
+    return this.request(`/api/customers/${customerId}/notes/${noteId}`, {
+      method: 'DELETE',
+    });
+  }
+
   async createCustomer(customerData) {
     return this.request('/api/customers', {
       method: 'POST',

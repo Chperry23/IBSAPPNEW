@@ -1,0 +1,18 @@
+Cabinet PM started successfully at 3/9/2026, 11:35:25 AM
+URL: http://localhost:3000
+Log: C:\IBS APP\dist\logs\cabinet-pm-2026-03-09_11-35-23.log
+[2026-03-09T15:35:25.508Z] [LOG] 
+[2026-03-09T15:35:25.512Z] [LOG] ============================================================
+[2026-03-09T15:35:25.515Z] [LOG]   ✅ Cabinet PM running on http://localhost:3000
+[2026-03-09T15:35:25.518Z] [LOG]   📋 Default login: admin / cabinet123
+[2026-03-09T15:35:25.521Z] [LOG] ============================================================
+[2026-03-09T15:35:25.524Z] [LOG] 
+[2026-03-09T15:35:25.583Z] [LOG] ✅ Added assigned_at column to sys_controllers
+[2026-03-09T15:35:25.588Z] [LOG] ✅ Added assigned_at column to sys_smart_switches
+[2026-03-09T15:35:25.594Z] [LOG] ✅ Added device_name column to session_diagnostics
+[2026-03-09T15:35:25.621Z] [LOG] ✅ Added port_number column to session_diagnostics
+[2026-03-09T15:35:25.631Z] [LOG] ✓ Synced cabinet_location to cabinet_name
+[2026-03-09T15:35:25.635Z] [LOG] ✅ Added location_id column to cabinets table
+[2026-03-09T15:35:25.651Z] [LOG] 📱 Generated new device ID: L5420-H52Z4M3_1773070525649_cdf2f951
+[2026-03-09T15:35:26.153Z] [ERROR] ❌ Error: Error: ENOENT: no such file or directory, stat 'C:\IBS APP\dist\frontend\public\login.html'
+[2026-03-09T15:35:33.743Z] [ERROR] ❌ Error: Error: ENOENT: no such file or directory, stat 'C:\IBS APP\dist\frontend\public\login.html'
