@@ -25,6 +25,7 @@ class EnhancedMergeReplication {
       'session_node_maintenance',
       'cabinet_locations',
       'session_pm_notes',
+      'session_diagnostics',
       'session_ii_documents',
       'session_ii_equipment',
       'session_ii_checklist',
@@ -37,7 +38,8 @@ class EnhancedMergeReplication {
       'sys_charms_io_cards',
       'sys_charms',
       'sys_ams_systems',
-      'customer_metric_history'
+      'customer_metric_history',
+      'customer_notes'
     ];
 
     // Map table names to MongoDB models
@@ -50,6 +52,7 @@ class EnhancedMergeReplication {
       'session_node_maintenance': models.SessionNodeMaintenance,
       'cabinet_locations': models.CabinetLocation,
       'session_pm_notes': models.SessionPMNotes,
+      'session_diagnostics': models.SessionDiagnostics,
       'session_ii_documents': models.SessionIIDocument,
       'session_ii_equipment': models.SessionIIEquipment,
       'session_ii_checklist': models.SessionIIChecklist,
@@ -62,7 +65,8 @@ class EnhancedMergeReplication {
       'sys_charms_io_cards': models.SysCharmsIOCard,
       'sys_charms': models.SysCharm,
       'sys_ams_systems': models.SysAMSSystem,
-      'customer_metric_history': models.CustomerMetricHistory
+      'customer_metric_history': models.CustomerMetricHistory,
+      'customer_notes': models.CustomerNote
     };
 
     // Conflict resolution strategy: 'local_wins', 'master_wins', 'latest_wins'
@@ -398,7 +402,7 @@ class EnhancedMergeReplication {
     const tablesNeedingCustomerResolution = [
       'sessions', 'nodes',
       'sys_charms', 'sys_charms_io_cards', 'sys_controllers', 'sys_workstations', 'sys_smart_switches',
-      'sys_io_devices', 'sys_ams_systems', 'customer_metric_history'
+      'sys_io_devices', 'sys_ams_systems', 'customer_metric_history', 'customer_notes'
     ];
     if (tablesNeedingCustomerResolution.includes(tableName) && masterRecord.customer_id != null) {
       masterData.customer_id = await this.resolveMasterCustomerIdToLocal(masterRecord.customer_id);
@@ -1213,6 +1217,7 @@ class EnhancedMergeReplication {
             { table: 'session_node_maintenance', foreignKey: 'session_id' },
             { table: 'cabinet_locations', foreignKey: 'session_id' },
             { table: 'session_pm_notes', foreignKey: 'session_id' },
+            { table: 'session_diagnostics', foreignKey: 'session_id' },
             { table: 'session_ii_documents', foreignKey: 'session_id' },
             { table: 'session_ii_equipment', foreignKey: 'session_id' },
             { table: 'session_ii_checklist', foreignKey: 'session_id' },

@@ -996,4 +996,21 @@ async function syncSystemRegistryToNodes(customerId) {
   return { total: totalCreated + totalUpdated, created: totalCreated, updated: totalUpdated };
 }
 
+// CIOC + Charm count stats for a customer
+router.get('/api/customers/:customerId/system-registry/cioc-stats', requireAuth, async (req, res) => {
+  const customerId = parseInt(req.params.customerId);
+  try {
+    const ciocRow  = await db.prepare(
+      `SELECT COUNT(*) as cnt FROM sys_charms_io_cards WHERE customer_id = ? AND COALESCE(deleted,0)=0`
+    ).get([customerId]);
+    const charmRow = await db.prepare(
+      `SELECT COUNT(*) as cnt FROM sys_charms WHERE customer_id = ? AND COALESCE(deleted,0)=0`
+    ).get([customerId]);
+    res.json({ cioc_count: ciocRow?.cnt || 0, charm_count: charmRow?.cnt || 0 });
+  } catch (err) {
+    console.error('CIOC stats error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

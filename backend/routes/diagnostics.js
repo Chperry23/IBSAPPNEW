@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { v4: uuidv4 } = require('uuid');
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
 const { isSessionCompleted } = require('../utils/session');
@@ -213,13 +214,14 @@ router.post('/:sessionId/diagnostics', requireAuth, async (req, res) => {
       });
     }
     
+    const uuid = uuidv4();
     const result = await db.prepare(`
       INSERT INTO session_diagnostics (
-        session_id, controller_name, card_number, card_display, channel_number, 
+        session_id, controller_name, card_number, card_display, channel_number,
         error_type, error_description, notes,
         bus_type, device_name, device_type, card_type, port_number, ldt,
-        synced
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        uuid, synced
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `).run([
       sessionId,
       diagnostic.controller_name,
@@ -234,7 +236,8 @@ router.post('/:sessionId/diagnostics', requireAuth, async (req, res) => {
       diagnostic.device_type || null,
       diagnostic.card_type || null,
       diagnostic.port_number || null,
-      diagnostic.ldt || null
+      diagnostic.ldt || null,
+      uuid
     ]);
     
     res.json({ 

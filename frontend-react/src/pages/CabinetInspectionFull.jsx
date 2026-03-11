@@ -90,9 +90,11 @@ export default function CabinetInspectionFull() {
     // Power Supplies
     power_supplies: [],
     
-    // Distribution Blocks & Diodes
+    // Distribution Blocks, Diodes, Media Converters & Power Injected Baseplates
     distribution_blocks: [],
     diodes: [],
+    media_converters: [],
+    power_injected_baseplates: [],
     
     // Network Equipment
     network_equipment: [],
@@ -189,6 +191,8 @@ export default function CabinetInspectionFull() {
         power_supplies: ensureArray(cabinetData.power_supplies, []),
         distribution_blocks: ensureArray(cabinetData.distribution_blocks, []),
         diodes: ensureArray(cabinetData.diodes, []),
+        media_converters: ensureArray(cabinetData.media_converters, []),
+        power_injected_baseplates: ensureArray(cabinetData.power_injected_baseplates, []),
         network_equipment: ensureArray(cabinetData.network_equipment, []),
         controllers: ensureArray(cabinetData.controllers, []),
         workstations: ensureArray(cabinetData.workstations, []),
@@ -403,9 +407,43 @@ export default function CabinetInspectionFull() {
   const removeDiode = async (index) => {
     const updated = formData.diodes.filter((_, i) => i !== index);
     setFormData({ ...formData, diodes: updated });
-    
-    // Auto-save
     await autoSaveCabinet({ ...formData, diodes: updated });
+  };
+
+  const addMediaConverter = async () => {
+    const newMC = {
+      id: Date.now(),
+      mc_name: `MC ${formData.media_converters.length + 1}`,
+      voltage_type: '24VDC',
+      dc_reading: '',
+    };
+    const updated = [...formData.media_converters, newMC];
+    setFormData({ ...formData, media_converters: updated });
+    await autoSaveCabinet({ ...formData, media_converters: updated });
+  };
+
+  const removeMediaConverter = async (index) => {
+    const updated = formData.media_converters.filter((_, i) => i !== index);
+    setFormData({ ...formData, media_converters: updated });
+    await autoSaveCabinet({ ...formData, media_converters: updated });
+  };
+
+  const addPowerInjectedBaseplate = async () => {
+    const newPIB = {
+      id: Date.now(),
+      pib_name: `Baseplate ${formData.power_injected_baseplates.length + 1}`,
+      voltage_type: '24VDC',
+      dc_reading: '',
+    };
+    const updated = [...formData.power_injected_baseplates, newPIB];
+    setFormData({ ...formData, power_injected_baseplates: updated });
+    await autoSaveCabinet({ ...formData, power_injected_baseplates: updated });
+  };
+
+  const removePowerInjectedBaseplate = async (index) => {
+    const updated = formData.power_injected_baseplates.filter((_, i) => i !== index);
+    setFormData({ ...formData, power_injected_baseplates: updated });
+    await autoSaveCabinet({ ...formData, power_injected_baseplates: updated });
   };
 
   const autoSaveCabinet = async (dataToSave = null) => {
@@ -688,6 +726,8 @@ export default function CabinetInspectionFull() {
         power_supplies: formData.power_supplies,
         diodes: formData.diodes,
         distribution_blocks: formData.distribution_blocks,
+        media_converters: formData.media_converters,
+        power_injected_baseplates: formData.power_injected_baseplates,
         network_equipment: formData.network_equipment,
         inspection: formData.inspection,
       };
@@ -751,6 +791,8 @@ export default function CabinetInspectionFull() {
         power_supplies: formData.power_supplies,
         diodes: formData.diodes,
         distribution_blocks: formData.distribution_blocks,
+        media_converters: formData.media_converters,
+        power_injected_baseplates: formData.power_injected_baseplates,
         network_equipment: formData.network_equipment,
         inspection: formData.inspection,
       };
@@ -991,11 +1033,14 @@ export default function CabinetInspectionFull() {
           : { text: 'Empty', class: 'empty', errors: 0 };
       }
       case 'distribution': {
-        const total = formData.distribution_blocks.length + formData.diodes.length;
+        const total = formData.distribution_blocks.length + formData.diodes.length +
+          formData.media_converters.length + formData.power_injected_baseplates.length;
         if (total === 0) return { text: 'Empty', class: 'empty', errors: 0 };
         const dbFails = formData.distribution_blocks.filter(db => db.status === 'fail').length;
         const diodeFails = formData.diodes.filter(d => d.status === 'fail').length;
-        const failCount = dbFails + diodeFails;
+        const mcFails = formData.media_converters.filter(mc => mc.status === 'fail').length;
+        const pibFails = formData.power_injected_baseplates.filter(p => p.status === 'fail').length;
+        const failCount = dbFails + diodeFails + mcFails + pibFails;
         return {
           text: `${total} Items`,
           class: failCount > 0 ? 'error' : 'complete',
@@ -1800,6 +1845,20 @@ export default function CabinetInspectionFull() {
                     >
                       ➕ Diode
                     </button>
+                    <button
+                      type="button"
+                      onClick={addMediaConverter}
+                      className="btn btn-secondary btn-sm text-xs"
+                    >
+                      ➕ Media Converter
+                    </button>
+                    <button
+                      type="button"
+                      onClick={addPowerInjectedBaseplate}
+                      className="btn btn-secondary btn-sm text-xs"
+                    >
+                      ➕ PI Baseplate
+                    </button>
                   </>
                 )}
                 <button
@@ -1988,8 +2047,197 @@ export default function CabinetInspectionFull() {
                   </div>
                 )}
                 
-                {formData.distribution_blocks.length === 0 && formData.diodes.length === 0 && (
-                  <p className="text-gray-400 text-sm">No distribution blocks or diodes added yet.</p>
+                {/* Media Converters */}
+                {formData.media_converters.length > 0 && (
+                  <div>
+                    <h4 className="text-gray-300 font-medium mb-3">Media Converters</h4>
+                    <div className="space-y-3">
+                      {formData.media_converters.map((mc, index) => (
+                        <div key={mc.id || index} className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
+                          <div className="flex justify-between items-start mb-3">
+                            <input
+                              type="text"
+                              value={mc.mc_name || ''}
+                              onChange={(e) => {
+                                const updated = [...formData.media_converters];
+                                updated[index].mc_name = e.target.value;
+                                setFormData({ ...formData, media_converters: updated });
+                              }}
+                              onBlur={() => autoSaveCabinet()}
+                              className="form-input flex-1 max-w-[200px]"
+                              placeholder="MC name/description"
+                              readOnly={isViewOnly}
+                            />
+                            {!isViewOnly && (
+                              <button
+                                type="button"
+                                onClick={() => removeMediaConverter(index)}
+                                className="text-red-400 hover:text-red-300"
+                              >
+                                🗑️
+                              </button>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="form-label text-xs">Voltage Type</label>
+                              <select
+                                value={mc.voltage_type || '24VDC'}
+                                onChange={(e) => {
+                                  const updated = [...formData.media_converters];
+                                  updated[index].voltage_type = e.target.value;
+                                  const v = validateVoltage(updated[index].dc_reading, 'dc_reading', updated[index].voltage_type);
+                                  updated[index].status = v ? (v.valid ? 'pass' : 'fail') : '';
+                                  setFormData({ ...formData, media_converters: updated });
+                                  autoSaveCabinet({ ...formData, media_converters: updated });
+                                }}
+                                className="form-select"
+                                disabled={isViewOnly}
+                              >
+                                <option value="24VDC">24VDC</option>
+                                <option value="12VDC">12VDC</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="form-label text-xs">DC Reading (V)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={mc.dc_reading ?? ''}
+                                onChange={(e) => {
+                                  const updated = [...formData.media_converters];
+                                  updated[index].dc_reading = e.target.value;
+                                  const v = validateVoltage(updated[index].dc_reading, 'dc_reading', updated[index].voltage_type);
+                                  updated[index].status = v ? (v.valid ? 'pass' : 'fail') : '';
+                                  setFormData({ ...formData, media_converters: updated });
+                                }}
+                                onBlur={() => autoSaveCabinet()}
+                                readOnly={isViewOnly}
+                                className={`form-input ${
+                                  mc.dc_reading && validateVoltage(mc.dc_reading, 'dc_reading', mc.voltage_type)
+                                    ? validateVoltage(mc.dc_reading, 'dc_reading', mc.voltage_type).valid
+                                      ? 'border-green-500'
+                                      : 'border-red-500'
+                                    : ''
+                                }`}
+                                placeholder={
+                                  (mc.voltage_type || '24VDC') === '24VDC' ? '22.8-25.2V' : '11.4-12.6V'
+                                }
+                              />
+                              {mc.dc_reading && validateVoltage(mc.dc_reading, 'dc_reading', mc.voltage_type) && (
+                                <div className={`text-xs mt-1 ${
+                                  validateVoltage(mc.dc_reading, 'dc_reading', mc.voltage_type).valid
+                                    ? 'text-green-400'
+                                    : 'text-red-400'
+                                }`}>
+                                  {validateVoltage(mc.dc_reading, 'dc_reading', mc.voltage_type).message}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Power Injected Baseplates */}
+                {formData.power_injected_baseplates.length > 0 && (
+                  <div>
+                    <h4 className="text-gray-300 font-medium mb-3">Power Injected Baseplates</h4>
+                    <div className="space-y-3">
+                      {formData.power_injected_baseplates.map((pib, index) => (
+                        <div key={pib.id || index} className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
+                          <div className="flex justify-between items-start mb-3">
+                            <input
+                              type="text"
+                              value={pib.pib_name || ''}
+                              onChange={(e) => {
+                                const updated = [...formData.power_injected_baseplates];
+                                updated[index].pib_name = e.target.value;
+                                setFormData({ ...formData, power_injected_baseplates: updated });
+                              }}
+                              onBlur={() => autoSaveCabinet()}
+                              className="form-input flex-1 max-w-[200px]"
+                              placeholder="Baseplate name/description"
+                              readOnly={isViewOnly}
+                            />
+                            {!isViewOnly && (
+                              <button
+                                type="button"
+                                onClick={() => removePowerInjectedBaseplate(index)}
+                                className="text-red-400 hover:text-red-300"
+                              >
+                                🗑️
+                              </button>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="form-label text-xs">Voltage Type</label>
+                              <select
+                                value={pib.voltage_type || '24VDC'}
+                                onChange={(e) => {
+                                  const updated = [...formData.power_injected_baseplates];
+                                  updated[index].voltage_type = e.target.value;
+                                  const v = validateVoltage(updated[index].dc_reading, 'dc_reading', updated[index].voltage_type);
+                                  updated[index].status = v ? (v.valid ? 'pass' : 'fail') : '';
+                                  setFormData({ ...formData, power_injected_baseplates: updated });
+                                  autoSaveCabinet({ ...formData, power_injected_baseplates: updated });
+                                }}
+                                className="form-select"
+                                disabled={isViewOnly}
+                              >
+                                <option value="24VDC">24VDC</option>
+                                <option value="12VDC">12VDC</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="form-label text-xs">DC Reading (V)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={pib.dc_reading ?? ''}
+                                onChange={(e) => {
+                                  const updated = [...formData.power_injected_baseplates];
+                                  updated[index].dc_reading = e.target.value;
+                                  const v = validateVoltage(updated[index].dc_reading, 'dc_reading', updated[index].voltage_type);
+                                  updated[index].status = v ? (v.valid ? 'pass' : 'fail') : '';
+                                  setFormData({ ...formData, power_injected_baseplates: updated });
+                                }}
+                                onBlur={() => autoSaveCabinet()}
+                                readOnly={isViewOnly}
+                                className={`form-input ${
+                                  pib.dc_reading && validateVoltage(pib.dc_reading, 'dc_reading', pib.voltage_type)
+                                    ? validateVoltage(pib.dc_reading, 'dc_reading', pib.voltage_type).valid
+                                      ? 'border-green-500'
+                                      : 'border-red-500'
+                                    : ''
+                                }`}
+                                placeholder={
+                                  (pib.voltage_type || '24VDC') === '24VDC' ? '22.8-25.2V' : '11.4-12.6V'
+                                }
+                              />
+                              {pib.dc_reading && validateVoltage(pib.dc_reading, 'dc_reading', pib.voltage_type) && (
+                                <div className={`text-xs mt-1 ${
+                                  validateVoltage(pib.dc_reading, 'dc_reading', pib.voltage_type).valid
+                                    ? 'text-green-400'
+                                    : 'text-red-400'
+                                }`}>
+                                  {validateVoltage(pib.dc_reading, 'dc_reading', pib.voltage_type).message}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {formData.distribution_blocks.length === 0 && formData.diodes.length === 0 &&
+                 formData.media_converters.length === 0 && formData.power_injected_baseplates.length === 0 && (
+                  <p className="text-gray-400 text-sm">No distribution blocks, diodes, media converters, or power injected baseplates added yet.</p>
                 )}
               </div>
             )}

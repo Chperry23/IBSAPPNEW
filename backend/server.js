@@ -20,6 +20,7 @@ const iiDocumentsRoutes = require('./routes/iiDocuments');
 const systemRegistryRoutes = require('./routes/systemRegistry');
 const systemRegistrySyncRoutes = require('./routes/systemRegistrySync');
 const locationRoutes = require('./routes/locations');
+const sharepointRoutes = require('./routes/sharepoint');
 
 const PORT = process.env.PORT || 3000;
 
@@ -84,6 +85,7 @@ function createApp(options = {}) {
   app.use('/', systemRegistryRoutes);
   app.use('/api/customers', systemRegistrySyncRoutes);
   app.use('/api', locationRoutes);
+  app.use('/', sharepointRoutes);
 
   if (!catchAllPath) {
     // React SPA — all non-API page routes serve index.html and let the

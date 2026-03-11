@@ -591,6 +591,8 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
   const powerSupplies = cabinet.power_supplies || [];
   const distributionBlocks = cabinet.distribution_blocks || [];
   const diodes = cabinet.diodes || [];
+  const mediaConverters = cabinet.media_converters || [];
+  const powerInjectedBaseplates = cabinet.power_injected_baseplates || [];
   const inspection = cabinet.inspection || {};
   const networkEquipment = cabinet.network_equipment || [];
   const controllers = cabinet.controllers || [];
@@ -671,6 +673,58 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
               <td><strong>${index + 1}</strong></td>
               <td>${formatValue(diode.dc_reading)}</td>
               <td class="status-${diode.status}">${formatStatus(diode.status)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+    ` : ''}
+    
+    ${mediaConverters.length > 0 ? `
+    <div class="section-group">
+      <div class="section-title">Media Converters</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Voltage Type</th>
+            <th>DC Reading (V)</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${mediaConverters.map((mc, index) => `
+            <tr>
+              <td><strong>${mc.mc_name || `MC ${index + 1}`}</strong></td>
+              <td>${mc.voltage_type || '24VDC'}</td>
+              <td>${formatValue(mc.dc_reading)}</td>
+              <td class="status-${mc.status}">${formatStatus(mc.status)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+    ` : ''}
+    
+    ${powerInjectedBaseplates.length > 0 ? `
+    <div class="section-group">
+      <div class="section-title">Power Injected Baseplates</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Voltage Type</th>
+            <th>DC Reading (V)</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${powerInjectedBaseplates.map((pib, index) => `
+            <tr>
+              <td><strong>${pib.pib_name || `Baseplate ${index + 1}`}</strong></td>
+              <td>${pib.voltage_type || '24VDC'}</td>
+              <td>${formatValue(pib.dc_reading)}</td>
+              <td class="status-${pib.status}">${formatStatus(pib.status)}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -789,6 +843,8 @@ function generatePDFHtml(data) {
   const powerSupplies = cabinet.power_supplies || [];
   const distributionBlocks = cabinet.distribution_blocks || [];
   const diodes = cabinet.diodes || [];
+  const mediaConverters = cabinet.media_converters || [];
+  const powerInjectedBaseplates = cabinet.power_injected_baseplates || [];
   const inspection = cabinet.inspection || {};
   const networkEquipment = cabinet.network_equipment || [];
   const controllers = cabinet.controllers || [];
@@ -894,6 +950,58 @@ function generatePDFHtml(data) {
                 <td><strong>${index + 1}</strong></td>
                 <td>${formatValue(diode.dc_reading)}</td>
                 <td class="status-${diode.status}">${formatStatus(diode.status)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      ` : ''}
+      
+      ${mediaConverters.length > 0 ? `
+      <div class="section-group">
+        <div class="section-title">Media Converters</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Voltage Type</th>
+              <th>DC Reading (V)</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${mediaConverters.map((mc, index) => `
+              <tr>
+                <td><strong>${mc.mc_name || `MC ${index + 1}`}</strong></td>
+                <td>${mc.voltage_type || '24VDC'}</td>
+                <td>${formatValue(mc.dc_reading)}</td>
+                <td class="status-${mc.status}">${formatStatus(mc.status)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      ` : ''}
+      
+      ${powerInjectedBaseplates.length > 0 ? `
+      <div class="section-group">
+        <div class="section-title">Power Injected Baseplates</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Voltage Type</th>
+              <th>DC Reading (V)</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${powerInjectedBaseplates.map((pib, index) => `
+              <tr>
+                <td><strong>${pib.pib_name || `Baseplate ${index + 1}`}</strong></td>
+                <td>${pib.voltage_type || '24VDC'}</td>
+                <td>${formatValue(pib.dc_reading)}</td>
+                <td class="status-${pib.status}">${formatStatus(pib.status)}</td>
               </tr>
             `).join('')}
           </tbody>

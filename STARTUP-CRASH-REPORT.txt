@@ -1,159 +1,222 @@
-Cabinet PM started successfully at 3/10/2026, 12:02:45 PM
+Cabinet PM started successfully at 3/11/2026, 2:35:57 PM
 URL: http://localhost:3000
-Log: C:\IBS APP\logs\cabinet-pm-2026-03-10_12-02-41.log
-[2026-03-10T16:02:45.577Z] [LOG] 
-[2026-03-10T16:02:45.578Z] [LOG] ============================================================
-[2026-03-10T16:02:45.580Z] [LOG]   ✅ Cabinet PM running on http://localhost:3000
-[2026-03-10T16:02:45.581Z] [LOG]   📋 Default login: admin / cabinet123
-[2026-03-10T16:02:45.583Z] [LOG] ============================================================
-[2026-03-10T16:02:45.584Z] [LOG] 
-[2026-03-10T16:02:45.587Z] [LOG] ✓ Synced cabinet_location to cabinet_name
-[2026-03-10T16:02:45.589Z] [LOG] 📱 Using existing device ID: L5420-H52Z4M3_1770401623666_ef11a6a2
-[2026-03-10T16:03:13.018Z] [LOG] 🔗 Connecting to MongoDB master server...
-[2026-03-10T16:03:13.076Z] [LOG] ✅ Connected to MongoDB master server
-[2026-03-10T16:03:14.590Z] [LOG] 📡 API: Push to master requested
-[2026-03-10T16:03:14.592Z] [LOG] 📤 Pushing local changes to master database...
-[2026-03-10T16:03:14.593Z] [LOG] 
-📤 Processing table: users
-[2026-03-10T16:03:14.595Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.596Z] [LOG] 
-📤 Processing table: customers
-[2026-03-10T16:03:14.597Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.598Z] [LOG] 
-📤 Processing table: sessions
-[2026-03-10T16:03:14.600Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.601Z] [LOG] 
-📤 Processing table: cabinets
-[2026-03-10T16:03:14.602Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.603Z] [LOG] 
-📤 Processing table: nodes
-[2026-03-10T16:03:14.605Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.607Z] [LOG] 
-📤 Processing table: session_node_maintenance
-[2026-03-10T16:03:14.611Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.619Z] [LOG] 
-📤 Processing table: cabinet_locations
-[2026-03-10T16:03:14.632Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.654Z] [LOG] 
-📤 Processing table: session_pm_notes
-[2026-03-10T16:03:14.657Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.661Z] [LOG] 
-📤 Processing table: session_ii_documents
-[2026-03-10T16:03:14.688Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.692Z] [LOG] 
-📤 Processing table: session_ii_equipment
-[2026-03-10T16:03:14.705Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.771Z] [LOG] 
-📤 Processing table: session_ii_checklist
-[2026-03-10T16:03:14.794Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.805Z] [LOG] 
-📤 Processing table: session_ii_equipment_used
-[2026-03-10T16:03:14.822Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.835Z] [LOG] 
-📤 Processing table: sys_workstations
-[2026-03-10T16:03:14.839Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.842Z] [LOG] 
-📤 Processing table: sys_smart_switches
-[2026-03-10T16:03:14.856Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.862Z] [LOG] 
-📤 Processing table: sys_io_devices
-[2026-03-10T16:03:14.872Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.887Z] [LOG] 
-📤 Processing table: sys_controllers
-[2026-03-10T16:03:14.900Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.906Z] [LOG] 
-📤 Processing table: sys_charms_io_cards
-[2026-03-10T16:03:14.909Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.921Z] [LOG] 
-📤 Processing table: sys_charms
-[2026-03-10T16:03:14.923Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.926Z] [LOG] 
-📤 Processing table: sys_ams_systems
-[2026-03-10T16:03:14.937Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.938Z] [LOG] 
-📤 Processing table: customer_metric_history
-[2026-03-10T16:03:14.939Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:14.941Z] [LOG] 
-📤 Push complete in 347ms
-[2026-03-10T16:03:30.713Z] [LOG] 🔗 Connecting to MongoDB master server...
-[2026-03-10T16:03:30.716Z] [LOG] ✅ Connected to MongoDB master server
-[2026-03-10T16:03:31.614Z] [LOG] 📡 API: Push to master requested
-[2026-03-10T16:03:31.615Z] [LOG] 📤 Pushing local changes to master database...
-[2026-03-10T16:03:31.616Z] [LOG] 
-📤 Processing table: users
-[2026-03-10T16:03:31.617Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.618Z] [LOG] 
-📤 Processing table: customers
-[2026-03-10T16:03:31.620Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.621Z] [LOG] 
-📤 Processing table: sessions
-[2026-03-10T16:03:31.623Z] [LOG]    📊 Found 1 unsynced local changes
-[2026-03-10T16:03:31.701Z] [LOG]    📤 bulkWrite: 0 inserted, 1 updated
-[2026-03-10T16:03:31.708Z] [LOG]    ✅ Pushed: 1, Deleted: 0 (85ms)
-[2026-03-10T16:03:31.714Z] [LOG] 
-📤 Processing table: cabinets
-[2026-03-10T16:03:31.720Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.732Z] [LOG] 
-📤 Processing table: nodes
-[2026-03-10T16:03:31.743Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.745Z] [LOG] 
-📤 Processing table: session_node_maintenance
-[2026-03-10T16:03:31.757Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.759Z] [LOG] 
-📤 Processing table: cabinet_locations
-[2026-03-10T16:03:31.763Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.771Z] [LOG] 
-📤 Processing table: session_pm_notes
-[2026-03-10T16:03:31.775Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.777Z] [LOG] 
-📤 Processing table: session_ii_documents
-[2026-03-10T16:03:31.782Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.791Z] [LOG] 
-📤 Processing table: session_ii_equipment
-[2026-03-10T16:03:31.795Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.806Z] [LOG] 
-📤 Processing table: session_ii_checklist
-[2026-03-10T16:03:31.809Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.813Z] [LOG] 
-📤 Processing table: session_ii_equipment_used
-[2026-03-10T16:03:31.824Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.826Z] [LOG] 
-📤 Processing table: sys_workstations
-[2026-03-10T16:03:31.828Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.834Z] [LOG] 
-📤 Processing table: sys_smart_switches
-[2026-03-10T16:03:31.853Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.857Z] [LOG] 
-📤 Processing table: sys_io_devices
-[2026-03-10T16:03:31.860Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.871Z] [LOG] 
-📤 Processing table: sys_controllers
-[2026-03-10T16:03:31.873Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.875Z] [LOG] 
-📤 Processing table: sys_charms_io_cards
-[2026-03-10T16:03:31.889Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.892Z] [LOG] 
-📤 Processing table: sys_charms
-[2026-03-10T16:03:31.903Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.908Z] [LOG] 
-📤 Processing table: sys_ams_systems
-[2026-03-10T16:03:31.919Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.924Z] [LOG] 
-📤 Processing table: customer_metric_history
-[2026-03-10T16:03:31.939Z] [LOG]    📊 Found 0 unsynced local changes
-[2026-03-10T16:03:31.958Z] [LOG] 
-📤 Push complete in 331ms
-[2026-03-10T16:03:40.106Z] [LOG] 🔍 [NODES] GET request: {
-  "customerId": "156",
-  "sessionId": "22a65f9c-d111-41de-9a86-87150c5b2ca8"
+Log: C:\IBS APP\logs\cabinet-pm-2026-03-11_14-35-55.log
+[2026-03-11T18:35:57.163Z] [LOG] 
+[2026-03-11T18:35:57.164Z] [LOG] ============================================================
+[2026-03-11T18:35:57.165Z] [LOG]   ✅ Cabinet PM running on http://localhost:3000
+[2026-03-11T18:35:57.166Z] [LOG]   📋 Default login: admin / cabinet123
+[2026-03-11T18:35:57.168Z] [LOG] ============================================================
+[2026-03-11T18:35:57.173Z] [LOG] 
+[2026-03-11T18:35:57.183Z] [LOG] ✓ Synced cabinet_location to cabinet_name
+[2026-03-11T18:35:57.190Z] [LOG] 📱 Using existing device ID: L5420-H52Z4M3_1770401623666_ef11a6a2
+[2026-03-11T18:36:15.188Z] [LOG] [PM-PDF] Request received {
+  "sessionId": "bd289c44-b55d-4964-bd5f-4a1bc681d7b3",
+  "time": "2026-03-11T18:36:15.187Z"
 }
-[2026-03-10T16:03:40.108Z] [LOG] 🔍 [NODES] Session status: completed
-[2026-03-10T16:03:40.110Z] [LOG] 🔍 [NODES] Loading snapshots for completed session...
-[2026-03-10T16:03:40.111Z] [LOG] 🔍 [NODES] Found 55 snapshots
-[2026-03-10T16:04:32.156Z] [LOG] 🔍 [NODES] GET request: {
-  "customerId": "156",
-  "sessionId": "22a65f9c-d111-41de-9a86-87150c5b2ca8"
+[2026-03-11T18:36:15.913Z] [LOG] [PM-PDF] Loading session...
+[2026-03-11T18:36:15.916Z] [LOG] [PM-PDF] Session loaded {
+  "session_name": "Huntsman-RLP-3/9/2026",
+  "customer_name": "0001-0001-8950"
 }
-[2026-03-10T16:04:32.158Z] [LOG] 🔍 [NODES] Session status: completed
-[2026-03-10T16:04:32.160Z] [LOG] 🔍 [NODES] Loading snapshots for completed session...
-[2026-03-10T16:04:32.163Z] [LOG] 🔍 [NODES] Found 55 snapshots
+[2026-03-11T18:36:15.920Z] [LOG] [PM-PDF] Cabinets loaded {
+  "count": 8
+}
+[2026-03-11T18:36:15.936Z] [LOG] [PM-PDF] Building report sections (risk, maintenance, diagnostics, cabinets HTML)...
+[2026-03-11T18:36:15.955Z] [LOG] [PM-PDF] HTML built {
+  "lengthKB": 286
+}
+[2026-03-11T18:36:15.959Z] [LOG] 🌐 Found Chrome/Edge at: C:\Program Files\Google\Chrome\Application\chrome.exe
+[2026-03-11T18:36:15.962Z] [LOG] [PM-PDF] Chrome path resolved {
+  "path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+}
+[2026-03-11T18:36:15.964Z] [LOG] [PM-PDF] Launching browser...
+[2026-03-11T18:36:16.629Z] [LOG] [PM-PDF] Browser launched
+[2026-03-11T18:36:16.733Z] [LOG] [PM-PDF] Setting page content (waitUntil: networkidle0, timeout: 120s)...
+[2026-03-11T18:36:17.734Z] [LOG] [PM-PDF] Page content set
+[2026-03-11T18:36:18.548Z] [LOG] [PM-PDF] Generating PDF buffer...
+[2026-03-11T18:36:23.126Z] [LOG] [PM-PDF] PDF generated {
+  "sizeKB": 5379
+}
+[2026-03-11T18:36:23.267Z] [LOG] [PM-PDF] Browser closed
+[2026-03-11T18:36:23.273Z] [LOG] [PM-PDF] Response sent OK
+[2026-03-11T18:55:42.609Z] [LOG] 🔗 Connecting to MongoDB master server...
+[2026-03-11T18:55:42.678Z] [LOG] ✅ Connected to MongoDB master server
+[2026-03-11T18:55:44.336Z] [LOG] 📡 API: Pull from master requested
+[2026-03-11T18:55:44.339Z] [LOG] 📥 Pulling changes from master database...
+[2026-03-11T18:55:44.342Z] [LOG] 
+📥 Processing table: users
+[2026-03-11T18:55:44.345Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:17.561Z
+[2026-03-11T18:55:44.356Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:44.364Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:44.373Z] [LOG]    ⏰ Set last sync time for users: 2026-03-11T18:55:44.368Z (changes: 1)
+[2026-03-11T18:55:44.385Z] [LOG]    ✅ Verified last sync time for users: 2026-03-11T18:55:44.368Z
+[2026-03-11T18:55:44.405Z] [LOG] 
+📥 Processing table: customers
+[2026-03-11T18:55:44.423Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:17.765Z
+[2026-03-11T18:55:44.471Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:44.486Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:44.495Z] [LOG]    ⏰ Set last sync time for customers: 2026-03-11T18:55:44.489Z (changes: 1)
+[2026-03-11T18:55:44.506Z] [LOG]    ✅ Verified last sync time for customers: 2026-03-11T18:55:44.489Z
+[2026-03-11T18:55:44.512Z] [LOG] 
+📥 Processing table: sessions
+[2026-03-11T18:55:44.523Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:19.165Z
+[2026-03-11T18:55:44.544Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:44.563Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:44.573Z] [LOG]    ⏰ Set last sync time for sessions: 2026-03-11T18:55:44.571Z (changes: 1)
+[2026-03-11T18:55:44.586Z] [LOG]    ✅ Verified last sync time for sessions: 2026-03-11T18:55:44.571Z
+[2026-03-11T18:55:44.589Z] [LOG] 
+📥 Processing table: cabinets
+[2026-03-11T18:55:44.599Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:22.535Z
+[2026-03-11T18:55:44.607Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:44.628Z] [LOG]    🔍 Count mismatch (master: 219, local: 220) — reconciling...
+[2026-03-11T18:55:44.665Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:44.672Z] [LOG]    ⏰ Set last sync time for cabinets: 2026-03-11T18:55:44.671Z (changes: 1)
+[2026-03-11T18:55:44.677Z] [LOG]    ✅ Verified last sync time for cabinets: 2026-03-11T18:55:44.671Z
+[2026-03-11T18:55:44.688Z] [LOG] 
+📥 Processing table: nodes
+[2026-03-11T18:55:44.693Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:23.016Z
+[2026-03-11T18:55:44.714Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:44.732Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:44.740Z] [LOG]    ⏰ Set last sync time for nodes: 2026-03-11T18:55:44.738Z (changes: 1)
+[2026-03-11T18:55:44.752Z] [LOG]    ✅ Verified last sync time for nodes: 2026-03-11T18:55:44.738Z
+[2026-03-11T18:55:44.754Z] [LOG] 
+📥 Processing table: session_node_maintenance
+[2026-03-11T18:55:44.757Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:28.336Z
+[2026-03-11T18:55:44.774Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:44.795Z] [LOG]    🔍 Count mismatch (master: 1103, local: 961) — reconciling...
+[2026-03-11T18:55:45.468Z] [LOG]    🔄 Reconciled 142 missing/deleted records from master
+[2026-03-11T18:55:45.472Z] [LOG]    ✅ Pulled: 142, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:45.487Z] [LOG]    ⏰ Set last sync time for session_node_maintenance: 2026-03-11T18:55:45.474Z (changes: 1)
+[2026-03-11T18:55:45.496Z] [LOG]    ✅ Verified last sync time for session_node_maintenance: 2026-03-11T18:55:45.474Z
+[2026-03-11T18:55:45.505Z] [LOG] 
+📥 Processing table: cabinet_locations
+[2026-03-11T18:55:45.531Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:29.684Z
+[2026-03-11T18:55:45.555Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:45.580Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:45.589Z] [LOG]    ⏰ Set last sync time for cabinet_locations: 2026-03-11T18:55:45.587Z (changes: 1)
+[2026-03-11T18:55:45.603Z] [LOG]    ✅ Verified last sync time for cabinet_locations: 2026-03-11T18:55:45.587Z
+[2026-03-11T18:55:45.605Z] [LOG] 
+📥 Processing table: session_pm_notes
+[2026-03-11T18:55:45.611Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:29.833Z
+[2026-03-11T18:55:45.632Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:45.645Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:45.654Z] [LOG]    ⏰ Set last sync time for session_pm_notes: 2026-03-11T18:55:45.653Z (changes: 1)
+[2026-03-11T18:55:45.657Z] [LOG]    ✅ Verified last sync time for session_pm_notes: 2026-03-11T18:55:45.653Z
+[2026-03-11T18:55:45.659Z] [LOG] 
+📥 Processing table: session_diagnostics
+[2026-03-11T18:55:45.669Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:30.967Z
+[2026-03-11T18:55:45.679Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:45.690Z] [LOG]    🔍 Count mismatch (master: 28, local: 163) — reconciling...
+[2026-03-11T18:55:45.705Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:45.711Z] [LOG]    ⏰ Set last sync time for session_diagnostics: 2026-03-11T18:55:45.707Z (changes: 1)
+[2026-03-11T18:55:45.723Z] [LOG]    ✅ Verified last sync time for session_diagnostics: 2026-03-11T18:55:45.707Z
+[2026-03-11T18:55:45.736Z] [LOG] 
+📥 Processing table: session_ii_documents
+[2026-03-11T18:55:45.740Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.059Z
+[2026-03-11T18:55:45.774Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:45.797Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:45.805Z] [LOG]    ⏰ Set last sync time for session_ii_documents: 2026-03-11T18:55:45.804Z (changes: 1)
+[2026-03-11T18:55:45.820Z] [LOG]    ✅ Verified last sync time for session_ii_documents: 2026-03-11T18:55:45.804Z
+[2026-03-11T18:55:45.823Z] [LOG] 
+📥 Processing table: session_ii_equipment
+[2026-03-11T18:55:45.835Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.134Z
+[2026-03-11T18:55:45.849Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:45.865Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:45.873Z] [LOG]    ⏰ Set last sync time for session_ii_equipment: 2026-03-11T18:55:45.872Z (changes: 1)
+[2026-03-11T18:55:45.879Z] [LOG]    ✅ Verified last sync time for session_ii_equipment: 2026-03-11T18:55:45.872Z
+[2026-03-11T18:55:45.888Z] [LOG] 
+📥 Processing table: session_ii_checklist
+[2026-03-11T18:55:45.890Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.216Z
+[2026-03-11T18:55:45.906Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:45.923Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:45.935Z] [LOG]    ⏰ Set last sync time for session_ii_checklist: 2026-03-11T18:55:45.925Z (changes: 1)
+[2026-03-11T18:55:45.939Z] [LOG]    ✅ Verified last sync time for session_ii_checklist: 2026-03-11T18:55:45.925Z
+[2026-03-11T18:55:45.946Z] [LOG] 
+📥 Processing table: session_ii_equipment_used
+[2026-03-11T18:55:45.956Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.284Z
+[2026-03-11T18:55:45.973Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:45.990Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:46.006Z] [LOG]    ⏰ Set last sync time for session_ii_equipment_used: 2026-03-11T18:55:46.004Z (changes: 1)
+[2026-03-11T18:55:46.017Z] [LOG]    ✅ Verified last sync time for session_ii_equipment_used: 2026-03-11T18:55:46.004Z
+[2026-03-11T18:55:46.022Z] [LOG] 
+📥 Processing table: sys_workstations
+[2026-03-11T18:55:46.024Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.400Z
+[2026-03-11T18:55:46.051Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:46.070Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:46.082Z] [LOG]    ⏰ Set last sync time for sys_workstations: 2026-03-11T18:55:46.073Z (changes: 1)
+[2026-03-11T18:55:46.088Z] [LOG]    ✅ Verified last sync time for sys_workstations: 2026-03-11T18:55:46.073Z
+[2026-03-11T18:55:46.090Z] [LOG] 
+📥 Processing table: sys_smart_switches
+[2026-03-11T18:55:46.098Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.467Z
+[2026-03-11T18:55:46.107Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:46.124Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:46.137Z] [LOG]    ⏰ Set last sync time for sys_smart_switches: 2026-03-11T18:55:46.136Z (changes: 1)
+[2026-03-11T18:55:46.140Z] [LOG]    ✅ Verified last sync time for sys_smart_switches: 2026-03-11T18:55:46.136Z
+[2026-03-11T18:55:46.154Z] [LOG] 
+📥 Processing table: sys_io_devices
+[2026-03-11T18:55:46.169Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.533Z
+[2026-03-11T18:55:46.186Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:46.205Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:46.223Z] [LOG]    ⏰ Set last sync time for sys_io_devices: 2026-03-11T18:55:46.219Z (changes: 1)
+[2026-03-11T18:55:46.237Z] [LOG]    ✅ Verified last sync time for sys_io_devices: 2026-03-11T18:55:46.219Z
+[2026-03-11T18:55:46.239Z] [LOG] 
+📥 Processing table: sys_controllers
+[2026-03-11T18:55:46.253Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.616Z
+[2026-03-11T18:55:46.270Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:46.302Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:46.311Z] [LOG]    ⏰ Set last sync time for sys_controllers: 2026-03-11T18:55:46.306Z (changes: 1)
+[2026-03-11T18:55:46.323Z] [LOG]    ✅ Verified last sync time for sys_controllers: 2026-03-11T18:55:46.306Z
+[2026-03-11T18:55:46.337Z] [LOG] 
+📥 Processing table: sys_charms_io_cards
+[2026-03-11T18:55:46.340Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.700Z
+[2026-03-11T18:55:46.357Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:46.374Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:46.387Z] [LOG]    ⏰ Set last sync time for sys_charms_io_cards: 2026-03-11T18:55:46.385Z (changes: 1)
+[2026-03-11T18:55:46.390Z] [LOG]    ✅ Verified last sync time for sys_charms_io_cards: 2026-03-11T18:55:46.385Z
+[2026-03-11T18:55:46.404Z] [LOG] 
+📥 Processing table: sys_charms
+[2026-03-11T18:55:46.407Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.783Z
+[2026-03-11T18:55:46.427Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:46.454Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:46.457Z] [LOG]    ⏰ Set last sync time for sys_charms: 2026-03-11T18:55:46.456Z (changes: 1)
+[2026-03-11T18:55:46.472Z] [LOG]    ✅ Verified last sync time for sys_charms: 2026-03-11T18:55:46.456Z
+[2026-03-11T18:55:46.474Z] [LOG] 
+📥 Processing table: sys_ams_systems
+[2026-03-11T18:55:46.488Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.949Z
+[2026-03-11T18:55:46.513Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:46.531Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:46.538Z] [LOG]    ⏰ Set last sync time for sys_ams_systems: 2026-03-11T18:55:46.537Z (changes: 1)
+[2026-03-11T18:55:46.541Z] [LOG]    ✅ Verified last sync time for sys_ams_systems: 2026-03-11T18:55:46.537Z
+[2026-03-11T18:55:46.549Z] [LOG] 
+📥 Processing table: customer_metric_history
+[2026-03-11T18:55:46.556Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:32.067Z
+[2026-03-11T18:55:46.572Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:46.586Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:46.590Z] [LOG]    ⏰ Set last sync time for customer_metric_history: 2026-03-11T18:55:46.588Z (changes: 1)
+[2026-03-11T18:55:46.597Z] [LOG]    ✅ Verified last sync time for customer_metric_history: 2026-03-11T18:55:46.588Z
+[2026-03-11T18:55:46.604Z] [LOG] 
+📥 Processing table: customer_notes
+[2026-03-11T18:55:46.606Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:32.151Z
+[2026-03-11T18:55:46.622Z] [LOG]    📊 Found 0 changed records on master
+[2026-03-11T18:55:46.638Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
+[2026-03-11T18:55:46.650Z] [LOG]    ⏰ Set last sync time for customer_notes: 2026-03-11T18:55:46.640Z (changes: 1)
+[2026-03-11T18:55:46.656Z] [LOG]    ✅ Verified last sync time for customer_notes: 2026-03-11T18:55:46.640Z
+[2026-03-11T18:55:46.669Z] [LOG] 
+📥 Pull complete in 2316ms
+[2026-03-11T18:59:03.536Z] [LOG] 🔍 [NODES] GET request: {
+  "customerId": "182",
+  "sessionId": "bd289c44-b55d-4964-bd5f-4a1bc681d7b3"
+}
+[2026-03-11T18:59:03.539Z] [LOG] 🔍 [NODES] Session status: completed
+[2026-03-11T18:59:03.542Z] [LOG] 🔍 [NODES] Loading snapshots for completed session...
+[2026-03-11T18:59:03.546Z] [LOG] 🔍 [NODES] Found 0 snapshots
+[2026-03-11T18:59:24.198Z] [LOG] 🔍 [NODES] GET request: {
+  "customerId": "182"
+}
+[2026-03-11T18:59:24.200Z] [LOG] 🔍 [NODES] Loading nodes from System Registry tables...
+[2026-03-11T18:59:24.203Z] [LOG]    📋 Loaded 8 workstations from sys_workstations
+[2026-03-11T18:59:24.205Z] [LOG]    🎮 Loaded 2 controllers from sys_controllers
+[2026-03-11T18:59:24.208Z] [LOG]    🔀 Loaded 6 smart switches from sys_smart_switches
+[2026-03-11T18:59:24.211Z] [LOG]    📟 Loaded 17 Charms I/O cards from sys_charms_io_cards
+[2026-03-11T18:59:24.213Z] [LOG] ✅ [NODES] Returning 33 nodes from System Registry for customer 182
+[2026-03-11T18:59:24.215Z] [LOG]    First 5 nodes: RLPAS01, RLPAS02, RLPOP01, RLPOP02, RLPOP03

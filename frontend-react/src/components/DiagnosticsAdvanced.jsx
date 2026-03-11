@@ -130,26 +130,37 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
           .map(([nodeId]) => Number(nodeId));
       }
 
-      const controllersWithIOErrors = [...new Set(diagData.map(d => d.controller_name))];
+      const controllerNamesFromDiag = [...new Set(diagData.map(d => d.controller_name).filter(Boolean))];
       
       const nodesResponse = await fetch(`/api/customers/${customerId}/nodes${isCompleted ? `?sessionId=${sessionId}` : ''}`);
       
+      let controllerNodes = [];
       if (nodesResponse.ok) {
         const nodesData = await nodesResponse.json();
-        const controllerNodes = nodesData.filter(
+        // Show all controllers (Controller, CIOC, CSLS) so user can add errors to any of them
+        controllerNodes = nodesData.filter(
           (n) => {
             const isController = ['Controller', 'CIOC', 'CSLS'].includes(n.node_type);
             const notPartner = !n.node_name.endsWith('-partner');
-            const hasIOError = controllersWithIOErrors.includes(n.node_name);
-            const markedWithError = controllersMarkedWithErrors.includes(n.id);
-            return isController && notPartner && (hasIOError || markedWithError);
+            return isController && notPartner;
           }
         );
-        setNodes(controllerNodes);
-        buildControllersStructure(controllerNodes, diagData);
-      } else {
-        buildControllersStructure([], diagData);
       }
+      // After sync, the nodes API may be empty on this device but diagnostics exist. Build synthetic
+      // nodes from diagnostics so we still show "errors attached to nodes" (per-controller cards).
+      const existingNames = new Set(controllerNodes.map(n => n.node_name));
+      const syntheticNodes = controllerNamesFromDiag
+        .filter(name => !existingNames.has(name))
+        .map(name => ({
+          id: `diag-${name}`,
+          node_name: name,
+          node_type: name.toUpperCase().includes('CIOC') ? 'CIOC' : 'Controller',
+          model: null,
+          serial: null
+        }));
+      const allNodes = [...controllerNodes, ...syntheticNodes];
+      setNodes(allNodes);
+      buildControllersStructure(allNodes, diagData);
     } catch (error) {
       console.error('Error loading diagnostics:', error);
     } finally {

@@ -2,9 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
-const _pptr = 'puppeteer';
-function getPuppeteer() { return require(_pptr); }
-const { findChrome } = require('../utils/chrome');
+const { findChrome, getPuppeteer } = require('../utils/chrome');
 const { generateIIPDF, generateCombinedIIPDF } = require('../services/pdf/iiReport');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
@@ -291,7 +289,10 @@ router.delete('/api/ii-documents/:documentId', requireAuth, async (req, res) => 
 // Export I&I document as PDF
 router.post('/api/ii-documents/:documentId/export-pdf', requireAuth, async (req, res) => {
   const { documentId } = req.params;
-  
+  const pptr = getPuppeteer();
+  if (!pptr) {
+    return res.status(503).json({ error: 'PDF export is not available', details: 'Puppeteer is not available in this build. Install Google Chrome or Edge and use a full build with PDF support.' });
+  }
   try {
     // Get document details
     const document = await db.prepare('SELECT * FROM session_ii_documents WHERE id = ? AND deleted = 0').get([documentId]);
@@ -317,7 +318,7 @@ router.post('/api/ii-documents/:documentId/export-pdf', requireAuth, async (req,
     const pdfContent = generateIIPDF(document, session, checklistItems, equipmentUsed);
     
     // Generate PDF using Puppeteer
-    const browser = await getPuppeteer().launch({
+    const browser = await pptr.launch({
       executablePath: await findChrome(),
       headless: "new",
       args: [
@@ -360,7 +361,10 @@ router.post('/api/ii-documents/:documentId/export-pdf', requireAuth, async (req,
 // Export all I&I documents in a session as combined PDF
 router.post('/api/sessions/:sessionId/export-all-ii-pdfs', requireAuth, async (req, res) => {
   const { sessionId } = req.params;
-  
+  const pptr = getPuppeteer();
+  if (!pptr) {
+    return res.status(503).json({ error: 'PDF export is not available', details: 'Puppeteer is not available in this build. Install Google Chrome or Edge and use a full build with PDF support.' });
+  }
   try {
     console.log(`🔍 DEBUG: Exporting all I&I PDFs for session: ${sessionId}`);
     
@@ -391,7 +395,7 @@ router.post('/api/sessions/:sessionId/export-all-ii-pdfs', requireAuth, async (r
     console.log(`✅ DEBUG: PDF content generation completed`);
     
     // Generate PDF using Puppeteer
-    const browser = await getPuppeteer().launch({
+    const browser = await pptr.launch({
       executablePath: await findChrome(),
       headless: "new",
       args: [

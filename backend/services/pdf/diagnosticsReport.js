@@ -235,13 +235,23 @@ function generateDiagnosticsSummary(diagnosticsData) {
     `;
   }
 
-  // Calculate error statistics
+  // Calculate error statistics (expand for display; unknown types fall back to formatted key)
   const errorTypeLabels = {
     'bad': 'Component Fault',
     'not_communicating': 'Communication Failure',
     'abnormal': 'Abnormal Status',
     'fail': 'Device Failure',
-    'warning': 'Warning Condition'
+    'warning': 'Warning Condition',
+    'no_card': 'No Card',
+    'short_circuit': 'Short Circuit',
+    'loop_current_saturated': 'Loop Current Saturated',
+    'open_loop': 'Open Loop',
+    'device_error': 'Device Error'
+  };
+  const formatErrorType = (type) => {
+    if (!type) return '-';
+    const key = String(type).toLowerCase().replace(/\s+/g, '_');
+    return errorTypeLabels[key] || String(type).replace(/_/g, ' ');
   };
 
   const errorCounts = {};
@@ -329,6 +339,49 @@ function generateDiagnosticsSummary(diagnosticsData) {
           else init();
         })();
         <\/script>
+      </div>
+
+      <div style="margin: 30px 0;">
+        <h3 class="section-title" style="margin-bottom: 15px;">Complete Error Log (${totalErrors})</h3>
+        <table style="width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); font-size: 11px;">
+          <thead>
+            <tr style="background: #2563eb; color: white;">
+              <th style="padding: 8px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Controller</th>
+              <th style="padding: 8px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Device (DST)</th>
+              <th style="padding: 8px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Bus Type</th>
+              <th style="padding: 8px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Card</th>
+              <th style="padding: 8px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Port/PDT</th>
+              <th style="padding: 8px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Channel</th>
+              <th style="padding: 8px; text-align: left; border: 1px solid #ddd; font-weight: 600;">LDT</th>
+              <th style="padding: 8px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Error Type</th>
+              <th style="padding: 8px; text-align: left; border: 1px solid #ddd; font-weight: 600;">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${diagnosticsData.map((error, index) => {
+              const bgColor = index % 2 === 0 ? '#f8f9fa' : 'white';
+              const errorLabel = formatErrorType(error.error_type);
+              const description = (error.error_description || error.notes || '—').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              return `
+              <tr style="background: ${bgColor};">
+                <td style="padding: 6px 8px; border: 1px solid #ddd; font-weight: 600;">${(error.controller_name || '').replace(/</g, '&lt;')}</td>
+                <td style="padding: 6px 8px; border: 1px solid #ddd;">${(error.device_name || '-').replace(/</g, '&lt;')}</td>
+                <td style="padding: 6px 8px; border: 1px solid #ddd;">${(error.bus_type || '-').replace(/</g, '&lt;')}</td>
+                <td style="padding: 6px 8px; border: 1px solid #ddd; text-align: center;">${(error.card_display || (error.card_number != null ? error.card_number : '-')).toString().replace(/</g, '&lt;')}</td>
+                <td style="padding: 6px 8px; border: 1px solid #ddd; text-align: center;">${(error.port_number != null ? error.port_number : '-').toString().replace(/</g, '&lt;')}</td>
+                <td style="padding: 6px 8px; border: 1px solid #ddd; text-align: center;">${error.channel_number !== null && error.channel_number !== undefined ? error.channel_number : 'N/A'}</td>
+                <td style="padding: 6px 8px; border: 1px solid #ddd;">${(error.ldt != null ? error.ldt : '-').toString().replace(/</g, '&lt;')}</td>
+                <td style="padding: 6px 8px; border: 1px solid #ddd;">
+                  <span style="background: #dc3545; color: white; padding: 2px 5px; border-radius: 3px; font-size: 10px; font-weight: 600;">
+                    ${errorLabel.toUpperCase()}
+                  </span>
+                </td>
+                <td style="padding: 6px 8px; border: 1px solid #ddd; color: #333;">${description}</td>
+              </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
       </div>
 
       <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #0066cc; margin-top: 30px;">

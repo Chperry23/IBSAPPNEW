@@ -32,10 +32,15 @@ export default function CustomerDetail() {
   const [showTrendModal, setShowTrendModal] = useState(false);
   const [metricHistory, setMetricHistory] = useState([]);
   const [metricHistoryLoading, setMetricHistoryLoading] = useState(false);
+  const [showSystemPassword, setShowSystemPassword] = useState(false);
+  const [systemRegStats, setSystemRegStats] = useState(null);
+  const [spSyncing, setSpSyncing] = useState(false);
+  const [spLastSync, setSpLastSync] = useState(null);
 
   useEffect(() => {
     loadCustomerData();
     loadSystemRegSummary();
+    loadSystemRegStats();
     loadNotes();
   }, [id]);
 
@@ -139,6 +144,33 @@ export default function CustomerDetail() {
       setSystemRegSummary(response);
     } catch (error) {
       console.error('❌ Error loading system registry summary:', error);
+    }
+  };
+
+  const loadSystemRegStats = async () => {
+    try {
+      const response = await api.request(`/api/customers/${id}/system-registry/cioc-stats`);
+      setSystemRegStats(response);
+    } catch (err) {
+      console.error('Error loading CIOC/Charm stats:', err);
+    }
+  };
+
+  const handleSharePointSync = async () => {
+    setSpSyncing(true);
+    try {
+      const result = await api.request(`/api/sharepoint/sync-customer/${id}`, { method: 'POST' });
+      if (result.success) {
+        setSpLastSync(new Date().toLocaleTimeString());
+        await loadNotes();
+        showMessage(`Synced ${result.added} note(s) from SharePoint`, 'success');
+      } else {
+        showMessage(result.error || 'SharePoint sync failed', 'error');
+      }
+    } catch (err) {
+      showMessage('SharePoint sync error: ' + err.message, 'error');
+    } finally {
+      setSpSyncing(false);
     }
   };
 
@@ -514,7 +546,16 @@ export default function CustomerDetail() {
             )}
             {(customer.system_username || customer.system_password) && (
               <div className="pt-3 border-t border-gray-700">
-                <div className="text-xs text-gray-500 uppercase mb-2">System Credentials</div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs text-gray-500 uppercase">System Credentials</div>
+                  <button
+                    onClick={() => setShowSystemPassword(p => !p)}
+                    className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                    title={showSystemPassword ? 'Hide password' : 'Reveal password'}
+                  >
+                    {showSystemPassword ? '🙈 Hide' : '👁 Reveal'}
+                  </button>
+                </div>
                 {customer.system_username && (
                   <div className="mb-2">
                     <div className="text-xs text-gray-400">Username</div>
@@ -524,7 +565,9 @@ export default function CustomerDetail() {
                 {customer.system_password && (
                   <div>
                     <div className="text-xs text-gray-400">Password</div>
-                    <div className="text-gray-200 font-mono text-sm">{'*'.repeat(8)}</div>
+                    <div className="text-gray-200 font-mono text-sm select-all">
+                      {showSystemPassword ? customer.system_password : '••••••••'}
+                    </div>
                   </div>
                 )}
               </div>
@@ -579,6 +622,25 @@ export default function CustomerDetail() {
                          onClick={() => navigate(`/system-registry/${customer.id}`)}>
                       <div className="font-bold text-green-300">{systemRegSummary.smartSwitches}</div>
                       <div className="text-gray-400">Switches</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {systemRegStats && (systemRegStats.cioc_count > 0 || systemRegStats.charm_count > 0) && (
+              <div className="mt-4 pt-4 border-t border-gray-600">
+                <div className="text-sm text-gray-400 mb-2">CHARMs Data</div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  {systemRegStats.cioc_count > 0 && (
+                    <div className="text-center bg-yellow-900/30 rounded p-2">
+                      <div className="font-bold text-yellow-300">{systemRegStats.cioc_count}</div>
+                      <div className="text-gray-400">CIOC Cards</div>
+                    </div>
+                  )}
+                  {systemRegStats.charm_count > 0 && (
+                    <div className="text-center bg-orange-900/30 rounded p-2">
+                      <div className="font-bold text-orange-300">{systemRegStats.charm_count}</div>
+                      <div className="text-gray-400">CHARMs</div>
                     </div>
                   )}
                 </div>
@@ -672,24 +734,41 @@ export default function CustomerDetail() {
         {/* Site Notes Panel */}
         {activeTab === 'notes' && (
           <div className="p-6 space-y-4">
-            {/* Add note */}
-            <div className="space-y-2">
-              <label className="form-label">New Site Note</label>
-              <textarea
-                className="form-input w-full"
-                rows={3}
-                placeholder="e.g. Customer is strict about blowing out computers. Main server room is in Building B."
-                value={newNote}
-                onChange={e => setNewNote(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) handleAddNote(); }}
-              />
-              <button
-                className="btn btn-primary"
-                onClick={handleAddNote}
-                disabled={savingNote || !newNote.trim()}
-              >
-                {savingNote ? 'Saving...' : '+ Add Note'}
-              </button>
+            {/* Toolbar: add note + SharePoint sync */}
+            <div className="flex flex-col md:flex-row gap-3">
+              <div className="flex-1 space-y-2">
+                <label className="form-label">New Site Note</label>
+                <textarea
+                  className="form-input w-full"
+                  rows={3}
+                  placeholder="e.g. Customer is strict about blowing out computers. Main server room is in Building B."
+                  value={newNote}
+                  onChange={e => setNewNote(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && e.ctrlKey) handleAddNote(); }}
+                />
+                <button
+                  className="btn btn-primary"
+                  onClick={handleAddNote}
+                  disabled={savingNote || !newNote.trim()}
+                >
+                  {savingNote ? 'Saving...' : '+ Add Note'}
+                </button>
+              </div>
+              <div className="flex flex-col justify-start gap-2 md:w-48">
+                <label className="form-label">SharePoint</label>
+                <button
+                  className="btn btn-secondary flex items-center gap-2 justify-center"
+                  onClick={handleSharePointSync}
+                  disabled={spSyncing}
+                  title="Pull latest notes from ECI SharePoint site notes list"
+                >
+                  {spSyncing ? '⏳ Syncing...' : '☁️ Sync from SharePoint'}
+                </button>
+                {spLastSync && (
+                  <p className="text-xs text-gray-500 text-center">Last sync: {spLastSync}</p>
+                )}
+                <p className="text-xs text-gray-600 text-center">Matches by Dongle ID</p>
+              </div>
             </div>
 
             {/* Notes list */}
@@ -727,7 +806,14 @@ export default function CustomerDetail() {
                       </div>
                     ) : (
                       <>
-                        <p className="text-gray-100 whitespace-pre-wrap">{note.note}</p>
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <p className="text-gray-100 whitespace-pre-wrap flex-1">{note.note}</p>
+                          {note.source === 'sharepoint' ? (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/60 text-blue-300 border border-blue-700 shrink-0">☁️ SharePoint</span>
+                          ) : (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-400 border border-gray-600 shrink-0">📱 App</span>
+                          )}
+                        </div>
                         <div className="flex items-center justify-between mt-2">
                           <span className="text-xs text-gray-500">
                             {note.created_by && <span className="mr-2">By {note.created_by}</span>}
@@ -741,6 +827,21 @@ export default function CustomerDetail() {
                             >
                               Edit
                             </button>
+                            {note.source !== 'sharepoint' && (
+                              <button
+                                className="text-sky-400 hover:text-sky-300 text-sm"
+                                title="Push this note to SharePoint"
+                                onClick={async () => {
+                                  try {
+                                    const r = await api.request(`/api/sharepoint/push-note/${note.id}`, { method: 'POST' });
+                                    if (r.success) { showMessage('Note pushed to SharePoint ☁️', 'success'); await loadNotes(); }
+                                    else showMessage(r.error || 'Push failed', 'error');
+                                  } catch (e) { showMessage('Push error: ' + e.message, 'error'); }
+                                }}
+                              >
+                                ☁️ Push
+                              </button>
+                            )}
                             <button
                               className="text-red-400 hover:text-red-300 text-sm"
                               onClick={() => handleDeleteNote(note.id)}

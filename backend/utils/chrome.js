@@ -1,16 +1,26 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-// Opaque dynamic require — prevents pkg from statically analysing and
-// trying to bundle Chromium (~300 MB) into the exe snapshot.
-const _pptr = 'puppeteer';
-function getPuppeteer() { return require(_pptr); }
+
+// Literal require so pkg can include puppeteer in the snapshot. We use system
+// Chrome/Edge via findChrome() so we don't bundle Chromium (~300 MB).
+function getPuppeteer() {
+  try {
+    return require('puppeteer');
+  } catch (e) {
+    if (e.code === 'MODULE_NOT_FOUND' || (e.message && e.message.includes("Cannot find module 'puppeteer'"))) {
+      console.warn('[PDF] Puppeteer not available. PDF export disabled.');
+      return null;
+    }
+    throw e;
+  }
+}
 
 // Chrome detection function for PDF generation
 async function findChrome() {
   const platform = os.platform();
   const possiblePaths = [];
-  
+
   if (platform === 'win32') {
     possiblePaths.push(
       'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -33,7 +43,7 @@ async function findChrome() {
       '/snap/bin/chromium'
     );
   }
-  
+
   // Check for existing Chrome installations
   for (const chromePath of possiblePaths) {
     if (fs.existsSync(chromePath)) {
@@ -41,24 +51,26 @@ async function findChrome() {
       return chromePath;
     }
   }
-  
-  // If no Chrome found, try to use Puppeteer's bundled Chromium
-  try {
-    const puppeteerChrome = getPuppeteer().executablePath();
-    if (fs.existsSync(puppeteerChrome)) {
-      console.log(`🌐 Using Puppeteer bundled Chromium: ${puppeteerChrome}`);
-      return puppeteerChrome;
+
+  // If no Chrome found, try Puppeteer's bundled Chromium (only when puppeteer is available)
+  const pptr = getPuppeteer();
+  if (pptr) {
+    try {
+      const puppeteerChrome = pptr.executablePath();
+      if (puppeteerChrome && fs.existsSync(puppeteerChrome)) {
+        console.log(`🌐 Using Puppeteer bundled Chromium: ${puppeteerChrome}`);
+        return puppeteerChrome;
+      }
+    } catch (error) {
+      console.log('⚠️ Puppeteer bundled Chromium not available');
     }
-  } catch (error) {
-    console.log('⚠️ Puppeteer bundled Chromium not available');
   }
-  
+
   console.log('❌ No Chrome/Edge installation found. PDF generation may fail.');
   console.log('   Please install Google Chrome or Microsoft Edge to enable PDF generation.');
 
-  // Return undefined to let Puppeteer try its default behavior
   return undefined;
 }
 
-module.exports = { findChrome };
+module.exports = { findChrome, getPuppeteer };
 

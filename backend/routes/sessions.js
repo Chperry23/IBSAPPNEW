@@ -3,9 +3,7 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
-const _pptr = 'puppeteer';
-function getPuppeteer() { return require(_pptr); }
-const { findChrome } = require('../utils/chrome');
+const { findChrome, getPuppeteer } = require('../utils/chrome');
 const { getSharedStyles, generateSingleCabinetHtml, generateRiskAssessmentPage, generateCoverPage, generateCabinetsSectionDividerPage } = require('../services/pdf/cabinetReport');
 const { generateMaintenanceReportPage } = require('../services/pdf/maintenanceReport');
 const { generateDiagnosticsSummary, generateControllerBreakdown } = require('../services/pdf/diagnosticsReport');
@@ -197,6 +195,8 @@ router.get('/:sessionId', requireAuth, async (req, res) => {
       power_supplies: JSON.parse(cabinet.power_supplies || '[]'),
       distribution_blocks: JSON.parse(cabinet.distribution_blocks || '[]'),
       diodes: JSON.parse(cabinet.diodes || '[]'),
+      media_converters: JSON.parse(cabinet.media_converters || '[]'),
+      power_injected_baseplates: JSON.parse(cabinet.power_injected_baseplates || '[]'),
       network_equipment: JSON.parse(cabinet.network_equipment || '[]'),
       controllers: JSON.parse(cabinet.controllers || '[]'),
       workstations: JSON.parse(cabinet.workstations || '[]'),
@@ -263,7 +263,21 @@ router.get('/:sessionId', requireAuth, async (req, res) => {
 // Full session PDF (cabinets + diagnostics + node maintenance + PM notes)
 router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
   const sessionId = req.params.sessionId;
+  const log = (msg, ...args) => console.log('[PM-PDF]', msg, ...args);
+  const logErr = (msg, ...args) => console.error('[PM-PDF]', msg, ...args);
+  log('Request received', { sessionId, time: new Date().toISOString() });
+
+  const pptr = getPuppeteer();
+  if (!pptr) {
+    logErr('Puppeteer not available (packaged build or not installed)');
+    return res.status(503).json({
+      error: 'PDF export is not available',
+      details: 'This installation cannot generate PDFs. Run the app from source (npm start) with puppeteer installed, or install Google Chrome or Microsoft Edge and use a full build that includes PDF support.'
+    });
+  }
+
   try {
+    log('Loading session...');
     const session = await db.prepare(`
       SELECT s.*, c.name as customer_name
       FROM sessions s
@@ -271,15 +285,19 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
       WHERE s.id = ?
     `).get([sessionId]);
     if (!session) {
+      logErr('Session not found', sessionId);
       return res.status(404).json({ error: 'Session not found' });
     }
     if (session.session_type === 'ii') {
+      logErr('Rejected: I&I session — use I&I export');
       return res.status(400).json({ error: 'Use I&I export for I&I sessions' });
     }
+    log('Session loaded', { session_name: session.session_name, customer_name: session.customer_name });
 
     const sessionCabinets = await db.prepare(`
       SELECT c.* FROM cabinets c WHERE c.pm_session_id = ? ORDER BY c.created_at
     `).all([sessionId]);
+    log('Cabinets loaded', { count: sessionCabinets.length });
 
     const sessionInfo = { id: session.id, session_name: session.session_name, status: session.status, customer_name: session.customer_name };
 
@@ -313,6 +331,8 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
         power_supplies: JSON.parse(row.power_supplies || '[]'),
         distribution_blocks: JSON.parse(row.distribution_blocks || '[]'),
         diodes: JSON.parse(row.diodes || '[]'),
+        media_converters: JSON.parse(row.media_converters || '[]'),
+        power_injected_baseplates: JSON.parse(row.power_injected_baseplates || '[]'),
         network_equipment: JSON.parse(row.network_equipment || '[]'),
         controllers,
         workstations: JSON.parse(row.workstations || '[]'),
@@ -389,15 +409,13 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
       SELECT * FROM session_pm_notes WHERE session_id = ? AND (deleted IS NULL OR deleted = 0) LIMIT 1
     `).get([sessionId]);
 
+    log('Building report sections (risk, maintenance, diagnostics, cabinets HTML)...');
     const riskResult = generateRiskAssessment(cabinets, nodeMaintenanceData);
     const riskAssessmentHtml = generateRiskAssessmentPage(riskResult, session.session_name);
     const maintenanceHtml = generateMaintenanceReportPage(nodeMaintenanceData);
     
-    // Generate I/O Errors Summary (appears before cabinets)
+    // Generate I/O Errors Summary (chart + Complete Error Log table, before cabinets)
     const dvSummaryHtml = generateDiagnosticsSummary(diagnostics);
-    
-    // Generate Detailed Error Log (appears after cabinets at the end)
-    const controllerBreakdownHtml = generateControllerBreakdown(diagnostics);
     
     const cabinetsHtml = cabinets.map((cab, i) => generateSingleCabinetHtml(cab, sessionInfo, i + 1)).join('');
     
@@ -489,34 +507,64 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
         ${pmNotesHtml}
         ${generateCabinetsSectionDividerPage()}
         ${cabinetsHtml}
-        ${controllerBreakdownHtml}
       </body>
       </html>
     `;
 
-    const browser = await getPuppeteer().launch({
-      executablePath: await findChrome(),
+    log('HTML built', { lengthKB: Math.round(fullHtml.length / 1024) });
+
+    let chromePath;
+    try {
+      chromePath = await findChrome();
+      log('Chrome path resolved', { path: chromePath || '(null)' });
+      if (!chromePath) {
+        logErr('Chrome not found. Install Chrome/Chromium or set PUPPETEER_EXECUTABLE_PATH.');
+      }
+    } catch (chromeErr) {
+      logErr('findChrome failed', chromeErr.message);
+      throw chromeErr;
+    }
+
+    log('Launching browser...');
+    const browser = await pptr.launch({
+      executablePath: chromePath,
       headless: 'new',
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-web-security'],
     });
+    log('Browser launched');
     const page = await browser.newPage();
     page.setDefaultTimeout(120000);
+    log('Setting page content (waitUntil: networkidle0, timeout: 120s)...');
     await page.setContent(fullHtml, { waitUntil: 'networkidle0', timeout: 120000 });
-    await page.evaluate(() => new Promise(r => setTimeout(r, 400)));
+    log('Page content set');
+    // Wait for Chart.js to render (done in Node, not browser context, so pkg serialization is not an issue)
+    await new Promise(r => setTimeout(r, 800));
+    log('Generating PDF buffer...');
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
       margin: { top: '0.5in', right: '0.5in', bottom: '0.5in', left: '0.5in' },
     });
+    log('PDF generated', { sizeKB: Math.round(pdfBuffer.length / 1024) });
     await browser.close();
+    log('Browser closed');
 
     const safeName = (session.session_name || 'Session').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="PM-Session-Report-${safeName}.pdf"`);
     res.send(pdfBuffer);
+    log('Response sent OK');
   } catch (error) {
+    logErr('FAILED', error.message);
+    logErr('Stack:', error.stack);
+    if (error.message && (error.message.includes('Could not find Chrome') || error.message.includes('executablePath') || error.message.includes('Failed to launch'))) {
+      logErr('Hint: Chrome/Chromium may be missing on this machine, or set PUPPETEER_EXECUTABLE_PATH to your Chrome path.');
+    }
+    if (error.message && (error.message.includes('timeout') || error.message.includes('Timeout'))) {
+      logErr('Hint: Page load or PDF render timed out; try again or reduce report size.');
+    }
     console.error('Session export-pdfs error:', error);
-    res.status(500).json({ error: 'PDF generation failed' });
+    res.status(500).json({ error: 'PDF generation failed', details: error.message });
   }
 });
 
@@ -650,6 +698,8 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
             power_supplies: JSON.parse(row.power_supplies || '[]'),
             distribution_blocks: JSON.parse(row.distribution_blocks || '[]'),
             diodes: JSON.parse(row.diodes || '[]'),
+            media_converters: JSON.parse(row.media_converters || '[]'),
+            power_injected_baseplates: JSON.parse(row.power_injected_baseplates || '[]'),
             network_equipment: JSON.parse(row.network_equipment || '[]'),
             controllers,
             workstations: JSON.parse(row.workstations || '[]'),

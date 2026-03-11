@@ -178,10 +178,50 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
         }
         if (isFail) {
           failedComponents++;
-          const weight = 6; // Moderate risk
+          const weight = 6;
           riskScore += weight;
           riskBreakdown.push(`${cabinetName}: Diode ${diodeIndex + 1} voltage out of spec`);
           moderateIssues.push(`${cabinetName}: Diode ${diodeIndex + 1} voltage out of spec`);
+        }
+      });
+    }
+
+    // Check media converters
+    if (cabinet.media_converters) {
+      cabinet.media_converters.forEach((mc, mcIndex) => {
+        totalComponents++;
+        let isFail = mc.status === 'fail';
+        if (!isFail && mc.dc_reading !== undefined && mc.dc_reading !== '') {
+          const voltageType = mc.voltage_type || '24VDC';
+          const check = checkVoltageInRange(mc.dc_reading, voltageType);
+          isFail = !check.inRange;
+        }
+        if (isFail) {
+          failedComponents++;
+          const weight = 6;
+          riskScore += weight;
+          riskBreakdown.push(`${cabinetName}: Media Converter ${mc.mc_name || mcIndex + 1} voltage out of spec`);
+          moderateIssues.push(`${cabinetName}: Media Converter ${mc.mc_name || mcIndex + 1} voltage out of spec`);
+        }
+      });
+    }
+
+    // Check power injected baseplates
+    if (cabinet.power_injected_baseplates) {
+      cabinet.power_injected_baseplates.forEach((pib, pibIndex) => {
+        totalComponents++;
+        let isFail = pib.status === 'fail';
+        if (!isFail && pib.dc_reading !== undefined && pib.dc_reading !== '') {
+          const voltageType = pib.voltage_type || '24VDC';
+          const check = checkVoltageInRange(pib.dc_reading, voltageType);
+          isFail = !check.inRange;
+        }
+        if (isFail) {
+          failedComponents++;
+          const weight = 8;
+          riskScore += weight;
+          riskBreakdown.push(`${cabinetName}: PI Baseplate ${pib.pib_name || pibIndex + 1} voltage out of spec`);
+          moderateIssues.push(`${cabinetName}: PI Baseplate ${pib.pib_name || pibIndex + 1} voltage out of spec`);
         }
       });
     }

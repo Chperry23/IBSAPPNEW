@@ -4,9 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
 const Logger = require('../utils/logger');
-const _pptr = 'puppeteer';
-function getPuppeteer() { return require(_pptr); }
-const { findChrome } = require('../utils/chrome');
+const { findChrome, getPuppeteer } = require('../utils/chrome');
 const { generatePDFHtml } = require('../services/pdf/cabinetReport');
 
 const logger = new Logger('Cabinets');
@@ -199,6 +197,8 @@ router.get('/:cabinetId', requireAuth, async (req, res) => {
       power_supplies: JSON.parse(cabinet.power_supplies || '[]'),
       distribution_blocks: JSON.parse(cabinet.distribution_blocks || '[]'),
       diodes: JSON.parse(cabinet.diodes || '[]'),
+      media_converters: JSON.parse(cabinet.media_converters || '[]'),
+      power_injected_baseplates: JSON.parse(cabinet.power_injected_baseplates || '[]'),
       network_equipment: JSON.parse(cabinet.network_equipment || '[]'),
       controllers: controllers,
       workstations: JSON.parse(cabinet.workstations || '[]'),
@@ -228,6 +228,10 @@ router.get('/:cabinetId', requireAuth, async (req, res) => {
 // Generate cabinet PDF
 router.post('/:cabinetId/pdf', requireAuth, async (req, res) => {
   const cabinetId = req.params.cabinetId;
+  const pptr = getPuppeteer();
+  if (!pptr) {
+    return res.status(503).json({ error: 'PDF export is not available', details: 'Puppeteer is not available in this build. Install Google Chrome or Edge and use a full build with PDF support.' });
+  }
   try {
     const row = await db.prepare('SELECT * FROM cabinets WHERE id = ?').get([cabinetId]);
     if (!row) {
@@ -266,6 +270,8 @@ router.post('/:cabinetId/pdf', requireAuth, async (req, res) => {
       power_supplies: JSON.parse(row.power_supplies || '[]'),
       distribution_blocks: JSON.parse(row.distribution_blocks || '[]'),
       diodes: JSON.parse(row.diodes || '[]'),
+      media_converters: JSON.parse(row.media_converters || '[]'),
+      power_injected_baseplates: JSON.parse(row.power_injected_baseplates || '[]'),
       network_equipment: JSON.parse(row.network_equipment || '[]'),
       controllers,
       workstations: JSON.parse(row.workstations || '[]'),
@@ -283,7 +289,7 @@ router.post('/:cabinetId/pdf', requireAuth, async (req, res) => {
       WHERE s.id = ?
     `).get([row.pm_session_id]) || {};
     const pdfContent = generatePDFHtml({ cabinet, sessionInfo });
-    const browser = await getPuppeteer().launch({
+    const browser = await pptr.launch({
       executablePath: await findChrome(),
       headless: 'new',
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-web-security'],
@@ -337,6 +343,7 @@ router.put('/:cabinetId', requireAuth, async (req, res) => {
       UPDATE cabinets SET 
         cabinet_name = ?, cabinet_date = ?, status = ?,
         power_supplies = ?, distribution_blocks = ?, diodes = ?,
+        media_converters = ?, power_injected_baseplates = ?,
         network_equipment = ?, controllers = ?, workstations = ?, inspection_data = ?,
         cabinet_type = ?, comments = ?, location_id = ?,
         rack_has_ups = ?, rack_has_hmi = ?, rack_has_kvm = ?, rack_has_monitor = ?,
@@ -349,6 +356,8 @@ router.put('/:cabinetId', requireAuth, async (req, res) => {
       JSON.stringify(updateData.power_supplies || []),
       JSON.stringify(updateData.distribution_blocks || []),
       JSON.stringify(updateData.diodes || []),
+      JSON.stringify(updateData.media_converters || []),
+      JSON.stringify(updateData.power_injected_baseplates || []),
       JSON.stringify(updateData.network_equipment || []),
       JSON.stringify(updateData.controllers || []),
       JSON.stringify(updateData.workstations || []),

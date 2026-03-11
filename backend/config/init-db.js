@@ -168,6 +168,8 @@ function initializeDatabase() {
         power_supplies TEXT DEFAULT '[]',
         distribution_blocks TEXT DEFAULT '[]',
         diodes TEXT DEFAULT '[]',
+        media_converters TEXT DEFAULT '[]',
+        power_injected_baseplates TEXT DEFAULT '[]',
         network_equipment TEXT DEFAULT '[]',
         controllers TEXT DEFAULT '[]',
         inspection_data TEXT DEFAULT '{}',
@@ -793,6 +795,8 @@ function initializeDatabase() {
       addColumnIfNotExists('cabinets', 'synced', 'INTEGER DEFAULT 0');
       addColumnIfNotExists('cabinets', 'device_id', 'TEXT');
       addColumnIfNotExists('cabinets', 'deleted', 'INTEGER DEFAULT 0');
+      addColumnIfNotExists('cabinets', 'media_converters', "TEXT DEFAULT '[]'");
+      addColumnIfNotExists('cabinets', 'power_injected_baseplates', "TEXT DEFAULT '[]'");
 
       // Nodes table
       addColumnIfNotExists('nodes', 'uuid', 'TEXT');
@@ -852,6 +856,10 @@ function initializeDatabase() {
       addColumnIfNotExists('session_ii_equipment_used', 'device_id', 'TEXT');
       addColumnIfNotExists('session_ii_equipment_used', 'deleted', 'INTEGER DEFAULT 0');
       addColumnIfNotExists('session_ii_equipment_used', 'document_id', 'TEXT');
+
+      // Session diagnostics (I/O errors) - sync columns
+      addColumnIfNotExists('session_diagnostics', 'uuid', 'TEXT');
+      addColumnIfNotExists('session_diagnostics', 'device_id', 'TEXT');
 
       // Add new measurement columns to existing session_ii_checklist table
       addColumnIfNotExists('session_ii_checklist', 'measurement_ohms', 'TEXT');
@@ -1153,6 +1161,10 @@ function initializeDatabase() {
           customer_id INTEGER NOT NULL,
           note TEXT NOT NULL,
           created_by TEXT,
+          uuid TEXT,
+          synced INTEGER DEFAULT 0,
+          device_id TEXT,
+          deleted INTEGER DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (customer_id) REFERENCES customers(id)
@@ -1163,6 +1175,14 @@ function initializeDatabase() {
         }
       );
       addColumnIfNotExists('customer_notes', 'created_by', 'TEXT');
+      addColumnIfNotExists('customer_notes', 'uuid', 'TEXT');
+      addColumnIfNotExists('customer_notes', 'synced', 'INTEGER DEFAULT 0');
+      addColumnIfNotExists('customer_notes', 'device_id', 'TEXT');
+      addColumnIfNotExists('customer_notes', 'deleted', 'INTEGER DEFAULT 0');
+      // source: 'app' (default) or 'sharepoint'
+      addColumnIfNotExists('customer_notes', 'source', 'TEXT DEFAULT \'app\'');
+      // sp_item_id: SharePoint list item ID for update/dedup
+      addColumnIfNotExists('customer_notes', 'sp_item_id', 'INTEGER');
 
       // Fix NULL ids in sys_charms_io_cards and sys_charms.
       // The TEXT column migration (for MongoDB ObjectId support) removed AUTOINCREMENT,
@@ -1200,44 +1220,6 @@ function initializeDatabase() {
       );
 
       console.log('✅ Database tables initialized successfully');
-
-      // Debug: Check cabinet data after initialization
-      db.all(
-        'SELECT id, COALESCE(cabinet_name, cabinet_location) as name, power_supplies, distribution_blocks, diodes, network_equipment, controllers FROM cabinets',
-        (err, cabinets) => {
-          if (!err) {
-            console.log(
-              `🔍 DEBUG: Found ${cabinets.length} cabinets in database after initialization`
-            );
-            cabinets.forEach((cabinet) => {
-              console.log(`📦 Cabinet: ${cabinet.name} (ID: ${cabinet.id})`);
-              console.log(
-                `   Power Supplies: ${
-                  cabinet.power_supplies ? cabinet.power_supplies.length : 0
-                } chars`
-              );
-              console.log(
-                `   Distribution Blocks: ${
-                  cabinet.distribution_blocks ? cabinet.distribution_blocks.length : 0
-                } chars`
-              );
-              console.log(
-                `   Diodes: ${cabinet.diodes ? cabinet.diodes.length : 0} chars`
-              );
-              console.log(
-                `   Network Equipment: ${
-                  cabinet.network_equipment ? cabinet.network_equipment.length : 0
-                } chars`
-              );
-              console.log(
-                `   Controllers: ${
-                  cabinet.controllers ? cabinet.controllers.length : 0
-                } chars`
-              );
-            });
-          }
-        }
-      );
 
       createDefaultUser()
         .then(() => {

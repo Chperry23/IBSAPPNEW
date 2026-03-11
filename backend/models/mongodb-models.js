@@ -101,6 +101,8 @@ const cabinetSchema = new mongoose.Schema({
   power_supplies: { type: String }, // JSON string
   distribution_blocks: { type: String }, // JSON string
   diodes: { type: String }, // JSON string
+  media_converters: { type: String }, // JSON string
+  power_injected_baseplates: { type: String }, // JSON string
   network_equipment: { type: String }, // JSON string
   controllers: { type: String }, // JSON string - for cabinets
   workstations: { type: String }, // JSON string - for racks
@@ -253,6 +255,38 @@ const sessionPMNotesSchema = new mongoose.Schema({
 sessionPMNotesSchema.index({ updated_at: 1, deleted: 1 });
 sessionPMNotesSchema.index({ uuid: 1 }, { unique: true, sparse: true });
 sessionPMNotesSchema.index({ session_id: 1 });
+
+// Session Diagnostics (I/O errors) Schema
+const sessionDiagnosticsSchema = new mongoose.Schema({
+  _id: { type: Number, required: true },
+  session_id: { type: String, required: true },
+  controller_name: { type: String, required: true },
+  card_number: { type: Number, required: true },
+  card_display: { type: String },
+  channel_number: { type: Number },
+  error_type: { type: String, required: true },
+  error_description: { type: String },
+  notes: { type: String },
+  bus_type: { type: String },
+  device_name: { type: String },
+  device_type: { type: String },
+  card_type: { type: String },
+  port_number: { type: String },
+  ldt: { type: String },
+  uuid: { type: String },
+  synced: { type: Number, default: 0 },
+  device_id: { type: String },
+  deleted: { type: Number, default: 0 },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now }
+}, {
+  collection: 'session_diagnostics',
+  versionKey: false
+});
+
+sessionDiagnosticsSchema.index({ updated_at: 1, deleted: 1 });
+sessionDiagnosticsSchema.index({ uuid: 1 }, { unique: true, sparse: true });
+sessionDiagnosticsSchema.index({ session_id: 1 });
 
 // I&I Documents Schema
 const sessionIIDocumentSchema = new mongoose.Schema({
@@ -559,6 +593,23 @@ const customerMetricHistorySchema = new mongoose.Schema({
 customerMetricHistorySchema.index({ customer_id: 1 });
 customerMetricHistorySchema.index({ recorded_at: -1 });
 
+// Customer site notes schema
+const customerNotesSchema = new mongoose.Schema({
+  _id: { type: Number, required: true },
+  customer_id: { type: Number, required: true },
+  note: { type: String, required: true },
+  created_by: { type: String },
+  uuid: { type: String },
+  synced: { type: Number, default: 0 },
+  device_id: { type: String },
+  deleted: { type: Number, default: 0 },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now }
+}, { collection: 'customer_notes', versionKey: false });
+customerNotesSchema.index({ customer_id: 1 });
+customerNotesSchema.index({ uuid: 1 }, { unique: true, sparse: true });
+customerNotesSchema.index({ updated_at: 1, deleted: 1 });
+
 // Export all models
 module.exports = {
   User: mongoose.model('User', userSchema),
@@ -570,6 +621,7 @@ module.exports = {
   SessionNodeTracker: mongoose.model('SessionNodeTracker', sessionNodeTrackerSchema),
   CabinetLocation: mongoose.model('CabinetLocation', cabinetLocationSchema),
   SessionPMNotes: mongoose.model('SessionPMNotes', sessionPMNotesSchema),
+  SessionDiagnostics: mongoose.model('SessionDiagnostics', sessionDiagnosticsSchema),
   SessionIIDocument: mongoose.model('SessionIIDocument', sessionIIDocumentSchema),
   SessionIIEquipment: mongoose.model('SessionIIEquipment', sessionIIEquipmentSchema),
   SessionIIChecklist: mongoose.model('SessionIIChecklist', sessionIIChecklistSchema),
@@ -583,5 +635,6 @@ module.exports = {
   SysCharmsIOCard: mongoose.model('SysCharmsIOCard', sysCharmsIOCardSchema),
   SysCharm: mongoose.model('SysCharm', sysCharmSchema),
   SysAMSSystem: mongoose.model('SysAMSSystem', sysAMSSystemSchema),
-  CustomerMetricHistory: mongoose.model('CustomerMetricHistory', customerMetricHistorySchema)
+  CustomerMetricHistory: mongoose.model('CustomerMetricHistory', customerMetricHistorySchema),
+  CustomerNote: mongoose.model('CustomerNote', customerNotesSchema)
 };

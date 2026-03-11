@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
+const { v4: uuidv4 } = require('uuid');
 
 // Get all customers
 router.get('/', requireAuth, async (req, res) => {
@@ -132,7 +133,7 @@ router.put('/:customerId', requireAuth, async (req, res) => {
         contact_person = ?, email = ?, phone = ?, address = ?,
         system_username = ?, system_password = ?,
         company_name = ?, street_address = ?, city = ?, state = ?, zip = ?, country = ?, dongle_id = ?, alias = ?,
-        updated_at = CURRENT_TIMESTAMP 
+        synced = 0, updated_at = CURRENT_TIMESTAMP 
       WHERE id = ?
     `).run([
       name, location, contact_info, 
@@ -221,12 +222,12 @@ router.get('/:customerId/sessions', requireAuth, async (req, res) => {
 
 // ── Site Notes ──────────────────────────────────────────────────────────────
 
-// Get all notes for a customer
+// Get all notes for a customer (exclude soft-deleted)
 router.get('/:customerId/notes', requireAuth, async (req, res) => {
   const customerId = parseInt(req.params.customerId);
   try {
     const notes = await db.prepare(
-      `SELECT * FROM customer_notes WHERE customer_id = ? ORDER BY created_at DESC`
+      `SELECT * FROM customer_notes WHERE customer_id = ? AND COALESCE(deleted, 0) = 0 ORDER BY created_at DESC`
     ).all([customerId]);
     res.json(notes);
   } catch (error) {
@@ -243,9 +244,10 @@ router.post('/:customerId/notes', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Note text is required' });
   }
   try {
+    const uuid = uuidv4();
     const result = await db.prepare(
-      `INSERT INTO customer_notes (customer_id, note, created_by) VALUES (?, ?, ?)`
-    ).run([customerId, note.trim(), created_by || req.user?.username || null]);
+      `INSERT INTO customer_notes (customer_id, note, created_by, uuid, synced, deleted) VALUES (?, ?, ?, ?, 0, 0)`
+    ).run([customerId, note.trim(), created_by || req.user?.username || null, uuid]);
     const created = await db.prepare(
       `SELECT * FROM customer_notes WHERE id = ?`
     ).get([result.lastInsertRowid]);
@@ -265,7 +267,7 @@ router.put('/:customerId/notes/:noteId', requireAuth, async (req, res) => {
   }
   try {
     await db.prepare(
-      `UPDATE customer_notes SET note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+      `UPDATE customer_notes SET note = ?, synced = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
     ).run([note.trim(), noteId]);
     const updated = await db.prepare(
       `SELECT * FROM customer_notes WHERE id = ?`
@@ -277,11 +279,13 @@ router.put('/:customerId/notes/:noteId', requireAuth, async (req, res) => {
   }
 });
 
-// Delete a note
+// Delete a note — soft delete so sync can propagate the deletion
 router.delete('/:customerId/notes/:noteId', requireAuth, async (req, res) => {
   const { noteId } = req.params;
   try {
-    await db.prepare(`DELETE FROM customer_notes WHERE id = ?`).run([noteId]);
+    await db.prepare(
+      `UPDATE customer_notes SET deleted = 1, synced = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+    ).run([noteId]);
     res.json({ success: true });
   } catch (error) {
     console.error('Delete customer note error:', error);
