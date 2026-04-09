@@ -1,222 +1,173 @@
-Cabinet PM started successfully at 3/11/2026, 2:35:57 PM
+Cabinet PM started successfully at 4/9/2026, 3:28:07 PM
 URL: http://localhost:3000
-Log: C:\IBS APP\logs\cabinet-pm-2026-03-11_14-35-55.log
-[2026-03-11T18:35:57.163Z] [LOG] 
-[2026-03-11T18:35:57.164Z] [LOG] ============================================================
-[2026-03-11T18:35:57.165Z] [LOG]   ✅ Cabinet PM running on http://localhost:3000
-[2026-03-11T18:35:57.166Z] [LOG]   📋 Default login: admin / cabinet123
-[2026-03-11T18:35:57.168Z] [LOG] ============================================================
-[2026-03-11T18:35:57.173Z] [LOG] 
-[2026-03-11T18:35:57.183Z] [LOG] ✓ Synced cabinet_location to cabinet_name
-[2026-03-11T18:35:57.190Z] [LOG] 📱 Using existing device ID: L5420-H52Z4M3_1770401623666_ef11a6a2
-[2026-03-11T18:36:15.188Z] [LOG] [PM-PDF] Request received {
-  "sessionId": "bd289c44-b55d-4964-bd5f-4a1bc681d7b3",
-  "time": "2026-03-11T18:36:15.187Z"
+Log: C:\IBS APP\logs\cabinet-pm-2026-04-09_15-28-01.log
+[2026-04-09T19:28:07.134Z] [LOG] 
+[2026-04-09T19:28:07.137Z] [LOG] ============================================================
+[2026-04-09T19:28:07.138Z] [LOG]   ✅ Cabinet PM running on http://localhost:3000
+[2026-04-09T19:28:07.139Z] [LOG]   📋 Default login: admin / cabinet123
+[2026-04-09T19:28:07.140Z] [LOG] ============================================================
+[2026-04-09T19:28:07.142Z] [LOG] 
+[2026-04-09T19:28:07.143Z] [LOG] 📱 Using existing device ID: L5420-H52Z4M3_1773416574759_34cb8e3e
+[2026-04-09T19:29:07.176Z] [LOG] 🔍 [NODES] GET request: {
+  "customerId": "226"
 }
-[2026-03-11T18:36:15.913Z] [LOG] [PM-PDF] Loading session...
-[2026-03-11T18:36:15.916Z] [LOG] [PM-PDF] Session loaded {
-  "session_name": "Huntsman-RLP-3/9/2026",
-  "customer_name": "0001-0001-8950"
+[2026-04-09T19:29:07.181Z] [LOG] 🔍 [NODES] Loading nodes from System Registry tables...
+[2026-04-09T19:29:07.188Z] [LOG]    📋 Loaded 23 workstations from sys_workstations
+[2026-04-09T19:29:07.195Z] [LOG]    🎮 Loaded 24 controllers from sys_controllers
+[2026-04-09T19:29:07.205Z] [LOG]    🔀 Loaded 36 smart switches from sys_smart_switches
+[2026-04-09T19:29:07.217Z] [LOG]    📟 Loaded 39 Charms I/O cards from sys_charms_io_cards
+[2026-04-09T19:29:07.221Z] [LOG] ✅ [NODES] Returning 180 nodes from System Registry for customer 226
+[2026-04-09T19:29:07.224Z] [LOG]    First 5 nodes: 0-DCS-BNR, 0-DCS-CPU-ADC, 0-DCS-CPU-FGDA, 0-DCS-CPU-FGDB, 0-DCS-CPU-FGDC
+[2026-04-09T19:30:55.628Z] [LOG] 🔍 [NODES] GET request: {
+  "customerId": "226",
+  "sessionId": "ec3e990d-d833-4c5a-a691-b578dbad4e6f"
 }
-[2026-03-11T18:36:15.920Z] [LOG] [PM-PDF] Cabinets loaded {
-  "count": 8
+[2026-04-09T19:30:55.700Z] [LOG] 🔍 [NODES] Session status: active
+[2026-04-09T19:30:55.819Z] [LOG] 🔍 [NODES] Loading nodes from System Registry tables...
+[2026-04-09T19:30:55.885Z] [LOG]    📋 Loaded 23 workstations from sys_workstations
+[2026-04-09T19:30:56.039Z] [LOG]    🎮 Loaded 24 controllers from sys_controllers
+[2026-04-09T19:30:56.127Z] [LOG]    🔀 Loaded 36 smart switches from sys_smart_switches
+[2026-04-09T19:30:56.148Z] [LOG]    📟 Loaded 39 Charms I/O cards from sys_charms_io_cards
+[2026-04-09T19:30:56.170Z] [LOG] ✅ [NODES] Returning 180 nodes from System Registry for customer 226
+[2026-04-09T19:30:56.177Z] [LOG]    First 5 nodes: 0-DCS-BNR, 0-DCS-CPU-ADC, 0-DCS-CPU-FGDA, 0-DCS-CPU-FGDB, 0-DCS-CPU-FGDC
+[2026-04-09T19:31:06.565Z] [LOG] 🔍 [NODES] GET request: {
+  "customerId": "159",
+  "sessionId": "dcf5b12b-d32e-42ba-88da-1a4e34d778ac"
 }
-[2026-03-11T18:36:15.936Z] [LOG] [PM-PDF] Building report sections (risk, maintenance, diagnostics, cabinets HTML)...
-[2026-03-11T18:36:15.955Z] [LOG] [PM-PDF] HTML built {
-  "lengthKB": 286
+[2026-04-09T19:31:06.570Z] [LOG] 🔍 [NODES] Session status: completed
+[2026-04-09T19:31:06.574Z] [LOG] 🔍 [NODES] Loading snapshots for completed session...
+[2026-04-09T19:31:06.582Z] [LOG] 🔍 [NODES] Found 86 snapshots
+[2026-04-09T19:31:13.157Z] [LOG] [PM-PDF] Request received {
+  "sessionId": "dcf5b12b-d32e-42ba-88da-1a4e34d778ac",
+  "time": "2026-04-09T19:31:13.155Z"
 }
-[2026-03-11T18:36:15.959Z] [LOG] 🌐 Found Chrome/Edge at: C:\Program Files\Google\Chrome\Application\chrome.exe
-[2026-03-11T18:36:15.962Z] [LOG] [PM-PDF] Chrome path resolved {
+[2026-04-09T19:31:15.003Z] [LOG] [PM-PDF] Loading session...
+[2026-04-09T19:31:15.010Z] [LOG] [PM-PDF] Session loaded {
+  "session_name": "Covestro Polyol PM-3/23/2026",
+  "customer_name": "0001-0001-5398"
+}
+[2026-04-09T19:31:15.018Z] [LOG] [PM-PDF] Cabinets loaded {
+  "count": 22
+}
+[2026-04-09T19:31:15.071Z] [LOG] [PM-PDF] Building report sections (risk, maintenance, diagnostics, cabinets HTML)...
+[2026-04-09T19:31:15.101Z] [LOG] [PM-PDF] HTML built {
+  "lengthKB": 444
+}
+[2026-04-09T19:31:15.105Z] [LOG] 🌐 Found Chrome/Edge at: C:\Program Files\Google\Chrome\Application\chrome.exe
+[2026-04-09T19:31:15.108Z] [LOG] [PM-PDF] Chrome path resolved {
   "path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
 }
-[2026-03-11T18:36:15.964Z] [LOG] [PM-PDF] Launching browser...
-[2026-03-11T18:36:16.629Z] [LOG] [PM-PDF] Browser launched
-[2026-03-11T18:36:16.733Z] [LOG] [PM-PDF] Setting page content (waitUntil: networkidle0, timeout: 120s)...
-[2026-03-11T18:36:17.734Z] [LOG] [PM-PDF] Page content set
-[2026-03-11T18:36:18.548Z] [LOG] [PM-PDF] Generating PDF buffer...
-[2026-03-11T18:36:23.126Z] [LOG] [PM-PDF] PDF generated {
-  "sizeKB": 5379
+[2026-04-09T19:31:15.112Z] [LOG] [PM-PDF] Launching browser...
+[2026-04-09T19:31:16.152Z] [LOG] [PM-PDF] Browser launched
+[2026-04-09T19:31:16.297Z] [LOG] [PM-PDF] Setting page content (waitUntil: networkidle0, timeout: 120s)...
+[2026-04-09T19:31:18.948Z] [LOG] [PM-PDF] Page content set
+[2026-04-09T19:31:19.761Z] [LOG] [PM-PDF] Generating PDF buffer...
+[2026-04-09T19:31:40.651Z] [LOG] [PM-PDF] PDF generated {
+  "sizeKB": 7364
 }
-[2026-03-11T18:36:23.267Z] [LOG] [PM-PDF] Browser closed
-[2026-03-11T18:36:23.273Z] [LOG] [PM-PDF] Response sent OK
-[2026-03-11T18:55:42.609Z] [LOG] 🔗 Connecting to MongoDB master server...
-[2026-03-11T18:55:42.678Z] [LOG] ✅ Connected to MongoDB master server
-[2026-03-11T18:55:44.336Z] [LOG] 📡 API: Pull from master requested
-[2026-03-11T18:55:44.339Z] [LOG] 📥 Pulling changes from master database...
-[2026-03-11T18:55:44.342Z] [LOG] 
-📥 Processing table: users
-[2026-03-11T18:55:44.345Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:17.561Z
-[2026-03-11T18:55:44.356Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:44.364Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:44.373Z] [LOG]    ⏰ Set last sync time for users: 2026-03-11T18:55:44.368Z (changes: 1)
-[2026-03-11T18:55:44.385Z] [LOG]    ✅ Verified last sync time for users: 2026-03-11T18:55:44.368Z
-[2026-03-11T18:55:44.405Z] [LOG] 
-📥 Processing table: customers
-[2026-03-11T18:55:44.423Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:17.765Z
-[2026-03-11T18:55:44.471Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:44.486Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:44.495Z] [LOG]    ⏰ Set last sync time for customers: 2026-03-11T18:55:44.489Z (changes: 1)
-[2026-03-11T18:55:44.506Z] [LOG]    ✅ Verified last sync time for customers: 2026-03-11T18:55:44.489Z
-[2026-03-11T18:55:44.512Z] [LOG] 
-📥 Processing table: sessions
-[2026-03-11T18:55:44.523Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:19.165Z
-[2026-03-11T18:55:44.544Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:44.563Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:44.573Z] [LOG]    ⏰ Set last sync time for sessions: 2026-03-11T18:55:44.571Z (changes: 1)
-[2026-03-11T18:55:44.586Z] [LOG]    ✅ Verified last sync time for sessions: 2026-03-11T18:55:44.571Z
-[2026-03-11T18:55:44.589Z] [LOG] 
-📥 Processing table: cabinets
-[2026-03-11T18:55:44.599Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:22.535Z
-[2026-03-11T18:55:44.607Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:44.628Z] [LOG]    🔍 Count mismatch (master: 219, local: 220) — reconciling...
-[2026-03-11T18:55:44.665Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:44.672Z] [LOG]    ⏰ Set last sync time for cabinets: 2026-03-11T18:55:44.671Z (changes: 1)
-[2026-03-11T18:55:44.677Z] [LOG]    ✅ Verified last sync time for cabinets: 2026-03-11T18:55:44.671Z
-[2026-03-11T18:55:44.688Z] [LOG] 
-📥 Processing table: nodes
-[2026-03-11T18:55:44.693Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:23.016Z
-[2026-03-11T18:55:44.714Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:44.732Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:44.740Z] [LOG]    ⏰ Set last sync time for nodes: 2026-03-11T18:55:44.738Z (changes: 1)
-[2026-03-11T18:55:44.752Z] [LOG]    ✅ Verified last sync time for nodes: 2026-03-11T18:55:44.738Z
-[2026-03-11T18:55:44.754Z] [LOG] 
-📥 Processing table: session_node_maintenance
-[2026-03-11T18:55:44.757Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:28.336Z
-[2026-03-11T18:55:44.774Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:44.795Z] [LOG]    🔍 Count mismatch (master: 1103, local: 961) — reconciling...
-[2026-03-11T18:55:45.468Z] [LOG]    🔄 Reconciled 142 missing/deleted records from master
-[2026-03-11T18:55:45.472Z] [LOG]    ✅ Pulled: 142, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:45.487Z] [LOG]    ⏰ Set last sync time for session_node_maintenance: 2026-03-11T18:55:45.474Z (changes: 1)
-[2026-03-11T18:55:45.496Z] [LOG]    ✅ Verified last sync time for session_node_maintenance: 2026-03-11T18:55:45.474Z
-[2026-03-11T18:55:45.505Z] [LOG] 
-📥 Processing table: cabinet_locations
-[2026-03-11T18:55:45.531Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:29.684Z
-[2026-03-11T18:55:45.555Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:45.580Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:45.589Z] [LOG]    ⏰ Set last sync time for cabinet_locations: 2026-03-11T18:55:45.587Z (changes: 1)
-[2026-03-11T18:55:45.603Z] [LOG]    ✅ Verified last sync time for cabinet_locations: 2026-03-11T18:55:45.587Z
-[2026-03-11T18:55:45.605Z] [LOG] 
-📥 Processing table: session_pm_notes
-[2026-03-11T18:55:45.611Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:29.833Z
-[2026-03-11T18:55:45.632Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:45.645Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:45.654Z] [LOG]    ⏰ Set last sync time for session_pm_notes: 2026-03-11T18:55:45.653Z (changes: 1)
-[2026-03-11T18:55:45.657Z] [LOG]    ✅ Verified last sync time for session_pm_notes: 2026-03-11T18:55:45.653Z
-[2026-03-11T18:55:45.659Z] [LOG] 
-📥 Processing table: session_diagnostics
-[2026-03-11T18:55:45.669Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:30.967Z
-[2026-03-11T18:55:45.679Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:45.690Z] [LOG]    🔍 Count mismatch (master: 28, local: 163) — reconciling...
-[2026-03-11T18:55:45.705Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:45.711Z] [LOG]    ⏰ Set last sync time for session_diagnostics: 2026-03-11T18:55:45.707Z (changes: 1)
-[2026-03-11T18:55:45.723Z] [LOG]    ✅ Verified last sync time for session_diagnostics: 2026-03-11T18:55:45.707Z
-[2026-03-11T18:55:45.736Z] [LOG] 
-📥 Processing table: session_ii_documents
-[2026-03-11T18:55:45.740Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.059Z
-[2026-03-11T18:55:45.774Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:45.797Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:45.805Z] [LOG]    ⏰ Set last sync time for session_ii_documents: 2026-03-11T18:55:45.804Z (changes: 1)
-[2026-03-11T18:55:45.820Z] [LOG]    ✅ Verified last sync time for session_ii_documents: 2026-03-11T18:55:45.804Z
-[2026-03-11T18:55:45.823Z] [LOG] 
-📥 Processing table: session_ii_equipment
-[2026-03-11T18:55:45.835Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.134Z
-[2026-03-11T18:55:45.849Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:45.865Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:45.873Z] [LOG]    ⏰ Set last sync time for session_ii_equipment: 2026-03-11T18:55:45.872Z (changes: 1)
-[2026-03-11T18:55:45.879Z] [LOG]    ✅ Verified last sync time for session_ii_equipment: 2026-03-11T18:55:45.872Z
-[2026-03-11T18:55:45.888Z] [LOG] 
-📥 Processing table: session_ii_checklist
-[2026-03-11T18:55:45.890Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.216Z
-[2026-03-11T18:55:45.906Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:45.923Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:45.935Z] [LOG]    ⏰ Set last sync time for session_ii_checklist: 2026-03-11T18:55:45.925Z (changes: 1)
-[2026-03-11T18:55:45.939Z] [LOG]    ✅ Verified last sync time for session_ii_checklist: 2026-03-11T18:55:45.925Z
-[2026-03-11T18:55:45.946Z] [LOG] 
-📥 Processing table: session_ii_equipment_used
-[2026-03-11T18:55:45.956Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.284Z
-[2026-03-11T18:55:45.973Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:45.990Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:46.006Z] [LOG]    ⏰ Set last sync time for session_ii_equipment_used: 2026-03-11T18:55:46.004Z (changes: 1)
-[2026-03-11T18:55:46.017Z] [LOG]    ✅ Verified last sync time for session_ii_equipment_used: 2026-03-11T18:55:46.004Z
-[2026-03-11T18:55:46.022Z] [LOG] 
-📥 Processing table: sys_workstations
-[2026-03-11T18:55:46.024Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.400Z
-[2026-03-11T18:55:46.051Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:46.070Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:46.082Z] [LOG]    ⏰ Set last sync time for sys_workstations: 2026-03-11T18:55:46.073Z (changes: 1)
-[2026-03-11T18:55:46.088Z] [LOG]    ✅ Verified last sync time for sys_workstations: 2026-03-11T18:55:46.073Z
-[2026-03-11T18:55:46.090Z] [LOG] 
-📥 Processing table: sys_smart_switches
-[2026-03-11T18:55:46.098Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.467Z
-[2026-03-11T18:55:46.107Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:46.124Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:46.137Z] [LOG]    ⏰ Set last sync time for sys_smart_switches: 2026-03-11T18:55:46.136Z (changes: 1)
-[2026-03-11T18:55:46.140Z] [LOG]    ✅ Verified last sync time for sys_smart_switches: 2026-03-11T18:55:46.136Z
-[2026-03-11T18:55:46.154Z] [LOG] 
-📥 Processing table: sys_io_devices
-[2026-03-11T18:55:46.169Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.533Z
-[2026-03-11T18:55:46.186Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:46.205Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:46.223Z] [LOG]    ⏰ Set last sync time for sys_io_devices: 2026-03-11T18:55:46.219Z (changes: 1)
-[2026-03-11T18:55:46.237Z] [LOG]    ✅ Verified last sync time for sys_io_devices: 2026-03-11T18:55:46.219Z
-[2026-03-11T18:55:46.239Z] [LOG] 
-📥 Processing table: sys_controllers
-[2026-03-11T18:55:46.253Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.616Z
-[2026-03-11T18:55:46.270Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:46.302Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:46.311Z] [LOG]    ⏰ Set last sync time for sys_controllers: 2026-03-11T18:55:46.306Z (changes: 1)
-[2026-03-11T18:55:46.323Z] [LOG]    ✅ Verified last sync time for sys_controllers: 2026-03-11T18:55:46.306Z
-[2026-03-11T18:55:46.337Z] [LOG] 
-📥 Processing table: sys_charms_io_cards
-[2026-03-11T18:55:46.340Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.700Z
-[2026-03-11T18:55:46.357Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:46.374Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:46.387Z] [LOG]    ⏰ Set last sync time for sys_charms_io_cards: 2026-03-11T18:55:46.385Z (changes: 1)
-[2026-03-11T18:55:46.390Z] [LOG]    ✅ Verified last sync time for sys_charms_io_cards: 2026-03-11T18:55:46.385Z
-[2026-03-11T18:55:46.404Z] [LOG] 
-📥 Processing table: sys_charms
-[2026-03-11T18:55:46.407Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.783Z
-[2026-03-11T18:55:46.427Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:46.454Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:46.457Z] [LOG]    ⏰ Set last sync time for sys_charms: 2026-03-11T18:55:46.456Z (changes: 1)
-[2026-03-11T18:55:46.472Z] [LOG]    ✅ Verified last sync time for sys_charms: 2026-03-11T18:55:46.456Z
-[2026-03-11T18:55:46.474Z] [LOG] 
-📥 Processing table: sys_ams_systems
-[2026-03-11T18:55:46.488Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:31.949Z
-[2026-03-11T18:55:46.513Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:46.531Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:46.538Z] [LOG]    ⏰ Set last sync time for sys_ams_systems: 2026-03-11T18:55:46.537Z (changes: 1)
-[2026-03-11T18:55:46.541Z] [LOG]    ✅ Verified last sync time for sys_ams_systems: 2026-03-11T18:55:46.537Z
-[2026-03-11T18:55:46.549Z] [LOG] 
-📥 Processing table: customer_metric_history
-[2026-03-11T18:55:46.556Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:32.067Z
-[2026-03-11T18:55:46.572Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:46.586Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:46.590Z] [LOG]    ⏰ Set last sync time for customer_metric_history: 2026-03-11T18:55:46.588Z (changes: 1)
-[2026-03-11T18:55:46.597Z] [LOG]    ✅ Verified last sync time for customer_metric_history: 2026-03-11T18:55:46.588Z
-[2026-03-11T18:55:46.604Z] [LOG] 
-📥 Processing table: customer_notes
-[2026-03-11T18:55:46.606Z] [LOG]    ⏰ Last sync: 2026-03-11T17:57:32.151Z
-[2026-03-11T18:55:46.622Z] [LOG]    📊 Found 0 changed records on master
-[2026-03-11T18:55:46.638Z] [LOG]    ✅ Pulled: 0, Conflicts: 0, Deleted: 0
-[2026-03-11T18:55:46.650Z] [LOG]    ⏰ Set last sync time for customer_notes: 2026-03-11T18:55:46.640Z (changes: 1)
-[2026-03-11T18:55:46.656Z] [LOG]    ✅ Verified last sync time for customer_notes: 2026-03-11T18:55:46.640Z
-[2026-03-11T18:55:46.669Z] [LOG] 
-📥 Pull complete in 2316ms
-[2026-03-11T18:59:03.536Z] [LOG] 🔍 [NODES] GET request: {
-  "customerId": "182",
-  "sessionId": "bd289c44-b55d-4964-bd5f-4a1bc681d7b3"
+[2026-04-09T19:31:40.935Z] [LOG] [PM-PDF] Browser closed
+[2026-04-09T19:31:40.954Z] [LOG] [PM-PDF] Response sent OK
+[2026-04-09T19:32:23.125Z] [LOG] 🔍 [NODES] GET request: {
+  "customerId": "159",
+  "sessionId": "dcf5b12b-d32e-42ba-88da-1a4e34d778ac"
 }
-[2026-03-11T18:59:03.539Z] [LOG] 🔍 [NODES] Session status: completed
-[2026-03-11T18:59:03.542Z] [LOG] 🔍 [NODES] Loading snapshots for completed session...
-[2026-03-11T18:59:03.546Z] [LOG] 🔍 [NODES] Found 0 snapshots
-[2026-03-11T18:59:24.198Z] [LOG] 🔍 [NODES] GET request: {
-  "customerId": "182"
+[2026-04-09T19:32:23.133Z] [LOG] 🔍 [NODES] Session status: completed
+[2026-04-09T19:32:23.139Z] [LOG] 🔍 [NODES] Loading snapshots for completed session...
+[2026-04-09T19:32:23.153Z] [LOG] 🔍 [NODES] Found 86 snapshots
+[2026-04-09T19:45:56.327Z] [LOG] 🔍 [NODES] GET request: {
+  "customerId": "159",
+  "sessionId": "dcf5b12b-d32e-42ba-88da-1a4e34d778ac"
 }
-[2026-03-11T18:59:24.200Z] [LOG] 🔍 [NODES] Loading nodes from System Registry tables...
-[2026-03-11T18:59:24.203Z] [LOG]    📋 Loaded 8 workstations from sys_workstations
-[2026-03-11T18:59:24.205Z] [LOG]    🎮 Loaded 2 controllers from sys_controllers
-[2026-03-11T18:59:24.208Z] [LOG]    🔀 Loaded 6 smart switches from sys_smart_switches
-[2026-03-11T18:59:24.211Z] [LOG]    📟 Loaded 17 Charms I/O cards from sys_charms_io_cards
-[2026-03-11T18:59:24.213Z] [LOG] ✅ [NODES] Returning 33 nodes from System Registry for customer 182
-[2026-03-11T18:59:24.215Z] [LOG]    First 5 nodes: RLPAS01, RLPAS02, RLPOP01, RLPOP02, RLPOP03
+[2026-04-09T19:45:56.333Z] [LOG] 🔍 [NODES] Session status: completed
+[2026-04-09T19:45:56.339Z] [LOG] 🔍 [NODES] Loading snapshots for completed session...
+[2026-04-09T19:45:56.349Z] [LOG] 🔍 [NODES] Found 86 snapshots
+[2026-04-09T19:46:09.005Z] [LOG] 🔍 [NODES] GET request: {
+  "customerId": "159"
+}
+[2026-04-09T19:46:09.012Z] [LOG] 🔍 [NODES] Loading nodes from System Registry tables...
+[2026-04-09T19:46:09.020Z] [LOG]    📋 Loaded 42 workstations from sys_workstations
+[2026-04-09T19:46:09.029Z] [LOG]    🎮 Loaded 14 controllers from sys_controllers
+[2026-04-09T19:46:09.035Z] [LOG]    🔀 Loaded 14 smart switches from sys_smart_switches
+[2026-04-09T19:46:09.044Z] [LOG]    📟 Loaded 16 Charms I/O cards from sys_charms_io_cards
+[2026-04-09T19:46:09.049Z] [LOG] ✅ [NODES] Returning 116 nodes from System Registry for customer 159
+[2026-04-09T19:46:09.053Z] [LOG]    First 5 nodes: BLENDSBATCH, BLENDSBATCH_S, BLENDSDS, BLENDSOP18, BLENDSOP19
+[2026-04-09T19:46:45.661Z] [LOG] 🔍 [NODES] GET request: {
+  "customerId": "159"
+}
+[2026-04-09T19:46:45.670Z] [LOG] 🔍 [NODES] Loading nodes from System Registry tables...
+[2026-04-09T19:46:45.685Z] [LOG]    📋 Loaded 42 workstations from sys_workstations
+[2026-04-09T19:46:45.695Z] [LOG]    🎮 Loaded 14 controllers from sys_controllers
+[2026-04-09T19:46:45.708Z] [LOG]    🔀 Loaded 14 smart switches from sys_smart_switches
+[2026-04-09T19:46:45.735Z] [LOG]    📟 Loaded 16 Charms I/O cards from sys_charms_io_cards
+[2026-04-09T19:46:45.740Z] [LOG] ✅ [NODES] Returning 116 nodes from System Registry for customer 159
+[2026-04-09T19:46:45.746Z] [LOG]    First 5 nodes: BLENDSBATCH, BLENDSBATCH_S, BLENDSDS, BLENDSOP18, BLENDSOP19
+[2026-04-09T19:46:59.726Z] [LOG] 🔍 [NODES] GET request: {
+  "customerId": "159"
+}
+[2026-04-09T19:46:59.736Z] [LOG] 🔍 [NODES] Loading nodes from System Registry tables...
+[2026-04-09T19:46:59.744Z] [LOG]    📋 Loaded 42 workstations from sys_workstations
+[2026-04-09T19:46:59.761Z] [LOG]    🎮 Loaded 14 controllers from sys_controllers
+[2026-04-09T19:46:59.771Z] [LOG]    🔀 Loaded 14 smart switches from sys_smart_switches
+[2026-04-09T19:46:59.781Z] [LOG]    📟 Loaded 16 Charms I/O cards from sys_charms_io_cards
+[2026-04-09T19:46:59.793Z] [LOG] ✅ [NODES] Returning 116 nodes from System Registry for customer 159
+[2026-04-09T19:46:59.797Z] [LOG]    First 5 nodes: BLENDSBATCH, BLENDSBATCH_S, BLENDSDS, BLENDSOP18, BLENDSOP19
+[2026-04-09T19:47:15.812Z] [LOG] 🔍 [NODES] GET request: {
+  "customerId": "159"
+}
+[2026-04-09T19:47:15.816Z] [LOG] 🔍 [NODES] Loading nodes from System Registry tables...
+[2026-04-09T19:47:15.822Z] [LOG]    📋 Loaded 42 workstations from sys_workstations
+[2026-04-09T19:47:15.828Z] [LOG]    🎮 Loaded 14 controllers from sys_controllers
+[2026-04-09T19:47:15.835Z] [LOG]    🔀 Loaded 14 smart switches from sys_smart_switches
+[2026-04-09T19:47:15.844Z] [LOG]    📟 Loaded 16 Charms I/O cards from sys_charms_io_cards
+[2026-04-09T19:47:15.847Z] [LOG] ✅ [NODES] Returning 116 nodes from System Registry for customer 159
+[2026-04-09T19:47:15.851Z] [LOG]    First 5 nodes: BLENDSBATCH, BLENDSBATCH_S, BLENDSDS, BLENDSOP18, BLENDSOP19
+[2026-04-09T19:47:18.017Z] [LOG] 🔍 [NODES] GET request: {
+  "customerId": "159"
+}
+[2026-04-09T19:47:18.023Z] [LOG] 🔍 [NODES] Loading nodes from System Registry tables...
+[2026-04-09T19:47:18.030Z] [LOG]    📋 Loaded 42 workstations from sys_workstations
+[2026-04-09T19:47:18.038Z] [LOG]    🎮 Loaded 14 controllers from sys_controllers
+[2026-04-09T19:47:18.045Z] [LOG]    🔀 Loaded 14 smart switches from sys_smart_switches
+[2026-04-09T19:47:18.054Z] [LOG]    📟 Loaded 16 Charms I/O cards from sys_charms_io_cards
+[2026-04-09T19:47:18.060Z] [LOG] ✅ [NODES] Returning 116 nodes from System Registry for customer 159
+[2026-04-09T19:47:18.063Z] [LOG]    First 5 nodes: BLENDSBATCH, BLENDSBATCH_S, BLENDSDS, BLENDSOP18, BLENDSOP19
+[2026-04-09T19:47:20.289Z] [LOG] 🔍 [NODES] GET request: {
+  "customerId": "159"
+}
+[2026-04-09T19:47:20.293Z] [LOG] 🔍 [NODES] Loading nodes from System Registry tables...
+[2026-04-09T19:47:20.304Z] [LOG]    📋 Loaded 42 workstations from sys_workstations
+[2026-04-09T19:47:20.311Z] [LOG]    🎮 Loaded 14 controllers from sys_controllers
+[2026-04-09T19:47:20.319Z] [LOG]    🔀 Loaded 14 smart switches from sys_smart_switches
+[2026-04-09T19:47:20.329Z] [LOG]    📟 Loaded 16 Charms I/O cards from sys_charms_io_cards
+[2026-04-09T19:47:20.334Z] [LOG] ✅ [NODES] Returning 116 nodes from System Registry for customer 159
+[2026-04-09T19:47:20.339Z] [LOG]    First 5 nodes: BLENDSBATCH, BLENDSBATCH_S, BLENDSDS, BLENDSOP18, BLENDSOP19
+[2026-04-09T19:59:23.573Z] [LOG] [PM-PDF] Request received {
+  "sessionId": "22a65f9c-d111-41de-9a86-87150c5b2ca8",
+  "time": "2026-04-09T19:59:23.572Z"
+}
+[2026-04-09T19:59:23.578Z] [LOG] [PM-PDF] Loading session...
+[2026-04-09T19:59:23.606Z] [LOG] [PM-PDF] Session loaded {
+  "session_name": "ECD PM-3/9/2026",
+  "customer_name": "0001-0001-4583"
+}
+[2026-04-09T19:59:23.642Z] [LOG] [PM-PDF] Cabinets loaded {
+  "count": 17
+}
+[2026-04-09T19:59:23.686Z] [LOG] [PM-PDF] Building report sections (risk, maintenance, diagnostics, cabinets HTML)...
+[2026-04-09T19:59:23.697Z] [LOG] [PM-PDF] HTML built {
+  "lengthKB": 291
+}
+[2026-04-09T19:59:23.701Z] [LOG] 🌐 Found Chrome/Edge at: C:\Program Files\Google\Chrome\Application\chrome.exe
+[2026-04-09T19:59:23.708Z] [LOG] [PM-PDF] Chrome path resolved {
+  "path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+}
+[2026-04-09T19:59:23.711Z] [LOG] [PM-PDF] Launching browser...
+[2026-04-09T19:59:24.868Z] [LOG] [PM-PDF] Browser launched
+[2026-04-09T19:59:25.055Z] [LOG] [PM-PDF] Setting page content (waitUntil: networkidle0, timeout: 120s)...
+[2026-04-09T19:59:27.013Z] [LOG] [PM-PDF] Page content set
+[2026-04-09T19:59:27.823Z] [LOG] [PM-PDF] Generating PDF buffer...
+[2026-04-09T19:59:51.289Z] [LOG] [PM-PDF] PDF generated {
+  "sizeKB": 10521
+}
+[2026-04-09T19:59:51.548Z] [LOG] [PM-PDF] Browser closed
+[2026-04-09T19:59:51.578Z] [LOG] [PM-PDF] Response sent OK

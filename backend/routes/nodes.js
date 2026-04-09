@@ -49,8 +49,23 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
     // Return nodes from System Registry (replaces CSV import)
     console.log('🔍 [NODES] Loading nodes from System Registry tables...');
     
+    // Unique id ranges per source so "Controller 1" and "Computer 1" never share node_id (fixes notes duplicating across sections)
+    const ID_WORKSTATION = 1000000;
+    const ID_CONTROLLER  = 2000000;
+    const ID_CONTROLLER_PARTNER = 2100000;
+    const ID_SWITCH      = 3000000;
+    const ID_CIOC        = 4000000;
+    const ID_CIOC_PARTNER = 4100000;
+
     const nodes = [];
-    
+
+    // DeltaV XML uses Redundant True/False; CSV historically used yes/no
+    const isRedundantFlag = (r) => {
+      if (r == null || r === '') return false;
+      const v = String(r).trim().toLowerCase();
+      return v === 'yes' || v === 'true' || v === '1';
+    };
+
     // Load Workstations from sys_workstations (with assignment status)
     const workstations = await db.prepare(`
       SELECT 
@@ -74,10 +89,10 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
       LEFT JOIN cabinets c ON w.assigned_cabinet_id = c.id
       WHERE w.customer_id = ?
     `).all([customerId]);
-    
+    workstations.forEach((w) => { w.id = ID_WORKSTATION + w.id; });
     nodes.push(...workstations);
     console.log(`   📋 Loaded ${workstations.length} workstations from sys_workstations`);
-    
+
     // Load Controllers from sys_controllers (with assignment status)
     const controllers = await db.prepare(`
       SELECT 
@@ -99,15 +114,16 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
       LEFT JOIN cabinets c ON ctrl.assigned_cabinet_id = c.id
       WHERE ctrl.customer_id = ?
     `).all([customerId]);
-    
+    controllers.forEach((c) => { c.id = ID_CONTROLLER + c.id; });
     nodes.push(...controllers);
     console.log(`   🎮 Loaded ${controllers.length} controllers from sys_controllers`);
-    
+
     // Add partner nodes for redundant controllers
     for (const ctrl of controllers) {
-      if (ctrl.redundant && ctrl.redundant.toLowerCase() === 'yes') {
+      if (isRedundantFlag(ctrl.redundant)) {
+        const baseId = ctrl.id - ID_CONTROLLER;
         nodes.push({
-          id: `${ctrl.id}-partner`,
+          id: ID_CONTROLLER_PARTNER + baseId,
           node_name: `${ctrl.node_name}-partner`,
           node_type: 'Controller',
           node_category: 'controller',
@@ -124,7 +140,7 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
         });
       }
     }
-    
+
     // Load Smart Switches from sys_smart_switches (with assignment status)
     const switches = await db.prepare(`
       SELECT 
@@ -145,10 +161,10 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
       LEFT JOIN cabinets c ON sw.assigned_cabinet_id = c.id
       WHERE sw.customer_id = ?
     `).all([customerId]);
-    
+    switches.forEach((s) => { s.id = ID_SWITCH + s.id; });
     nodes.push(...switches);
     console.log(`   🔀 Loaded ${switches.length} smart switches from sys_smart_switches`);
-    
+
     // Load Charms I/O Cards from sys_charms_io_cards (with assignment status)
     const ciocs = await db.prepare(`
       SELECT 
@@ -170,15 +186,16 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
       LEFT JOIN cabinets c ON cio.assigned_cabinet_id = c.id
       WHERE cio.customer_id = ?
     `).all([customerId]);
-    
+    ciocs.forEach((c) => { c.id = ID_CIOC + c.id; });
     nodes.push(...ciocs);
     console.log(`   📟 Loaded ${ciocs.length} Charms I/O cards from sys_charms_io_cards`);
-    
+
     // Add partner nodes for redundant CIOCs
     for (const cioc of ciocs) {
-      if (cioc.redundant && cioc.redundant.toLowerCase() === 'yes') {
+      if (isRedundantFlag(cioc.redundant)) {
+        const baseId = cioc.id - ID_CIOC;
         nodes.push({
-          id: `${cioc.id}-partner`,
+          id: ID_CIOC_PARTNER + baseId,
           node_name: `${cioc.node_name}-partner`,
           node_type: 'CIOC',
           node_category: 'cioc',
@@ -237,7 +254,8 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
           node.free_time = maint.free_time || '';
           node.redundancy_checked = Boolean(maint.redundancy_checked);
           node.cold_restart_checked = Boolean(maint.cold_restart_checked);
-          node.no_errors_checked = Boolean(maint.no_errors_checked);
+          node.has_io_errors =
+            maint.has_io_errors == null ? true : Boolean(Number(maint.has_io_errors));
           node.hdd_replaced = Boolean(maint.hdd_replaced);
           node.performance_type = maint.performance_type || null;
           node.performance_value = maint.performance_value;
@@ -253,7 +271,7 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
           node.free_time = '';
           node.redundancy_checked = false;
           node.cold_restart_checked = false;
-          node.no_errors_checked = true; // Default to "No Error"
+          node.has_io_errors = true; // Default: Errors checked — controller in scope for I/O
           node.hdd_replaced = false;
           node.performance_type = null;
           node.performance_value = null;

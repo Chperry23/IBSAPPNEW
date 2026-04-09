@@ -19,6 +19,9 @@ logs/
 .env.local
 .env.production
 
+# SharePoint credentials (contains client secret — never commit)
+sharepoint-config.json
+
 # Archive and old files
 archive/
 old-executables/

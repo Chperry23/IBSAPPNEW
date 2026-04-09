@@ -1,5 +1,6 @@
 const db = require('./database');
 const bcrypt = require('bcryptjs');
+const { migrateSessionNodeMaintenanceHasIoErrors } = require('./migrate-has-io-errors');
 
 // Initialize SQLite database tables (sqlite3 async)
 function initializeDatabase() {
@@ -231,7 +232,7 @@ function initializeDatabase() {
         free_time TEXT,
         redundancy_checked BOOLEAN DEFAULT FALSE,
         cold_restart_checked BOOLEAN DEFAULT FALSE,
-        no_errors_checked BOOLEAN DEFAULT FALSE,
+        has_io_errors INTEGER DEFAULT 1,
         hdd_replaced BOOLEAN DEFAULT FALSE,
         performance_type TEXT DEFAULT 'free_time',
         performance_value TEXT,
@@ -395,10 +396,6 @@ function initializeDatabase() {
         `ALTER TABLE session_node_maintenance ADD COLUMN cold_restart_checked BOOLEAN DEFAULT FALSE`,
         (err) => {}
       );
-      db.run(
-        `ALTER TABLE session_node_maintenance ADD COLUMN no_errors_checked BOOLEAN DEFAULT FALSE`,
-        (err) => {}
-      );
 
       // Add sync columns to session_diagnostics table
       db.run(
@@ -450,6 +447,9 @@ function initializeDatabase() {
         FOREIGN KEY (session_id) REFERENCES sessions(id)
       )`);
       db.run(`ALTER TABLE customer_metric_history ADD COLUMN deleted INTEGER DEFAULT 0`, (err) => {});
+      db.run(`ALTER TABLE customer_metric_history ADD COLUMN domain_scores TEXT`, (err) => {});
+      db.run(`ALTER TABLE customer_metric_history ADD COLUMN coverage_completed INTEGER DEFAULT 0`, (err) => {});
+      db.run(`ALTER TABLE customer_metric_history ADD COLUMN coverage_total INTEGER DEFAULT 0`, (err) => {});
 
       // Add new columns for enhanced node maintenance
       db.run(
@@ -874,6 +874,8 @@ function initializeDatabase() {
       addColumnIfNotExists('sessions', 'ii_performed_by', 'TEXT');
       addColumnIfNotExists('sessions', 'ii_date_performed', 'DATE');
       addColumnIfNotExists('sessions', 'ii_customer_name', 'TEXT');
+      addColumnIfNotExists('sessions', 'ii_prepared_for', 'TEXT');
+      addColumnIfNotExists('sessions', 'ii_initials', 'TEXT');
 
       // Migrate cabinet_location to cabinet_name
       db.all(`PRAGMA table_info(cabinets)`, (err, columns) => {
@@ -1219,9 +1221,29 @@ function initializeDatabase() {
         }
       );
 
+      db.run(
+        `CREATE TABLE IF NOT EXISTS custom_io_error_types (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          label TEXT NOT NULL,
+          description TEXT,
+          icon TEXT DEFAULT '⚠️',
+          uuid TEXT,
+          synced INTEGER DEFAULT 0,
+          device_id TEXT,
+          deleted INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`,
+        (err) => {
+          if (err) console.error('❌ Error creating custom_io_error_types table:', err);
+          else console.log('✅ Created (or found) custom_io_error_types table');
+        }
+      );
+
       console.log('✅ Database tables initialized successfully');
 
-      createDefaultUser()
+      migrateSessionNodeMaintenanceHasIoErrors()
+        .then(() => createDefaultUser())
         .then(() => {
           console.log('✅ Database ready for tablet deployment');
           resolve(true);

@@ -330,89 +330,149 @@ export default function IISession() {
       </div>
 
       {/* Header Info Modal */}
-      {showHeaderModal && (
-        <div className="modal-backdrop">
-          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-2xl w-full mx-4 border border-gray-700">
-            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-100">
-                I&I Session Header Information
-              </h3>
-              <button
-                onClick={() => setShowHeaderModal(false)}
-                className="text-gray-400 hover:text-gray-200 text-2xl"
-              >
-                ×
-              </button>
-            </div>
-            <form onSubmit={handleSaveHeader}>
-              <div className="px-6 py-4 space-y-4 max-h-96 overflow-y-auto">
-                <div>
-                  <label className="form-label">Customer Name</label>
-                  <input
-                    type="text"
-                    name="ii_customer_name"
-                    defaultValue={session.ii_customer_name || customer?.name}
-                    className="form-input"
-                    placeholder="Customer name for PDF"
-                  />
-                </div>
-                <div>
-                  <label className="form-label">Location</label>
-                  <input
-                    type="text"
-                    name="ii_location"
-                    defaultValue={session.ii_location || customer?.location}
-                    className="form-input"
-                    placeholder="e.g., Mill Hall, PA"
-                  />
-                </div>
-                <div>
-                  <label className="form-label">DeltaV System ID *</label>
-                  <input
-                    type="text"
-                    name="deltav_system_id"
-                    required
-                    defaultValue={session.deltav_system_id}
-                    className="form-input"
-                    placeholder="e.g., DELTAV-001"
-                  />
-                </div>
-                <div>
-                  <label className="form-label">Performed By</label>
-                  <input
-                    type="text"
-                    name="ii_performed_by"
-                    defaultValue={session.ii_performed_by}
-                    className="form-input"
-                    placeholder="Technician name(s)"
-                  />
-                </div>
-                <div>
-                  <label className="form-label">Date Performed</label>
-                  <input
-                    type="date"
-                    name="ii_date_performed"
-                    defaultValue={session.ii_date_performed || new Date().toISOString().split('T')[0]}
-                    className="form-input"
-                  />
-                </div>
-              </div>
-              <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
+      {showHeaderModal && (() => {
+        // Build smart defaults from customer data
+        const defaultCustomerName = session.ii_customer_name || customer?.company_name || customer?.name || '';
+        const defaultLocation = session.ii_location || (() => {
+          if (customer?.city && customer?.state) return `${customer.city}, ${customer.state}`;
+          if (customer?.address) return customer.address;
+          return customer?.location || '';
+        })();
+        const defaultSystemId = session.deltav_system_id || customer?.dongle_id || '';
+        const defaultPreparedFor = session.ii_prepared_for || customer?.contact_person || customer?.company_name || customer?.name || '';
+        const defaultPerformedBy = session.ii_performed_by || '';
+        const defaultInitials = session.ii_initials || '';
+        const defaultDate = session.ii_date_performed || new Date().toISOString().split('T')[0];
+
+        const hasCustomerData = customer && (customer.company_name || customer.dongle_id || customer.city || customer.contact_person);
+
+        return (
+          <div className="modal-backdrop">
+            <div className="bg-gray-800 rounded-lg shadow-2xl max-w-2xl w-full mx-4 border border-gray-700">
+              <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
+                <h3 className="text-lg font-semibold text-gray-100">
+                  I&I Session Header Information
+                </h3>
                 <button
-                  type="button"
                   onClick={() => setShowHeaderModal(false)}
-                  className="btn btn-secondary"
+                  className="text-gray-400 hover:text-gray-200 text-2xl"
                 >
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Save Header Info
+                  ×
                 </button>
               </div>
-            </form>
+              {hasCustomerData && (
+                <div className="px-6 pt-4">
+                  <div className="bg-blue-900/30 border border-blue-700 rounded-lg px-4 py-2 text-sm text-blue-300">
+                    ℹ️ Fields pre-filled from customer record — edit as needed before saving.
+                  </div>
+                </div>
+              )}
+              <form onSubmit={handleSaveHeader}>
+                <div className="px-6 py-4 space-y-4 max-h-[32rem] overflow-y-auto">
+                  <div>
+                    <label className="form-label">Customer Name</label>
+                    <input
+                      type="text"
+                      name="ii_customer_name"
+                      defaultValue={defaultCustomerName}
+                      className="form-input"
+                      placeholder="Customer name for PDF"
+                    />
+                    {customer?.company_name && (
+                      <p className="text-xs text-gray-500 mt-1">From customer record: {customer.company_name}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="form-label">Prepared For</label>
+                    <input
+                      type="text"
+                      name="ii_prepared_for"
+                      defaultValue={defaultPreparedFor}
+                      className="form-input"
+                      placeholder="Contact name (appears in revision table)"
+                    />
+                    {customer?.contact_person && (
+                      <p className="text-xs text-gray-500 mt-1">From customer record: {customer.contact_person}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="form-label">Location</label>
+                    <input
+                      type="text"
+                      name="ii_location"
+                      defaultValue={defaultLocation}
+                      className="form-input"
+                      placeholder="e.g., Karns City, PA"
+                    />
+                    {(customer?.city || customer?.address) && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        From customer record: {customer.street_address ? `${customer.street_address}, ` : ''}{customer.city}{customer.state ? `, ${customer.state}` : ''}{customer.zip ? ` ${customer.zip}` : ''}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="form-label">DeltaV System ID *</label>
+                    <input
+                      type="text"
+                      name="deltav_system_id"
+                      required
+                      defaultValue={defaultSystemId}
+                      className="form-input"
+                      placeholder="e.g., 0001-0003-6723"
+                    />
+                    {customer?.dongle_id && (
+                      <p className="text-xs text-gray-500 mt-1">From customer record (Dongle ID): {customer.dongle_id}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="form-label">Performed By</label>
+                    <input
+                      type="text"
+                      name="ii_performed_by"
+                      defaultValue={defaultPerformedBy}
+                      className="form-input"
+                      placeholder="Technician name(s)"
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Default Initials</label>
+                    <input
+                      type="text"
+                      name="ii_initials"
+                      defaultValue={defaultInitials}
+                      className="form-input"
+                      placeholder="e.g., DW — auto-fills each checklist item sign-off"
+                      maxLength={10}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">These initials auto-fill the sign-off column on each checklist item when you record an answer.</p>
+                  </div>
+                  <div>
+                    <label className="form-label">Date Performed</label>
+                    <input
+                      type="date"
+                      name="ii_date_performed"
+                      defaultValue={defaultDate}
+                      className="form-input"
+                    />
+                  </div>
+                </div>
+                <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowHeaderModal(false)}
+                    className="btn btn-secondary"
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn btn-primary">
+                    Save Header Info
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* New Document Modal */}
       {showNewDocumentModal && (

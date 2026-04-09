@@ -639,6 +639,7 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
         <thead>
           <tr>
             <th>Block #</th>
+            <th>Description</th>
             <th>DC Reading (V)</th>
             <th>Status</th>
           </tr>
@@ -647,6 +648,7 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
           ${distributionBlocks.map((block, index) => `
             <tr>
               <td><strong>${index + 1}</strong></td>
+              <td>${block.type || '—'}</td>
               <td>${formatValue(block.dc_reading)}</td>
               <td class="status-${block.status}">${formatStatus(block.status)}</td>
             </tr>
@@ -708,7 +710,7 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
     
     ${powerInjectedBaseplates.length > 0 ? `
     <div class="section-group">
-      <div class="section-title">Power Injected Baseplates</div>
+      <div class="section-title">Carrier/Baseplates</div>
       <table>
         <thead>
           <tr>
@@ -721,7 +723,7 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
         <tbody>
           ${powerInjectedBaseplates.map((pib, index) => `
             <tr>
-              <td><strong>${pib.pib_name || `Baseplate ${index + 1}`}</strong></td>
+              <td><strong>${pib.pib_name || `Carrier/Baseplate ${index + 1}`}</strong></td>
               <td>${pib.voltage_type || '24VDC'}</td>
               <td>${formatValue(pib.dc_reading)}</td>
               <td class="status-${pib.status}">${formatStatus(pib.status)}</td>
@@ -739,12 +741,17 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
         <span><strong>Cabinet fans running (if installed)</strong></span>
         <span class="status-${inspection.cabinet_fans || 'pass'}">${formatStatus(inspection.cabinet_fans)}</span>
       </div>
-      ${inspection.cabinet_fans === 'fail' ? `
-      <div class="inspection-item" style="grid-column: 1 / -1;">
-        <span><strong>Fan fail details</strong></span>
-        <span>Fan: ${inspection.fan_fail_fan || '—'} | Part #: ${inspection.fan_fail_part_number || '—'}</span>
-      </div>
-      ` : ''}
+      ${inspection.cabinet_fans === 'fail' ? (() => {
+        const entries = inspection.fan_failures?.length
+          ? inspection.fan_failures
+          : (inspection.fan_fail_fan ? [{ fan: inspection.fan_fail_fan, part_number: inspection.fan_fail_part_number || '' }] : []);
+        return entries.map((f, i) => `
+        <div class="inspection-item" style="grid-column: 1 / -1;">
+          <span><strong>Fan fail${entries.length > 1 ? ` (${i + 1})` : ' details'}</strong></span>
+          <span>Fan: ${f.fan || '—'} | Part #: ${f.part_number || '—'}</span>
+        </div>
+        `).join('');
+      })() : ''}
       <div class="inspection-item">
         <span><strong>Controller Status LEDs</strong></span>
         <span class="status-${inspection.controller_leds || 'pass'}">${formatStatus(inspection.controller_leds)}</span>
@@ -773,6 +780,12 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
         <span><strong>Ground Inspection</strong></span>
         <span class="status-${inspection.ground_inspection || 'pass'}">${formatStatus(inspection.ground_inspection)}</span>
       </div>
+      ${inspection.ground_inspection === 'fail' && inspection.ground_fail_reason ? `
+      <div class="inspection-item" style="grid-column: 1 / -1;">
+        <span><strong>Ground fail details</strong></span>
+        <span>${inspection.ground_fail_reason}</span>
+      </div>
+      ` : ''}
       </div>
     </div>
     
@@ -783,7 +796,7 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
         <thead>
           <tr>
             <th>Equipment Type</th>
-            <th>Model Number</th>
+            <th>Name</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -791,7 +804,7 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
           ${networkEquipment.map(equipment => `
             <tr>
               <td><strong>${equipment.equipment_type}</strong></td>
-              <td>${equipment.model_number || 'Not specified'}</td>
+              <td>${equipment.node_name || equipment.model_number || 'Not specified'}</td>
               <td class="status-${equipment.status}">${formatStatus(equipment.status)}</td>
             </tr>
           `).join('')}
@@ -916,6 +929,7 @@ function generatePDFHtml(data) {
           <thead>
             <tr>
               <th>Block #</th>
+              <th>Description</th>
               <th>DC Reading (V)</th>
               <th>Status</th>
             </tr>
@@ -924,6 +938,7 @@ function generatePDFHtml(data) {
             ${distributionBlocks.map((block, index) => `
               <tr>
                 <td><strong>${index + 1}</strong></td>
+                <td>${block.type || '—'}</td>
                 <td>${formatValue(block.dc_reading)}</td>
                 <td class="status-${block.status}">${formatStatus(block.status)}</td>
               </tr>
@@ -985,7 +1000,7 @@ function generatePDFHtml(data) {
       
       ${powerInjectedBaseplates.length > 0 ? `
       <div class="section-group">
-        <div class="section-title">Power Injected Baseplates</div>
+        <div class="section-title">Carrier/Baseplates</div>
         <table>
           <thead>
             <tr>
@@ -998,7 +1013,7 @@ function generatePDFHtml(data) {
           <tbody>
             ${powerInjectedBaseplates.map((pib, index) => `
               <tr>
-                <td><strong>${pib.pib_name || `Baseplate ${index + 1}`}</strong></td>
+                <td><strong>${pib.pib_name || `Carrier/Baseplate ${index + 1}`}</strong></td>
                 <td>${pib.voltage_type || '24VDC'}</td>
                 <td>${formatValue(pib.dc_reading)}</td>
                 <td class="status-${pib.status}">${formatStatus(pib.status)}</td>
@@ -1016,12 +1031,17 @@ function generatePDFHtml(data) {
           <span><strong>Cabinet fans running (if installed)</strong></span>
           <span class="status-${inspection.cabinet_fans || 'pass'}">${formatStatus(inspection.cabinet_fans)}</span>
         </div>
-        ${inspection.cabinet_fans === 'fail' ? `
-        <div class="inspection-item" style="grid-column: 1 / -1;">
-          <span><strong>Fan fail details</strong></span>
-          <span>Fan: ${inspection.fan_fail_fan || '—'} | Part #: ${inspection.fan_fail_part_number || '—'}</span>
-        </div>
-        ` : ''}
+        ${inspection.cabinet_fans === 'fail' ? (() => {
+          const entries = inspection.fan_failures?.length
+            ? inspection.fan_failures
+            : (inspection.fan_fail_fan ? [{ fan: inspection.fan_fail_fan, part_number: inspection.fan_fail_part_number || '' }] : []);
+          return entries.map((f, i) => `
+          <div class="inspection-item" style="grid-column: 1 / -1;">
+            <span><strong>Fan fail${entries.length > 1 ? ` (${i + 1})` : ' details'}</strong></span>
+            <span>Fan: ${f.fan || '—'} | Part #: ${f.part_number || '—'}</span>
+          </div>
+          `).join('');
+        })() : ''}
         <div class="inspection-item">
           <span><strong>Controller Status LEDs</strong></span>
           <span class="status-${inspection.controller_leds || 'pass'}">${formatStatus(inspection.controller_leds)}</span>
@@ -1050,6 +1070,12 @@ function generatePDFHtml(data) {
           <span><strong>Ground Inspection</strong></span>
           <span class="status-${inspection.ground_inspection || 'pass'}">${formatStatus(inspection.ground_inspection)}</span>
         </div>
+        ${inspection.ground_inspection === 'fail' && inspection.ground_fail_reason ? `
+        <div class="inspection-item" style="grid-column: 1 / -1;">
+          <span><strong>Ground fail details</strong></span>
+          <span>${inspection.ground_fail_reason}</span>
+        </div>
+        ` : ''}
         </div>
       </div>
       
@@ -1060,7 +1086,7 @@ function generatePDFHtml(data) {
           <thead>
             <tr>
               <th>Equipment Type</th>
-              <th>Model Number</th>
+              <th>Name</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -1068,7 +1094,7 @@ function generatePDFHtml(data) {
             ${networkEquipment.map(equipment => `
               <tr>
                 <td><strong>${equipment.equipment_type}</strong></td>
-                <td>${equipment.model_number || 'Not specified'}</td>
+                <td>${equipment.node_name || equipment.model_number || 'Not specified'}</td>
                 <td class="status-${equipment.status}">${formatStatus(equipment.status)}</td>
               </tr>
             `).join('')}
@@ -1122,7 +1148,12 @@ function generatePDFHtml(data) {
 }
 
 /**
- * Generate HTML for the session-level Risk Assessment page (score, issues, recommendations, error breakdown).
+ * Generate HTML for the session-level Risk Assessment page.
+ * Renders two independent outputs:
+ *   - Normalized risk score (0-100): weighted failure-rate, comparable across site sizes
+ *   - Risk badge: worst severity present (CRITICAL / MODERATE / LOW / GOOD)
+ * Also renders domain subscores and inspection coverage.
+ *
  * @param {object} risk - Result from generateRiskAssessment(cabinets, nodeMaintenanceData)
  * @param {string} sessionName - Session name for the header
  */
@@ -1137,58 +1168,158 @@ function generateRiskAssessmentPage(risk, sessionName) {
     recommendations,
     totalComponents,
     failedComponents,
-    riskBreakdown
+    riskBreakdown,
+    domainScores,
+    coverageCompleted,
+    coverageTotal
   } = risk;
 
-  // Build accepted value ranges (spec) from VOLTAGE_RANGES for PDF
+  // Score bar width for visual representation (capped at 100%)
+  const scoreBarWidth = Math.min(riskScore, 100);
+  const scoreBarColor = riskScore >= 60 ? '#dc3545' : riskScore >= 30 ? '#fd7e14' : riskScore >= 10 ? '#ffc107' : '#28a745';
+
+  // Domain display names and order
+  const domainLabels = {
+    controllers:       'Controllers',
+    network:           'Network',
+    power:             'Power',
+    cabinet_condition: 'Cabinet Condition',
+    environmental:     'Environmental',
+    node_maintenance:  'Node Maintenance'
+  };
+  const domainOrder = ['controllers', 'network', 'power', 'cabinet_condition', 'environmental', 'node_maintenance'];
+
+  const domainRows = domainOrder.map(domain => {
+    const score = domainScores && domainScores[domain];
+    if (score === null || score === undefined) {
+      return `<tr>
+        <td style="padding: 5px 8px; border: 1px solid #d1d5db;">${domainLabels[domain]}</td>
+        <td style="padding: 5px 8px; border: 1px solid #d1d5db; color: #9ca3af; font-style: italic;">Not inspected</td>
+        <td style="padding: 5px 8px; border: 1px solid #d1d5db;">—</td>
+      </tr>`;
+    }
+    const domainBarColor = score >= 60 ? '#dc3545' : score >= 30 ? '#fd7e14' : score >= 10 ? '#ffc107' : '#28a745';
+    return `<tr>
+      <td style="padding: 5px 8px; border: 1px solid #d1d5db; font-weight: bold;">${domainLabels[domain]}</td>
+      <td style="padding: 5px 8px; border: 1px solid #d1d5db;">
+        <div style="background: #e5e7eb; border-radius: 4px; height: 10px; width: 100%; overflow: hidden;">
+          <div style="background: ${domainBarColor}; height: 100%; width: ${Math.min(score, 100)}%; border-radius: 4px;"></div>
+        </div>
+      </td>
+      <td style="padding: 5px 8px; border: 1px solid #d1d5db; font-weight: bold; color: ${domainBarColor}; text-align: right;">${score}</td>
+    </tr>`;
+  }).join('');
+
+  // Coverage
+  const coverageText = (coverageTotal > 0)
+    ? `${coverageCompleted} / ${coverageTotal} check-points recorded (${Math.round(100 * coverageCompleted / coverageTotal)}% coverage)`
+    : 'No check data recorded';
+
+  // Accepted value ranges table
   const specLabels = {
-    '24VDC': '24 VDC (power supplies, distribution blocks, diodes)',
-    '12VDC': '12 VDC',
-    'line_neutral': 'Line–Neutral (AC)',
-    'line_ground': 'Line–Ground (AC)',
+    '24VDC':          '24 VDC (power supplies, distribution blocks, diodes)',
+    '12VDC':          '12 VDC',
+    'line_neutral':   'Line–Neutral (AC)',
+    'line_ground':    'Line–Ground (AC)',
     'neutral_ground': 'Neutral–Ground (AC, mV)'
   };
   const specRows = Object.entries(VOLTAGE_RANGES).map(([key, r]) => {
-    const unit = r.unit || 'V';
+    const unit  = r.unit || 'V';
     const label = specLabels[key] || key.replace(/_/g, ' ');
-    return `<tr><td>${label}</td><td>${r.min}–${r.max} ${unit}</td></tr>`;
+    return `<tr><td style="padding: 5px 8px; border: 1px solid #d1d5db;">${label}</td><td style="padding: 5px 8px; border: 1px solid #d1d5db; white-space: nowrap;">${r.min}–${r.max} ${unit}</td></tr>`;
   }).join('');
+
+  // Failure rate (one decimal place, guard against zero denominator)
+  const failureRatePct = (totalComponents > 0)
+    ? (Math.round(10 * (failedComponents / totalComponents) * 100) / 10).toFixed(1)
+    : '—';
+
+  // Coverage split into two short lines
+  const coverageLine1 = (coverageTotal > 0) ? `${coverageCompleted} / ${coverageTotal} check-points` : 'No check data';
+  const coverageLine2 = (coverageTotal > 0) ? `(${Math.round(100 * coverageCompleted / coverageTotal)}% coverage)` : '';
 
   return `
     <div class="page-break" style="page-break-before: always;">
       <h2 style="text-align: center; color: #2563eb; font-size: 28px; margin: 20px 0; padding: 15px; border-bottom: 3px solid #2563eb;">Risk Assessment — ${sessionName || 'PM Session'}</h2>
-      <div class="risk-summary">
-        <div class="risk-score-box" style="background: ${riskColor}; color: white;">
-          <div class="risk-score">${riskScore}</div>
-          <div class="risk-level">${riskLevel}</div>
+
+      <!-- Dual output: score + badge side by side -->
+      <div class="risk-summary" style="align-items: stretch;">
+
+        <!-- Condition Risk Index card (0-100) -->
+        <div style="background: #1e293b; color: white; text-align: center; padding: 18px 22px; border-radius: 12px; min-width: 145px; box-shadow: 0 4px 8px rgba(0,0,0,0.15);">
+          <div style="font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; opacity: 0.65; margin-bottom: 6px;">Condition Risk Index</div>
+          <div style="font-size: 54px; font-weight: bold; line-height: 1;">${riskScore}</div>
+          <div style="font-size: 12px; opacity: 0.55; margin-top: 3px;">out of 100</div>
+          <div style="background: rgba(255,255,255,0.15); border-radius: 4px; height: 7px; margin-top: 10px; overflow: hidden;">
+            <div style="background: ${scoreBarColor}; height: 100%; width: ${scoreBarWidth}%; border-radius: 4px;"></div>
+          </div>
+          <div style="font-size: 9px; opacity: 0.45; margin-top: 8px; line-height: 1.3;">Weighted prevalence<br>across inspected items</div>
         </div>
-        <div class="risk-stats">
-          <div class="stat-item"><span class="stat-label">Total components / items assessed</span><span class="stat-value">${totalComponents}</span></div>
-          <div class="stat-item"><span class="stat-label">Failed / out of spec</span><span class="stat-value">${failedComponents}</span></div>
+
+        <!-- Severity badge card -->
+        <div class="risk-score-box" style="background: ${riskColor}; color: white; display: flex; flex-direction: column; justify-content: center;">
+          <div style="font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; opacity: 0.85; margin-bottom: 6px;">Status</div>
+          <div class="risk-score" style="font-size: 34px;">${riskLevel}</div>
+          <div style="font-size: 10px; opacity: 0.85; margin-top: 8px; line-height: 1.3;">Highest severity<br>finding present</div>
+        </div>
+
+        <!-- Quick stats (compact) -->
+        <div class="risk-stats" style="font-size: 12px;">
+          <div class="stat-item" style="padding: 5px 0;"><span class="stat-label">Assessed components</span><span class="stat-value">${totalComponents}</span></div>
+          <div class="stat-item" style="padding: 5px 0;"><span class="stat-label">Failed / out of spec</span><span class="stat-value">${failedComponents}</span></div>
+          <div class="stat-item" style="padding: 5px 0;"><span class="stat-label">Failure rate</span><span class="stat-value">${failureRatePct}%</span></div>
+          <div class="stat-item" style="padding: 5px 0;"><span class="stat-label">Critical findings</span><span class="stat-value" style="color: ${criticalIssues.length > 0 ? '#dc3545' : '#28a745'};">${criticalIssues.length}</span></div>
+          <div class="stat-item" style="padding: 5px 0;"><span class="stat-label">Moderate findings</span><span class="stat-value" style="color: ${warnings.length > 0 ? '#fd7e14' : '#28a745'};">${warnings.length}</span></div>
+          <div class="stat-item" style="padding: 5px 0;"><span class="stat-label">Slight findings</span><span class="stat-value" style="color: ${slightIssues.length > 0 ? '#17a2b8' : '#28a745'};">${slightIssues.length}</span></div>
+          <div class="stat-item" style="padding: 5px 0; border-bottom: none;"><span class="stat-label">Inspection coverage</span><span class="stat-value" style="text-align: right;">${coverageLine1}<br><span style="font-weight: normal; color: #666;">${coverageLine2}</span></span></div>
         </div>
       </div>
-      <div class="risk-breakdown-section" style="margin-top: 16px;">
+
+      <!-- Clarifying note -->
+      <div style="margin-top: 10px; font-size: 11px; color: #6b7280; font-style: italic; text-align: center;">
+        Status reflects the worst severity class found, independent of the 0–100 score.
+      </div>
+
+      <!-- Domain weighted prevalence (full width, compact) -->
+      <div style="margin-top: 16px;">
+        <div class="breakdown-header">Domain Weighted Prevalence</div>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px;">
+          <thead>
+            <tr style="background: #e5e7eb;">
+              <th style="text-align: left; padding: 5px 8px; border: 1px solid #d1d5db; width: 28%;">Domain</th>
+              <th style="text-align: left; padding: 5px 8px; border: 1px solid #d1d5db;">Weighted prevalence (0–100)</th>
+              <th style="text-align: right; padding: 5px 8px; border: 1px solid #d1d5db; width: 50px;"></th>
+            </tr>
+          </thead>
+          <tbody>${domainRows}</tbody>
+        </table>
+      </div>
+
+      <!-- Accepted voltage ranges (full width, compact) -->
+      <div style="margin-top: 12px;">
         <div class="breakdown-header">Accepted value ranges (spec we read against)</div>
-        <table style="width: 100%; border-collapse: collapse; margin-top: 8px;">
-          <thead><tr style="background: #e5e7eb;"><th style="text-align: left; padding: 8px; border: 1px solid #d1d5db;">Measurement</th><th style="text-align: left; padding: 8px; border: 1px solid #d1d5db;">Accepted range</th></tr></thead>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px;">
+          <thead><tr style="background: #e5e7eb;"><th style="text-align: left; padding: 5px 8px; border: 1px solid #d1d5db;">Measurement</th><th style="text-align: left; padding: 5px 8px; border: 1px solid #d1d5db;">Accepted range</th></tr></thead>
           <tbody>${specRows}</tbody>
         </table>
       </div>
+
+      <!-- Issue lists (unchanged) -->
       ${criticalIssues.length > 0 ? `
       <div class="issues-section critical">
-        <div class="issues-header">Critical issues</div>
+        <div class="issues-header">Critical issues (${criticalIssues.length})</div>
         <ul class="issues-list">${criticalIssues.map(i => `<li>${i}</li>`).join('')}</ul>
       </div>
       ` : ''}
       ${warnings.length > 0 ? `
       <div class="issues-section warning">
-        <div class="issues-header">Moderate issues</div>
+        <div class="issues-header">Moderate issues (${warnings.length})</div>
         <ul class="issues-list">${warnings.map(i => `<li>${i}</li>`).join('')}</ul>
       </div>
       ` : ''}
       ${slightIssues.length > 0 ? `
       <div class="issues-section slight">
-        <div class="issues-header">Slight issues</div>
+        <div class="issues-header">Slight issues (${slightIssues.length})</div>
         <ul class="issues-list">${slightIssues.map(i => `<li>${i}</li>`).join('')}</ul>
       </div>
       ` : ''}

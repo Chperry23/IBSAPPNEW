@@ -11,6 +11,14 @@ export default function Sync() {
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Admin auth state — verified for this session only (cleared on page refresh)
+  const [adminVerified, setAdminVerified] = useState(false);
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminError, setAdminError] = useState('');
+  const [adminVerifying, setAdminVerifying] = useState(false);
+  const [pendingAdminAction, setPendingAdminAction] = useState(null); // fn to call after auth
+
   useEffect(() => {
     loadAllData();
   }, []);
@@ -83,6 +91,44 @@ export default function Sync() {
     setMessage({ text, type });
     if (type !== 'info' || !text.includes('...')) {
       setTimeout(() => setMessage(null), 5000);
+    }
+  };
+
+  // Call this instead of an admin action directly — shows password gate if not yet verified
+  const requireAdmin = (action) => {
+    if (adminVerified) {
+      action();
+    } else {
+      setPendingAdminAction(() => action);
+      setAdminPassword('');
+      setAdminError('');
+      setShowAdminModal(true);
+    }
+  };
+
+  const handleAdminSubmit = async (e) => {
+    e.preventDefault();
+    setAdminVerifying(true);
+    setAdminError('');
+    try {
+      const result = await api.request('/api/sync/verify-admin', {
+        method: 'POST',
+        body: JSON.stringify({ password: adminPassword }),
+      });
+      if (result.success) {
+        setAdminVerified(true);
+        setShowAdminModal(false);
+        if (pendingAdminAction) {
+          pendingAdminAction();
+          setPendingAdminAction(null);
+        }
+      } else {
+        setAdminError('Incorrect password.');
+      }
+    } catch (err) {
+      setAdminError('Incorrect password.');
+    } finally {
+      setAdminVerifying(false);
     }
   };
 
@@ -325,47 +371,69 @@ export default function Sync() {
         <div className="card-header">
           <h3 className="text-lg font-semibold text-gray-100">Sync Actions</h3>
         </div>
-        <div className="card-body">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <button
-              onClick={syncAll}
-              disabled={syncing}
-              className="btn btn-primary h-32 flex flex-col items-center justify-center disabled:opacity-50"
-            >
-              <div className="text-3xl mb-2">🔄</div>
-              <div className="text-lg font-semibold">Sync All</div>
-              <div className="text-xs opacity-75 mt-1">Upload & Download</div>
-            </button>
-            <button
-              onClick={downloadFromCloud}
-              disabled={syncing}
-              className="btn btn-success h-32 flex flex-col items-center justify-center disabled:opacity-50"
-            >
-              <div className="text-3xl mb-2">⬇️</div>
-              <div className="text-lg font-semibold">Download</div>
-              <div className="text-xs opacity-75 mt-1">Get latest, keep local-only</div>
-            </button>
-            <button
-              onClick={downloadAndMatchCloud}
-              disabled={syncing}
-              className="btn bg-amber-600 hover:bg-amber-500 text-white h-32 flex flex-col items-center justify-center disabled:opacity-50"
-            >
-              <div className="text-3xl mb-2">⬇️✨</div>
-              <div className="text-lg font-semibold">Download & match cloud</div>
-              <div className="text-xs opacity-75 mt-1">Make this device match cloud</div>
-            </button>
-            <button
-              onClick={uploadToCloud}
-              disabled={syncing}
-              className="btn btn-success h-32 flex flex-col items-center justify-center disabled:opacity-50"
-            >
-              <div className="text-3xl mb-2">⬆️</div>
-              <div className="text-lg font-semibold">Upload</div>
-              <div className="text-xs opacity-75 mt-1">Send your changes</div>
-            </button>
+        <div className="card-body space-y-6">
+
+          {/* User Actions */}
+          <div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">User Actions</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <button
+                onClick={downloadFromCloud}
+                disabled={syncing}
+                className="btn btn-success h-28 flex flex-col items-center justify-center disabled:opacity-50 text-white"
+              >
+                <div className="text-3xl mb-1">⬇️</div>
+                <div className="text-lg font-semibold">Download</div>
+                <div className="text-xs opacity-75 mt-1">Get latest, keep local-only</div>
+              </button>
+              <button
+                onClick={uploadToCloud}
+                disabled={syncing}
+                className="btn btn-success h-28 flex flex-col items-center justify-center disabled:opacity-50 text-white"
+              >
+                <div className="text-3xl mb-1">⬆️</div>
+                <div className="text-lg font-semibold">Upload</div>
+                <div className="text-xs opacity-75 mt-1">Send your changes</div>
+              </button>
+            </div>
           </div>
-          <div className="mt-4 p-3 bg-gray-700/30 rounded-lg text-sm text-gray-300">
-            <strong className="text-gray-200">How sync works:</strong> System Registry data (workstations, controllers, etc.) is stored in the database and synced with the cloud. <strong>Download</strong> adds/updates from cloud but keeps records that exist only on this device. <strong>Download & match cloud</strong> also removes local records that are not on the cloud so counts match (use when this device should mirror the cloud). When you delete something and then <strong>Upload</strong>, that delete is sent to the cloud so other devices can see it after they download.
+
+          {/* Admin Actions */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="text-xs font-semibold text-red-400 uppercase tracking-widest">Admin Actions</div>
+              {adminVerified && (
+                <span className="text-xs bg-red-900/40 border border-red-700 text-red-300 px-2 py-0.5 rounded-full">
+                  🔓 Unlocked this session
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <button
+                onClick={() => requireAdmin(syncAll)}
+                disabled={syncing}
+                className="h-28 flex flex-col items-center justify-center rounded-lg border-2 border-red-700 bg-red-900/30 hover:bg-red-900/50 text-red-300 hover:text-white transition-colors disabled:opacity-50"
+              >
+                <div className="text-3xl mb-1">🔄</div>
+                <div className="text-lg font-semibold">Sync All</div>
+                <div className="text-xs opacity-75 mt-1">Upload &amp; Download</div>
+                {!adminVerified && <div className="text-xs mt-1 opacity-60">🔒 Admin required</div>}
+              </button>
+              <button
+                onClick={() => requireAdmin(downloadAndMatchCloud)}
+                disabled={syncing}
+                className="h-28 flex flex-col items-center justify-center rounded-lg border-2 border-red-700 bg-red-900/30 hover:bg-red-900/50 text-red-300 hover:text-white transition-colors disabled:opacity-50"
+              >
+                <div className="text-3xl mb-1">⬇️✨</div>
+                <div className="text-lg font-semibold">Download &amp; Match Cloud</div>
+                <div className="text-xs opacity-75 mt-1">Removes local-only records</div>
+                {!adminVerified && <div className="text-xs mt-1 opacity-60">🔒 Admin required</div>}
+              </button>
+            </div>
+          </div>
+
+          <div className="p-3 bg-gray-700/30 rounded-lg text-sm text-gray-300">
+            <strong className="text-gray-200">How sync works:</strong> <strong>Download</strong> pulls the latest from cloud but keeps records that exist only on this device. <strong>Upload</strong> sends your local changes to the cloud. <strong>Sync All</strong> does both. <strong>Download &amp; Match Cloud</strong> also removes local records not on the cloud — use only when this device should fully mirror the cloud.
           </div>
         </div>
       </div>
@@ -498,7 +566,7 @@ export default function Sync() {
             <p className="text-yellow-300 text-sm">⚠️ These options should only be used for troubleshooting or when instructed by support.</p>
           </div>
           <button
-            onClick={resetSync}
+            onClick={() => requireAdmin(resetSync)}
             disabled={syncing}
             className="btn btn-danger disabled:opacity-50"
           >
@@ -506,6 +574,60 @@ export default function Sync() {
           </button>
         </div>
       </div>
+
+      {/* Admin Password Modal */}
+      {showAdminModal && (
+        <div className="modal-backdrop">
+          <div className="bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full mx-4 border border-red-700/60">
+            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-100">🔒 Admin Action</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Enter the admin password to continue</p>
+              </div>
+              <button
+                onClick={() => { setShowAdminModal(false); setPendingAdminAction(null); }}
+                className="text-gray-400 hover:text-gray-200 text-2xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleAdminSubmit}>
+              <div className="px-6 py-4 space-y-4">
+                <div>
+                  <label className="form-label">Password</label>
+                  <input
+                    type="password"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    className="form-input"
+                    placeholder="Admin password"
+                    autoFocus
+                  />
+                  {adminError && (
+                    <p className="text-red-400 text-sm mt-2">{adminError}</p>
+                  )}
+                </div>
+              </div>
+              <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setShowAdminModal(false); setPendingAdminAction(null); }}
+                  className="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={adminVerifying || !adminPassword}
+                  className="btn bg-red-700 hover:bg-red-600 text-white disabled:opacity-50"
+                >
+                  {adminVerifying ? 'Verifying…' : 'Confirm'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

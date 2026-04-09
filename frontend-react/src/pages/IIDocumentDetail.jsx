@@ -110,6 +110,7 @@ export default function IIDocumentDetail() {
   const [equipmentUsed, setEquipmentUsed] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState(null); // 'saving' | 'saved' | null
   const [collapsed, setCollapsed] = useState({});
   const [showEquipmentModal, setShowEquipmentModal] = useState(false);
 
@@ -149,6 +150,14 @@ export default function IIDocumentDetail() {
     setTimeout(() => setMessage(null), 5000);
   };
 
+  const flashAutoSave = () => {
+    setAutoSaveStatus('saving');
+    setTimeout(() => {
+      setAutoSaveStatus('saved');
+      setTimeout(() => setAutoSaveStatus(null), 2000);
+    }, 300);
+  };
+
   const toggleSection = (sectionName) => {
     setCollapsed(prev => ({ ...prev, [sectionName]: !prev[sectionName] }));
   };
@@ -156,13 +165,13 @@ export default function IIDocumentDetail() {
   const handleEquipmentChange = async (field, value) => {
     const updatedEquipment = { ...equipment, [field]: value };
     setEquipment(updatedEquipment);
+    flashAutoSave();
 
     try {
       await api.request(`/api/ii-documents/${id}/ii-equipment`, {
         method: 'POST',
         body: JSON.stringify(updatedEquipment)
       });
-      // Success - no sound for auto-save
     } catch (error) {
       console.error('Error saving equipment:', error);
       showMessage('Error saving equipment', 'error');
@@ -175,36 +184,72 @@ export default function IIDocumentDetail() {
       item => item.section_name === sectionName && item.item_name === itemName
     );
 
+    const today = new Date().toISOString().split('T')[0];
     const updatedItem = {
       ...existingItem,
       section_name: sectionName,
       item_name: itemName,
-      [field]: value
+      [field]: value,
+      // Auto-fill initials from session default and today's date whenever an answer is set
+      // if either field is still empty — so late-added defaults still propagate
+      ...(field === 'answer' ? {
+        performed_by: existingItem?.performed_by || (session?.ii_initials || ''),
+        date_completed: existingItem?.date_completed || today,
+      } : {}),
     };
+
+    // Optimistically update local state first for instant UI feedback
+    setChecklistItems(prev => {
+      const index = prev.findIndex(
+        item => item.section_name === sectionName && item.item_name === itemName
+      );
+      if (index >= 0) {
+        const newItems = [...prev];
+        newItems[index] = { ...newItems[index], ...updatedItem };
+        return newItems;
+      }
+      return [...prev, updatedItem];
+    });
+
+    flashAutoSave();
 
     try {
       await api.request(`/api/ii-documents/${id}/ii-checklist`, {
         method: 'POST',
         body: JSON.stringify(updatedItem)
       });
-
-      // Update local state
-      setChecklistItems(prev => {
-        const index = prev.findIndex(
-          item => item.section_name === sectionName && item.item_name === itemName
-        );
-        if (index >= 0) {
-          const newItems = [...prev];
-          newItems[index] = { ...newItems[index], ...updatedItem };
-          return newItems;
-        }
-        return [...prev, updatedItem];
-      });
-
-      // Success - no sound for auto-save
     } catch (error) {
       console.error('Error saving checklist item:', error);
       showMessage('Error saving checklist item', 'error');
+      soundSystem.playError();
+    }
+  };
+
+  const handleSaveAll = async () => {
+    setAutoSaveStatus('saving');
+    try {
+      // Save equipment
+      await api.request(`/api/ii-documents/${id}/ii-equipment`, {
+        method: 'POST',
+        body: JSON.stringify(equipment || {})
+      });
+
+      // Re-save all checklist items that have been touched
+      for (const item of checklistItems) {
+        await api.request(`/api/ii-documents/${id}/ii-checklist`, {
+          method: 'POST',
+          body: JSON.stringify(item)
+        });
+      }
+
+      setAutoSaveStatus('saved');
+      setTimeout(() => setAutoSaveStatus(null), 3000);
+      soundSystem.playSuccess();
+      showMessage('✅ All data saved successfully!', 'success');
+    } catch (error) {
+      console.error('Error saving all data:', error);
+      setAutoSaveStatus(null);
+      showMessage('Error saving data', 'error');
       soundSystem.playError();
     }
   };
@@ -235,36 +280,6 @@ export default function IIDocumentDetail() {
     }
   };
 
-  const handleExportPDF = async () => {
-    try {
-      showMessage('Generating I&I PDF for this cabinet...', 'info');
-      
-      const response = await fetch(`/api/ii-documents/${id}/export-pdf`, {
-        method: 'POST',
-      });
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        a.download = `II-${document.document_name}-${new Date().toISOString().split('T')[0]}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        soundSystem.playSuccess();
-        showMessage('✅ PDF generated successfully!', 'success');
-      } else {
-        soundSystem.playError();
-        showMessage('Error generating PDF', 'error');
-      }
-    } catch (error) {
-      soundSystem.playError();
-      showMessage('Error generating PDF: ' + error.message, 'error');
-    }
-  };
 
   if (loading) {
     return (
@@ -307,12 +322,18 @@ export default function IIDocumentDetail() {
               </p>
             )}
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 items-center">
+            {autoSaveStatus === 'saving' && (
+              <span className="text-sm text-blue-400 animate-pulse">Saving…</span>
+            )}
+            {autoSaveStatus === 'saved' && (
+              <span className="text-sm text-green-400">✓ Saved</span>
+            )}
             <button
-              onClick={handleExportPDF}
-              className="btn btn-warning"
+              onClick={handleSaveAll}
+              className="btn btn-primary"
             >
-              📄 Export PDF
+              💾 Save All
             </button>
             <button
               onClick={() => navigate(`/ii-session/${document.session_id}`)}
@@ -438,29 +459,35 @@ export default function IIDocumentDetail() {
                 return (
                   <div key={idx} className="border border-gray-600 rounded-lg p-4 bg-gray-700/30">
                     <div className="font-medium text-gray-200 mb-3">{itemName}</div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="form-label text-xs">Answer</label>
-                        <div className="flex gap-2">
-                          {['Yes', 'No', 'N/A'].map((answer) => (
+
+                    {/* Answer buttons */}
+                    <div className="mb-3">
+                      <label className="form-label text-xs">Answer</label>
+                        <div className="flex flex-wrap gap-2">
+                        {['Yes', 'No', 'N/A', 'Pass', 'Fail'].map((answer) => {
+                          const isSelected = item.answer === answer;
+                          const noIsGood = itemName.toLowerCase().includes('environmental concerns');
+                          let selectedCls = 'bg-gray-600 border-gray-500 text-white';
+                          if (answer === 'Yes' || answer === 'Pass') selectedCls = 'bg-green-600 border-green-500 text-white';
+                          else if (answer === 'Fail') selectedCls = 'bg-red-600 border-red-500 text-white';
+                          else if (answer === 'No') selectedCls = noIsGood ? 'bg-green-600 border-green-500 text-white' : 'bg-red-600 border-red-500 text-white';
+                          return (
                             <button
                               key={answer}
                               onClick={() => handleChecklistChange(section.name, itemName, 'answer', answer)}
-                              className={`px-4 py-2 rounded border transition-colors ${
-                                item.answer === answer
-                                  ? answer === 'Yes'
-                                    ? 'bg-green-600 border-green-500 text-white'
-                                    : answer === 'No'
-                                    ? 'bg-red-600 border-red-500 text-white'
-                                    : 'bg-gray-600 border-gray-500 text-white'
-                                  : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'
+                              className={`px-3 py-1.5 rounded border text-sm transition-colors ${
+                                isSelected ? selectedCls : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'
                               }`}
                             >
                               {answer}
                             </button>
-                          ))}
-                        </div>
+                          );
+                        })}
                       </div>
+                    </div>
+
+                    {/* Value / Initials / Date */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
                       <div>
                         <label className="form-label text-xs">Recorded Value</label>
                         <input
@@ -471,16 +498,38 @@ export default function IIDocumentDetail() {
                           placeholder="e.g., 24.2 VDC"
                         />
                       </div>
-                      <div className="md:col-span-2">
-                        <label className="form-label text-xs">Comments</label>
-                        <textarea
-                          value={item.comments || ''}
-                          onChange={(e) => handleChecklistChange(section.name, itemName, 'comments', e.target.value)}
+                      <div>
+                        <label className="form-label text-xs">Initials</label>
+                        <input
+                          type="text"
+                          value={item.performed_by || ''}
+                          onChange={(e) => handleChecklistChange(section.name, itemName, 'performed_by', e.target.value)}
                           className="form-input"
-                          rows="2"
-                          placeholder="Additional notes or observations..."
+                          placeholder={session?.ii_initials || 'e.g., DW'}
+                          maxLength={10}
                         />
                       </div>
+                      <div>
+                        <label className="form-label text-xs">Date</label>
+                        <input
+                          type="date"
+                          value={item.date_completed || ''}
+                          onChange={(e) => handleChecklistChange(section.name, itemName, 'date_completed', e.target.value)}
+                          className="form-input"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Comments */}
+                    <div>
+                      <label className="form-label text-xs">Comments</label>
+                      <textarea
+                        value={item.comments || ''}
+                        onChange={(e) => handleChecklistChange(section.name, itemName, 'comments', e.target.value)}
+                        className="form-input"
+                        rows="2"
+                        placeholder="Additional notes or observations..."
+                      />
                     </div>
                   </div>
                 );

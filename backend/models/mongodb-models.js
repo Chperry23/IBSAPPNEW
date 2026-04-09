@@ -165,7 +165,7 @@ const sessionNodeMaintenanceSchema = new mongoose.Schema({
   free_time: { type: Number },
   redundancy_checked: { type: Number },
   cold_restart_checked: { type: Number },
-  no_errors_checked: { type: Number },
+  has_io_errors: { type: Number, default: 1 },
   hdd_replaced: { type: Number },
   performance_type: { type: String },
   performance_value: { type: Number },
@@ -610,6 +610,22 @@ customerNotesSchema.index({ customer_id: 1 });
 customerNotesSchema.index({ uuid: 1 }, { unique: true, sparse: true });
 customerNotesSchema.index({ updated_at: 1, deleted: 1 });
 
+// Custom I/O Error Types Schema
+const customIOErrorTypeSchema = new mongoose.Schema({
+  _id: { type: Number, required: true },
+  label: { type: String, required: true },
+  description: { type: String },
+  icon: { type: String, default: '⚠️' },
+  uuid: { type: String },
+  synced: { type: Number, default: 0 },
+  device_id: { type: String },
+  deleted: { type: Number, default: 0 },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now }
+}, { collection: 'custom_io_error_types', versionKey: false });
+customIOErrorTypeSchema.index({ uuid: 1 }, { unique: true, sparse: true });
+customIOErrorTypeSchema.index({ updated_at: 1, deleted: 1 });
+
 // Export all models
 module.exports = {
   User: mongoose.model('User', userSchema),
@@ -636,5 +652,6 @@ module.exports = {
   SysCharm: mongoose.model('SysCharm', sysCharmSchema),
   SysAMSSystem: mongoose.model('SysAMSSystem', sysAMSSystemSchema),
   CustomerMetricHistory: mongoose.model('CustomerMetricHistory', customerMetricHistorySchema),
-  CustomerNote: mongoose.model('CustomerNote', customerNotesSchema)
+  CustomerNote: mongoose.model('CustomerNote', customerNotesSchema),
+  CustomIOErrorType: mongoose.model('CustomIOErrorType', customIOErrorTypeSchema)
 };

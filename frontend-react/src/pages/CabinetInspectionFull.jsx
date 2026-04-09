@@ -46,6 +46,7 @@ export default function CabinetInspectionFull() {
   const [showWorkstationModal, setShowWorkstationModal] = useState(false);
   const [currentWorkstationIndex, setCurrentWorkstationIndex] = useState(null);
   const [selectedWorkstationId, setSelectedWorkstationId] = useState(null);
+  const [selectedWorkstationIds, setSelectedWorkstationIds] = useState(new Set());
   const [workstationSearchTerm, setWorkstationSearchTerm] = useState('');
   
   // Switch selection modal
@@ -109,8 +110,10 @@ export default function CabinetInspectionFull() {
       is_clean: '',
       clean_filter_installed: '',
       ground_inspection: '',
+      ground_fail_reason: '',
       fan_fail_fan: '',
       fan_fail_part_number: '',
+      fan_failures: [],
     },
     
     // Rack-specific checkboxes
@@ -196,9 +199,17 @@ export default function CabinetInspectionFull() {
         network_equipment: ensureArray(cabinetData.network_equipment, []),
         controllers: ensureArray(cabinetData.controllers, []),
         workstations: ensureArray(cabinetData.workstations, []),
-        inspection: (typeof cabinetData.inspection_data === 'string'
-          ? (() => { try { return JSON.parse(cabinetData.inspection_data); } catch (_) { return {}; } })()
-          : (cabinetData.inspection_data ?? cabinetData.inspection)) || {},
+        inspection: (() => {
+          const raw = (typeof cabinetData.inspection_data === 'string'
+            ? (() => { try { return JSON.parse(cabinetData.inspection_data); } catch (_) { return {}; } })()
+            : (cabinetData.inspection_data ?? cabinetData.inspection)) || {};
+          // Migrate legacy single-fan fields to fan_failures array
+          if (!raw.fan_failures && raw.fan_fail_fan) {
+            raw.fan_failures = [{ fan: raw.fan_fail_fan, part_number: raw.fan_fail_part_number || '' }];
+          }
+          if (!raw.fan_failures) raw.fan_failures = [];
+          return raw;
+        })(),
         photos: ensureArray(cabinetData.photos, []),
         comments: cabinetData.comments || '',
         rack_has_ups: Boolean(cabinetData.rack_has_ups),
@@ -320,6 +331,23 @@ export default function CabinetInspectionFull() {
     });
   };
 
+  const addFanFailure = () => {
+    const current = formData.inspection.fan_failures || [];
+    updateInspection('fan_failures', [...current, { fan: '', part_number: '' }]);
+  };
+
+  const removeFanFailure = (index) => {
+    const updated = (formData.inspection.fan_failures || []).filter((_, i) => i !== index);
+    updateInspection('fan_failures', updated);
+  };
+
+  const updateFanFailure = (index, field, value) => {
+    const updated = (formData.inspection.fan_failures || []).map((f, i) =>
+      i === index ? { ...f, [field]: value } : f
+    );
+    updateInspection('fan_failures', updated);
+  };
+
   // Voltage validation specs — must match VOLTAGE_RANGES in backend/utils/risk-assessment.js
   const voltageSpecs = {
     line_neutral: { min: 100, max: 130, unit: 'V' },
@@ -431,7 +459,7 @@ export default function CabinetInspectionFull() {
   const addPowerInjectedBaseplate = async () => {
     const newPIB = {
       id: Date.now(),
-      pib_name: `Baseplate ${formData.power_injected_baseplates.length + 1}`,
+      pib_name: `Carrier/Baseplate ${formData.power_injected_baseplates.length + 1}`,
       voltage_type: '24VDC',
       dc_reading: '',
     };
@@ -521,22 +549,36 @@ export default function CabinetInspectionFull() {
     await autoSaveCabinet(newFormData);
   };
 
+  // Multi-select workstations: bulk-add from "Add Workstations" button (no existing slot index)
+  const selectMultipleWorkstationsFromModal = async () => {
+    if (selectedWorkstationIds.size === 0) return;
+    const selected = availableWorkstations.filter((w) => selectedWorkstationIds.has(w.id) && !w._effectivelyUsed);
+    if (selected.length === 0) return;
+    const newSlots = selected.map((ws) => ({
+      id: Date.now() + Math.random(),
+      node_id: ws.id,
+      node_name: ws.node_name,
+      model: ws.model || '',
+      serial: ws.serial || '',
+      node_type: ws.node_type || '',
+      node_category: ws.node_category || '',
+      notes: '',
+    }));
+    const newFormData = { ...formData, workstations: [...formData.workstations, ...newSlots] };
+    setFormData(newFormData);
+    setShowWorkstationModal(false);
+    setCurrentWorkstationIndex(null);
+    setSelectedWorkstationIds(new Set());
+    await autoSaveCabinet(newFormData);
+  };
+
   const addWorkstation = () => {
-    setFormData({
-      ...formData,
-      workstations: [
-        ...formData.workstations,
-        {
-          id: Date.now(),
-          node_id: '',
-          node_name: '',
-          model: '',
-          serial: '',
-          node_type: '',
-          notes: '',
-        },
-      ],
-    });
+    // Open multi-select modal; confirmation creates slots for all selected workstations
+    setCurrentWorkstationIndex(null);
+    setSelectedWorkstationId(null);
+    setSelectedWorkstationIds(new Set());
+    setWorkstationSearchTerm('');
+    setShowWorkstationModal(true);
   };
 
   const removeWorkstation = async (index) => {
@@ -601,12 +643,31 @@ export default function CabinetInspectionFull() {
     // The available controllers list updates automatically via usedControllerIds tracking.
   };
 
-  const openControllerModal = (index) => {
+  const fetchAvailableNodes = async () => {
+    if (!session?.customer_id) return;
+    try {
+      const nodesUrl = `/api/customers/${session.customer_id}/nodes${session.id ? `?sessionId=${session.id}` : ''}`;
+      const nodesData = await api.request(nodesUrl);
+      if (!Array.isArray(nodesData) || nodesData.length === 0) return;
+      const controllers = nodesData.filter((n) =>
+        (n.node_category === 'controller' || n.node_category === 'cioc' ||
+         ['Controller', 'CIOC', 'CSLS', 'SZ Controller', 'Charms Smart Logic Solver', 'DeltaV EIOC', 'SIS'].includes(n.node_type)) &&
+        !n.node_name.endsWith('-partner')
+      ).map((c) => {
+        const partnerName = `${c.node_name}-partner`;
+        return { ...c, is_redundant: nodesData.some((n) => n.node_name === partnerName) || c.is_redundant };
+      });
+      setAvailableControllers(controllers);
+    } catch (_) { /* ignore */ }
+  };
+
+  const openControllerModal = async (index) => {
     setCurrentControllerIndex(index);
     setSelectedControllerId(null);
     setControllerSearchTerm('');
     setControllerFilter('all');
     setShowControllerModal(true);
+    await fetchAvailableNodes();
   };
 
   const selectControllerFromModal = () => {
@@ -680,6 +741,31 @@ export default function CabinetInspectionFull() {
     (formData.network_equipment || []).filter(e => e.node_id).map(e => e.node_id)
   );
 
+  // Also collect node IDs used in OTHER cabinets of the same session (from session.cabinets).
+  // This catches cross-cabinet assignments that haven't been flushed to sys_* assigned_cabinet_id
+  // yet — e.g. immediately after session duplication.
+  const sessionOtherControllerIds = new Set(
+    (session?.cabinets || [])
+      .filter((cab) => String(cab.id) !== String(id))
+      .flatMap((cab) => cab.controllers || [])
+      .filter((c) => c.node_id)
+      .map((c) => c.node_id)
+  );
+  const sessionOtherWorkstationIds = new Set(
+    (session?.cabinets || [])
+      .filter((cab) => String(cab.id) !== String(id))
+      .flatMap((cab) => cab.workstations || [])
+      .filter((w) => w.node_id)
+      .map((w) => w.node_id)
+  );
+  const sessionOtherSwitchIds = new Set(
+    (session?.cabinets || [])
+      .filter((cab) => String(cab.id) !== String(id))
+      .flatMap((cab) => cab.network_equipment || [])
+      .filter((e) => e.node_id)
+      .map((e) => e.node_id)
+  );
+
   const filteredSwitchesForModal = availableSwitches.filter((s) => {
     return (
       s.node_name?.toLowerCase().includes(switchSearchTerm.toLowerCase()) ||
@@ -688,9 +774,8 @@ export default function CabinetInspectionFull() {
     );
   }).map((s) => ({
     ...s,
-    // Mark as used if already assigned in DB or selected in this form
     _isUsedInForm: usedSwitchIds.has(s.id),
-    _effectivelyUsed: !!s.assigned_cabinet_id || usedSwitchIds.has(s.id),
+    _effectivelyUsed: !!s.assigned_cabinet_id || usedSwitchIds.has(s.id) || sessionOtherSwitchIds.has(s.id),
   }));
 
   const filteredControllersForModal = availableControllers.filter((c) => {
@@ -699,8 +784,7 @@ export default function CabinetInspectionFull() {
       c.model?.toLowerCase().includes(controllerSearchTerm.toLowerCase()) ||
       c.serial?.toLowerCase().includes(controllerSearchTerm.toLowerCase());
     
-    // Check if this controller is used: either in the DB or already selected in this form
-    const isEffectivelyUsed = !!c.assigned_cabinet_id || usedControllerIds.has(c.id);
+    const isEffectivelyUsed = !!c.assigned_cabinet_id || usedControllerIds.has(c.id) || sessionOtherControllerIds.has(c.id);
     
     const matchesFilter =
       controllerFilter === 'all' ||
@@ -711,7 +795,7 @@ export default function CabinetInspectionFull() {
   }).map((c) => ({
     ...c,
     _isUsedInForm: usedControllerIds.has(c.id),
-    _effectivelyUsed: !!c.assigned_cabinet_id || usedControllerIds.has(c.id),
+    _effectivelyUsed: !!c.assigned_cabinet_id || usedControllerIds.has(c.id) || sessionOtherControllerIds.has(c.id),
   }));
 
   const handleMarkCabinetComplete = async () => {
@@ -1857,7 +1941,7 @@ export default function CabinetInspectionFull() {
                       onClick={addPowerInjectedBaseplate}
                       className="btn btn-secondary btn-sm text-xs"
                     >
-                      ➕ PI Baseplate
+                      ➕ Carrier/Baseplate
                     </button>
                   </>
                 )}
@@ -2144,7 +2228,7 @@ export default function CabinetInspectionFull() {
                 {/* Power Injected Baseplates */}
                 {formData.power_injected_baseplates.length > 0 && (
                   <div>
-                    <h4 className="text-gray-300 font-medium mb-3">Power Injected Baseplates</h4>
+                    <h4 className="text-gray-300 font-medium mb-3">Carrier/Baseplates</h4>
                     <div className="space-y-3">
                       {formData.power_injected_baseplates.map((pib, index) => (
                         <div key={pib.id || index} className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
@@ -2159,7 +2243,7 @@ export default function CabinetInspectionFull() {
                               }}
                               onBlur={() => autoSaveCabinet()}
                               className="form-input flex-1 max-w-[200px]"
-                              placeholder="Baseplate name/description"
+                              placeholder="Carrier/Baseplate name (optional)"
                               readOnly={isViewOnly}
                             />
                             {!isViewOnly && (
@@ -2570,29 +2654,69 @@ export default function CabinetInspectionFull() {
                       <option value="na">➖ N/A</option>
                     </select>
                     {item.key === 'cabinet_fans' && (formData.inspection.cabinet_fans || '') === 'fail' && (
-                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4 pl-2 border-l-2 border-red-500">
-                        <div>
-                          <label className="form-label text-sm">Fan (description/location)</label>
-                          <input
-                            type="text"
-                            value={formData.inspection.fan_fail_fan || ''}
-                            onChange={(e) => updateInspection('fan_fail_fan', e.target.value)}
-                            className="form-input"
-                            placeholder="e.g. Top rear fan"
-                            disabled={isViewOnly}
-                          />
-                        </div>
-                        <div>
-                          <label className="form-label text-sm">Part #</label>
-                          <input
-                            type="text"
-                            value={formData.inspection.fan_fail_part_number || ''}
-                            onChange={(e) => updateInspection('fan_fail_part_number', e.target.value)}
-                            className="form-input"
-                            placeholder="Replacement part number"
-                            disabled={isViewOnly}
-                          />
-                        </div>
+                      <div className="mt-3 pl-2 border-l-2 border-red-500 space-y-3">
+                        {(formData.inspection.fan_failures || []).length === 0 && (
+                          <p className="text-xs text-gray-500">No failed fans logged yet. Use + Add below.</p>
+                        )}
+                        {(formData.inspection.fan_failures || []).map((f, i) => (
+                          <div key={i} className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end bg-gray-800/50 rounded-lg p-3">
+                            <div>
+                              <label className="form-label text-sm">Fan {i + 1} (description/location)</label>
+                              <input
+                                type="text"
+                                value={f.fan || ''}
+                                onChange={(e) => updateFanFailure(i, 'fan', e.target.value)}
+                                className="form-input"
+                                placeholder="e.g. Top rear fan"
+                                disabled={isViewOnly}
+                              />
+                            </div>
+                            <div>
+                              <label className="form-label text-sm">Part #</label>
+                              <input
+                                type="text"
+                                value={f.part_number || ''}
+                                onChange={(e) => updateFanFailure(i, 'part_number', e.target.value)}
+                                className="form-input"
+                                placeholder="Replacement part number"
+                                disabled={isViewOnly}
+                              />
+                            </div>
+                            {!isViewOnly && (
+                              <div className="md:col-span-2 flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => removeFanFailure(i)}
+                                  className="text-xs text-red-400 hover:text-red-300"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        {!isViewOnly && (
+                          <button
+                            type="button"
+                            onClick={addFanFailure}
+                            className="btn btn-secondary btn-sm text-xs"
+                          >
+                            + Add failed fan
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {item.key === 'ground_inspection' && (formData.inspection.ground_inspection || '') === 'fail' && (
+                      <div className="mt-3 pl-2 border-l-2 border-red-500">
+                        <label className="form-label text-sm">Reason / Details</label>
+                        <input
+                          type="text"
+                          value={formData.inspection.ground_fail_reason || ''}
+                          onChange={(e) => updateInspection('ground_fail_reason', e.target.value)}
+                          className="form-input"
+                          placeholder="Describe the grounding issue"
+                          disabled={isViewOnly}
+                        />
                       </div>
                     )}
                   </div>
@@ -2907,12 +3031,20 @@ export default function CabinetInspectionFull() {
         <div className="modal-backdrop">
           <div className="bg-gray-800 rounded-lg shadow-2xl max-w-4xl w-full mx-4 border border-gray-700 max-h-[90vh] flex flex-col">
             <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
-              <h3 className="text-lg font-semibold text-gray-100">Select Workstation</h3>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-100">
+                  {currentWorkstationIndex !== null ? 'Select Workstation' : 'Add Workstations'}
+                </h3>
+                {currentWorkstationIndex === null && (
+                  <p className="text-sm text-gray-400 mt-0.5">Check multiple workstations to add them all at once</p>
+                )}
+              </div>
               <button
                 onClick={() => {
                   setShowWorkstationModal(false);
                   setCurrentWorkstationIndex(null);
                   setSelectedWorkstationId(null);
+                  setSelectedWorkstationIds(new Set());
                 }}
                 className="text-gray-400 hover:text-gray-200 text-2xl"
               >
@@ -2940,7 +3072,7 @@ export default function CabinetInspectionFull() {
                   ).map((ws) => ({
                     ...ws,
                     _isUsedInForm: usedWorkstationIds.has(ws.id),
-                    _effectivelyUsed: !!ws.assigned_cabinet_id || usedWorkstationIds.has(ws.id),
+                    _effectivelyUsed: !!ws.assigned_cabinet_id || usedWorkstationIds.has(ws.id) || sessionOtherWorkstationIds.has(ws.id),
                   }));
                   return filtered.length === 0 ? (
                   <div className="text-center py-8 text-gray-400">
@@ -2949,81 +3081,123 @@ export default function CabinetInspectionFull() {
                       : 'No available workstations found'}
                   </div>
                 ) : (
-                  filtered.map((ws) => (
-                    <div
-                      key={ws.id}
-                      onClick={() => {
-                        if (!ws._effectivelyUsed) {
-                          setSelectedWorkstationId(ws.id);
-                        }
-                      }}
-                      className={`p-4 rounded-lg border transition-all ${
-                        ws._effectivelyUsed
-                          ? 'opacity-50 cursor-not-allowed'
-                          : 'cursor-pointer'
-                      } ${
-                        selectedWorkstationId === ws.id && !ws._effectivelyUsed
-                          ? 'bg-blue-900/50 border-blue-500'
-                          : 'bg-gray-700/30 border-gray-600 hover:border-gray-500'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="font-medium text-gray-100">
-                            [{ws.node_type}] {ws.node_name}
-                          </div>
-                          <div className="text-sm text-gray-400 mt-1">
-                            Model: {ws.model || 'Unknown'} | Serial: {ws.serial || 'No Serial'}
-                          </div>
-                          {ws.assigned_cabinet_name && (
-                            <div className="text-sm text-yellow-400 mt-1">
-                              Assigned to: {ws.assigned_cabinet_name}
+                  filtered.map((ws) => {
+                    const isMultiMode = currentWorkstationIndex === null;
+                    const isChecked = isMultiMode
+                      ? selectedWorkstationIds.has(ws.id)
+                      : selectedWorkstationId === ws.id;
+                    return (
+                      <div
+                        key={ws.id}
+                        onClick={() => {
+                          if (ws._effectivelyUsed) return;
+                          if (isMultiMode) {
+                            setSelectedWorkstationIds((prev) => {
+                              const next = new Set(prev);
+                              next.has(ws.id) ? next.delete(ws.id) : next.add(ws.id);
+                              return next;
+                            });
+                          } else {
+                            setSelectedWorkstationId(ws.id);
+                          }
+                        }}
+                        className={`p-4 rounded-lg border transition-all ${
+                          ws._effectivelyUsed
+                            ? 'opacity-50 cursor-not-allowed'
+                            : 'cursor-pointer'
+                        } ${
+                          isChecked && !ws._effectivelyUsed
+                            ? 'bg-blue-900/50 border-blue-500'
+                            : 'bg-gray-700/30 border-gray-600 hover:border-gray-500'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex items-center gap-3 flex-1">
+                            {isMultiMode && (
+                              <input
+                                type="checkbox"
+                                readOnly
+                                checked={isChecked && !ws._effectivelyUsed}
+                                disabled={ws._effectivelyUsed}
+                                className="w-4 h-4 accent-blue-500 cursor-pointer"
+                              />
+                            )}
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-100">
+                                [{ws.node_type}] {ws.node_name}
+                              </div>
+                              <div className="text-sm text-gray-400 mt-1">
+                                Model: {ws.model || 'Unknown'} | Serial: {ws.serial || 'No Serial'}
+                              </div>
+                              {ws.assigned_cabinet_name && (
+                                <div className="text-sm text-yellow-400 mt-1">
+                                  Assigned to: {ws.assigned_cabinet_name}
+                                </div>
+                              )}
+                              {ws._isUsedInForm && !ws.assigned_cabinet_name && (
+                                <div className="text-sm text-yellow-400 mt-1">
+                                  Already selected in this rack
+                                </div>
+                              )}
                             </div>
-                          )}
-                          {ws._isUsedInForm && !ws.assigned_cabinet_name && (
-                            <div className="text-sm text-yellow-400 mt-1">
-                              Already selected in this rack
-                            </div>
-                          )}
-                        </div>
-                        <div className="ml-4 flex flex-col items-end gap-1">
-                          {ws._effectivelyUsed ? (
-                            <span className="badge badge-yellow text-xs">Used</span>
-                          ) : (
-                            <span className="badge badge-green text-xs">Available</span>
-                          )}
-                          {selectedWorkstationId === ws.id && !ws._effectivelyUsed && (
-                            <span className="text-green-400 text-xl">✓</span>
-                          )}
+                          </div>
+                          <div className="ml-4 flex flex-col items-end gap-1">
+                            {ws._effectivelyUsed ? (
+                              <span className="badge badge-yellow text-xs">Used</span>
+                            ) : (
+                              <span className="badge badge-green text-xs">Available</span>
+                            )}
+                            {!isMultiMode && isChecked && !ws._effectivelyUsed && (
+                              <span className="text-green-400 text-xl">✓</span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 );
                 })()}
               </div>
             </div>
 
-            <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3 flex-shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowWorkstationModal(false);
-                  setCurrentWorkstationIndex(null);
-                  setSelectedWorkstationId(null);
-                }}
-                className="btn btn-secondary"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={selectWorkstationFromModal}
-                disabled={selectedWorkstationId === null}
-                className="btn btn-primary"
-              >
-                Select Workstation
-              </button>
+            <div className="px-6 py-4 border-t border-gray-700 flex justify-between items-center flex-shrink-0">
+              {currentWorkstationIndex === null && selectedWorkstationIds.size > 0 && (
+                <span className="text-sm text-blue-300">{selectedWorkstationIds.size} selected</span>
+              )}
+              {currentWorkstationIndex !== null && <span />}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowWorkstationModal(false);
+                    setCurrentWorkstationIndex(null);
+                    setSelectedWorkstationId(null);
+                    setSelectedWorkstationIds(new Set());
+                  }}
+                  className="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+                {currentWorkstationIndex !== null ? (
+                  <button
+                    type="button"
+                    onClick={selectWorkstationFromModal}
+                    disabled={selectedWorkstationId === null}
+                    className="btn btn-primary"
+                  >
+                    Select Workstation
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={selectMultipleWorkstationsFromModal}
+                    disabled={selectedWorkstationIds.size === 0}
+                    className="btn btn-primary"
+                  >
+                    Add {selectedWorkstationIds.size > 0 ? `${selectedWorkstationIds.size} ` : ''}Workstation{selectedWorkstationIds.size !== 1 ? 's' : ''}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

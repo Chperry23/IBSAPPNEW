@@ -59,13 +59,13 @@ router.get('/api/ii-documents/:documentId', requireAuth, async (req, res) => {
 // Save I&I header information for a session
 router.post('/api/sessions/:sessionId/ii-header', requireAuth, async (req, res) => {
   const { sessionId } = req.params;
-  const { deltav_system_id, ii_location, ii_performed_by, ii_date_performed, ii_customer_name } = req.body;
+  const { deltav_system_id, ii_location, ii_performed_by, ii_date_performed, ii_customer_name, ii_prepared_for, ii_initials } = req.body;
   
   try {
     const now = new Date().toISOString();
     
     // Update the session with header information
-    await db.prepare('UPDATE sessions SET deltav_system_id = ?, ii_location = ?, ii_performed_by = ?, ii_date_performed = ?, ii_customer_name = ?, updated_at = ? WHERE id = ?').run([deltav_system_id, ii_location, ii_performed_by, ii_date_performed, ii_customer_name, now, sessionId]);
+    await db.prepare('UPDATE sessions SET deltav_system_id = ?, ii_location = ?, ii_performed_by = ?, ii_date_performed = ?, ii_customer_name = ?, ii_prepared_for = ?, ii_initials = ?, updated_at = ? WHERE id = ?').run([deltav_system_id, ii_location, ii_performed_by, ii_date_performed, ii_customer_name, ii_prepared_for, ii_initials, now, sessionId]);
     
     // Get the updated session
     const session = await db.prepare('SELECT * FROM sessions WHERE id = ?').get([sessionId]);
@@ -155,7 +155,7 @@ router.get('/api/ii-documents/:documentId/ii-checklist', requireAuth, async (req
 // Save I&I checklist item for a document
 router.post('/api/ii-documents/:documentId/ii-checklist', requireAuth, async (req, res) => {
   const { documentId } = req.params;
-  const { section_name, item_name, answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency } = req.body;
+  const { section_name, item_name, answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, recorded_value } = req.body;
   
   console.log(`🔍 DEBUG: Saving I&I checklist item for document ID: ${documentId}, section: ${section_name}, item: ${item_name}`);
   
@@ -178,11 +178,11 @@ router.post('/api/ii-documents/:documentId/ii-checklist', requireAuth, async (re
     let item;
     if (existing) {
       console.log(`🔍 DEBUG: Updating existing checklist item`);
-      await db.prepare('UPDATE session_ii_checklist SET answer = ?, comments = ?, performed_by = ?, date_completed = ?, measurement_ohms = ?, measurement_ac_ma = ?, measurement_dc_ma = ?, measurement_voltage = ?, measurement_frequency = ?, synced = 0, updated_at = ? WHERE id = ?').run([answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, now, existing.id]);
+      await db.prepare('UPDATE session_ii_checklist SET answer = ?, comments = ?, performed_by = ?, date_completed = ?, measurement_ohms = ?, measurement_ac_ma = ?, measurement_dc_ma = ?, measurement_voltage = ?, measurement_frequency = ?, recorded_value = ?, synced = 0, updated_at = ? WHERE id = ?').run([answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, recorded_value, now, existing.id]);
       item = await db.prepare('SELECT * FROM session_ii_checklist WHERE id = ?').get([existing.id]);
     } else {
       console.log(`🔍 DEBUG: Creating new checklist item with session_id: ${sessionId} and document_id: ${documentId}`);
-      await db.prepare('INSERT INTO session_ii_checklist (session_id, document_id, section_name, item_name, answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, uuid, synced, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)').run([sessionId, documentId, section_name, item_name, answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, uuid, now, now]);
+      await db.prepare('INSERT INTO session_ii_checklist (session_id, document_id, section_name, item_name, answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, recorded_value, uuid, synced, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)').run([sessionId, documentId, section_name, item_name, answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, recorded_value, uuid, now, now]);
       item = await db.prepare('SELECT * FROM session_ii_checklist WHERE document_id = ? AND section_name = ? AND item_name = ? AND deleted = 0').get([documentId, section_name, item_name]);
     }
     

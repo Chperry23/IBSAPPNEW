@@ -1,4 +1,5 @@
-function generateControllerPage(controllerName, errors, errorTypeLabels) {
+function generateControllerPage(controllerName, errors, errorTypeLabels = {}) {
+  const fmtCtrlType = (t) => errorTypeLabels[t] || String(t || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   const errorCounts = {};
   errors.forEach(e => {
     errorCounts[e.error_type] = (errorCounts[e.error_type] || 0) + 1;
@@ -22,7 +23,7 @@ function generateControllerPage(controllerName, errors, errorTypeLabels) {
             <tr>
               <td class="controller-cell">${controllerName}</td>
               <td><strong>${errors.length}</strong></td>
-              <td>${Object.entries(errorCounts).sort((a,b) => b[1] - a[1])[0][0]}</td>
+              <td>${fmtCtrlType(Object.entries(errorCounts).sort((a,b) => b[1] - a[1])[0][0])}</td>
             </tr>
           </tbody>
         </table>
@@ -40,7 +41,7 @@ function generateControllerPage(controllerName, errors, errorTypeLabels) {
           <tbody>
             ${Object.entries(errorCounts).map(([type, count]) => `
               <tr>
-                <td class="error-type-cell">${errorTypeLabels[type] || type}</td>
+                <td class="error-type-cell">${fmtCtrlType(type)}</td>
                 <td>${count}</td>
               </tr>
             `).join('')}
@@ -68,7 +69,7 @@ function generateControllerPage(controllerName, errors, errorTypeLabels) {
                 <td class="card-cell">${error.bus_type || '-'}</td>
                 <td class="card-cell">${error.card_display || error.card_number || '-'}</td>
                 <td class="channel-cell">${error.channel_number !== null ? error.channel_number : 'N/A'}</td>
-                <td class="error-type-cell">${errorTypeLabels[error.error_type] || error.error_type}</td>
+                <td class="error-type-cell">${fmtCtrlType(error.error_type)}</td>
                 <td class="description-cell">${error.error_description || error.notes || 'No description'}</td>
               </tr>
             `).join('')}
@@ -80,6 +81,7 @@ function generateControllerPage(controllerName, errors, errorTypeLabels) {
 }
 
 function generateDiagnosticsPage(diagnosticsData) {
+  diagnosticsData = (diagnosticsData || []).filter((d) => d.error_type !== 'io_card_slot');
   if (!diagnosticsData || diagnosticsData.length === 0) {
     return `
       <div class="page-break">
@@ -126,8 +128,17 @@ function generateDiagnosticsPage(diagnosticsData) {
     'not_communicating': 'Communication Failure',
     'abnormal': 'Abnormal Status',
     'fail': 'Device Failure',
-    'warning': 'Warning Condition'
+    'warning': 'Warning Condition',
+    'no_card': 'No Card',
+    'short_circuit': 'Short Circuit',
+    'loop_current_saturated': 'Loop Current Saturated',
+    'open_loop': 'Open Loop',
+    'device_error': 'Device Error',
+    'device_errors_on_link': 'Device Errors on Link',
+    'function_block_problems': 'Function Block Problems on Link',
+    'device_not_in_range': 'Device Not in Range on Link',
   };
+  const fmtType = (t) => errorTypeLabels[t] || String(t || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
   let html = `
     <div class="page-break">
@@ -160,7 +171,7 @@ function generateDiagnosticsPage(diagnosticsData) {
           <tbody>
             ${Object.entries(globalErrorCounts).sort((a,b) => b[1] - a[1]).map(([type, count]) => `
               <tr>
-                <td class="error-type-cell">${errorTypeLabels[type] || type}</td>
+                <td class="error-type-cell">${fmtType(type)}</td>
                 <td>${count}</td>
                 <td>${Math.round((count / diagnosticsData.length) * 100)}%</td>
               </tr>
@@ -191,7 +202,7 @@ function generateDiagnosticsPage(diagnosticsData) {
               
               return Object.entries(cardGroups).map(([cardKey, cardErrors]) => {
                 // Get unique error types for this card
-                const errorTypes = [...new Set(cardErrors.map(e => errorTypeLabels[e.error_type] || e.error_type))];
+                const errorTypes = [...new Set(cardErrors.map(e => fmtType(e.error_type)))];
                 const devices = [...new Set(cardErrors.map(e => e.device_name).filter(Boolean))];
                 const location = devices.length > 0 
                   ? `Card ${cardKey} (${devices.slice(0, 3).join(', ')}${devices.length > 3 ? '...' : ''})`
@@ -220,8 +231,11 @@ function generateDiagnosticsPage(diagnosticsData) {
 
 /**
  * Generate comprehensive diagnostics summary with charts
+ * @param {Array}  diagnosticsData    - raw diagnostics rows
+ * @param {Object} customErrorLabels  - map of "custom_N" → human-readable label (from DB)
  */
-function generateDiagnosticsSummary(diagnosticsData) {
+function generateDiagnosticsSummary(diagnosticsData, customErrorLabels = {}) {
+  diagnosticsData = (diagnosticsData || []).filter((d) => d.error_type !== 'io_card_slot');
   if (!diagnosticsData || diagnosticsData.length === 0) {
     return `
       <div class="page-break" style="page-break-before: always;">
@@ -235,8 +249,8 @@ function generateDiagnosticsSummary(diagnosticsData) {
     `;
   }
 
-  // Calculate error statistics (expand for display; unknown types fall back to formatted key)
-  const errorTypeLabels = {
+  // Built-in error type labels merged with any custom types passed in from the DB
+  const builtInLabels = {
     'bad': 'Component Fault',
     'not_communicating': 'Communication Failure',
     'abnormal': 'Abnormal Status',
@@ -246,12 +260,19 @@ function generateDiagnosticsSummary(diagnosticsData) {
     'short_circuit': 'Short Circuit',
     'loop_current_saturated': 'Loop Current Saturated',
     'open_loop': 'Open Loop',
-    'device_error': 'Device Error'
+    'device_error': 'Device Error',
+    'device_errors_on_link': 'Device Errors on Link',
+    'function_block_problems': 'Function Block Problems on Link',
+    'device_not_in_range': 'Device Not in Range on Link',
   };
+  const errorTypeLabels = { ...builtInLabels, ...customErrorLabels };
+
   const formatErrorType = (type) => {
     if (!type) return '-';
     const key = String(type).toLowerCase().replace(/\s+/g, '_');
-    return errorTypeLabels[key] || String(type).replace(/_/g, ' ');
+    if (errorTypeLabels[key]) return errorTypeLabels[key];
+    // Unknown type: replace underscores with spaces and title-case
+    return String(type).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   };
 
   const errorCounts = {};
@@ -269,17 +290,15 @@ function generateDiagnosticsSummary(diagnosticsData) {
 
   const totalErrors = diagnosticsData.length;
   const errorTypes = Object.entries(errorCounts).sort((a, b) => b[1] - a[1]);
-  const labels = errorTypes.map(([type]) => errorTypeLabels[type] || type);
+  const labels = errorTypes.map(([type]) => formatErrorType(type));
   const data = errorTypes.map(([, count]) => count);
-  const polarColors = [
-    'rgba(220, 53, 69, 0.6)',
-    'rgba(253, 126, 20, 0.6)',
-    'rgba(255, 193, 7, 0.6)',
-    'rgba(40, 167, 69, 0.6)',
-    'rgba(0, 123, 255, 0.6)',
-    'rgba(111, 66, 193, 0.6)'
+  const barColors = [
+    '#dc3545', '#fd7e14', '#ffc107', '#28a745', '#007bff',
+    '#6f42c1', '#17a2b8', '#e83e8c', '#20c997', '#6610f2',
+    '#e67e22', '#1abc9c', '#9b59b6', '#3498db', '#e74c3c',
   ];
-  const chartDataJson = JSON.stringify({ labels, data, backgroundColor: polarColors.slice(0, labels.length) }).replace(/</g, '\\u003c');
+  const bgColors = labels.map((_, i) => barColors[i % barColors.length]);
+  const maxCount = data.length > 0 ? Math.max(...data) : 1;
 
   return `
     <div class="page-break" style="page-break-before: always;">
@@ -299,46 +318,19 @@ function generateDiagnosticsSummary(diagnosticsData) {
         </div>
       </div>
 
-      <div class="chart-container" style="margin: 30px 0; page-break-inside: avoid;">
-        <h3 class="section-title" style="margin-bottom: 20px;">Error Distribution by Type</h3>
-        <script>window.__DIAGNOSTICS_CHART_DATA__ = ${chartDataJson};<\/script>
-        <div style="display: flex; justify-content: center;">
-          <canvas id="diagnostics-polar-chart" width="320" height="280" style="max-width: 320px;"></canvas>
+      <div style="margin: 30px 0; page-break-inside: avoid;">
+        <h3 class="section-title" style="margin-bottom: 15px;">Error Distribution by Type</h3>
+        <div style="background: white; border-radius: 8px; padding: 16px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+          ${labels.map((label, i) => `
+            <div style="display: flex; align-items: center; gap: 10px; margin: 5px 0;">
+              <div style="width: 170px; min-width: 170px; font-size: 11px; text-align: right; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${label.replace(/"/g, '&quot;')}">${label}</div>
+              <div style="flex: 1; background: #f0f4f8; height: 20px; border-radius: 4px; overflow: hidden;">
+                <div style="width: ${Math.round(data[i] / maxCount * 100)}%; height: 100%; background: ${bgColors[i]}; border-radius: 4px; min-width: 2px;"></div>
+              </div>
+              <div style="width: 28px; min-width: 28px; font-size: 11px; font-weight: 700; color: #444; text-align: left;">${data[i]}</div>
+            </div>
+          `).join('')}
         </div>
-        <script>
-        (function(){
-          var data = window.__DIAGNOSTICS_CHART_DATA__;
-          if (!data || !data.labels || !data.labels.length) return;
-          function init() {
-            if (typeof Chart === 'undefined') { setTimeout(init, 50); return; }
-            var el = document.getElementById('diagnostics-polar-chart');
-            if (!el) return;
-            new Chart(el.getContext('2d'), {
-              type: 'polarArea',
-              data: {
-                labels: data.labels,
-                datasets: [{
-                  label: 'Errors',
-                  data: data.data,
-                  backgroundColor: data.backgroundColor
-                }]
-              },
-              options: {
-                responsive: false,
-                plugins: {
-                  legend: { position: 'bottom' },
-                  title: { display: false }
-                },
-                scales: {
-                  r: { beginAtZero: true }
-                }
-              }
-            });
-          }
-          if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-          else init();
-        })();
-        <\/script>
       </div>
 
       <div style="margin: 30px 0;">
@@ -401,6 +393,7 @@ function generateDiagnosticsSummary(diagnosticsData) {
  * Generate detailed controller breakdown (appears after cabinets)
  */
 function generateControllerBreakdown(diagnosticsData) {
+  diagnosticsData = (diagnosticsData || []).filter((d) => d.error_type !== 'io_card_slot');
   if (!diagnosticsData || diagnosticsData.length === 0) {
     return '';
   }
@@ -410,8 +403,17 @@ function generateControllerBreakdown(diagnosticsData) {
     'not_communicating': 'Communication Failure',
     'abnormal': 'Abnormal Status',
     'fail': 'Device Failure',
-    'warning': 'Warning Condition'
+    'warning': 'Warning Condition',
+    'no_card': 'No Card',
+    'short_circuit': 'Short Circuit',
+    'loop_current_saturated': 'Loop Current Saturated',
+    'open_loop': 'Open Loop',
+    'device_error': 'Device Error',
+    'device_errors_on_link': 'Device Errors on Link',
+    'function_block_problems': 'Function Block Problems on Link',
+    'device_not_in_range': 'Device Not in Range on Link',
   };
+  const fmtBreakdownType = (t) => errorTypeLabels[t] || String(t || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
   const controllerGroups = {};
   diagnosticsData.forEach(diagnostic => {
@@ -442,7 +444,7 @@ function generateControllerBreakdown(diagnosticsData) {
           <tbody>
             ${diagnosticsData.map((error, index) => {
               const bgColor = index % 2 === 0 ? '#f8f9fa' : 'white';
-              const errorLabel = errorTypeLabels[error.error_type] || error.error_type;
+              const errorLabel = fmtBreakdownType(error.error_type);
               const description = error.error_description || error.notes || 'No description provided';
               
               return `

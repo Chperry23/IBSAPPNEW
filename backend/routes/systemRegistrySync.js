@@ -3,6 +3,12 @@ const router = express.Router();
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
 
+const redundantFromSysReg = (r) => {
+  if (r == null || r === '') return false;
+  const v = String(r).trim().toLowerCase();
+  return v === 'yes' || v === 'true' || v === '1';
+};
+
 /**
  * Sync System Registry data to Nodes table
  * POST /api/customers/:customerId/system-registry/sync-to-nodes
@@ -136,7 +142,7 @@ router.post('/:customerId/sync-to-nodes', requireAuth, async (req, res) => {
       }
       
       // Create partner node if redundant
-      if (ctrl.redundant && ctrl.redundant.toLowerCase() === 'yes' && ctrl.partner_serial_number) {
+      if (redundantFromSysReg(ctrl.redundant) && ctrl.partner_serial_number) {
         const partnerName = `${ctrl.name}-partner`;
         const partnerExists = await db.prepare(`
           SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?
@@ -263,7 +269,7 @@ router.post('/:customerId/sync-to-nodes', requireAuth, async (req, res) => {
       }
       
       // Create partner node if redundant
-      if (cioc.redundant && cioc.redundant.toLowerCase() === 'yes' && cioc.partner_serial_number) {
+      if (redundantFromSysReg(cioc.redundant) && cioc.partner_serial_number) {
         const partnerName = `${cioc.name}-partner`;
         const partnerExists = await db.prepare(`
           SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?

@@ -10,6 +10,22 @@ function setupEnhancedMergeSyncEndpoints(app, localDb, mongoConnectionString) {
   const migrationUtility = new SyncMigrationUtility(localDb);
 
   // ============================================================
+  // ADMIN PASSWORD VERIFICATION
+  // ============================================================
+
+  app.post('/api/sync/verify-admin', (req, res) => {
+    const { password } = req.body;
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    if (!adminPassword) {
+      return res.status(500).json({ success: false, error: 'ADMIN_PASSWORD not configured on server.' });
+    }
+    if (password === adminPassword) {
+      return res.json({ success: true });
+    }
+    return res.status(401).json({ success: false, error: 'Incorrect password.' });
+  });
+
+  // ============================================================
   // CORE SYNC ENDPOINTS
   // ============================================================
 

@@ -1,9 +1,0 @@
-{
-  "_comment": "Fill in your Azure AD app credentials to enable SharePoint sync. See README for setup instructions.",
-  "tenantId":     "YOUR-AZURE-TENANT-ID",
-  "clientId":     "YOUR-APP-CLIENT-ID",
-  "clientSecret": "YOUR-APP-CLIENT-SECRET",
-  "siteHost":     "eciit.sharepoint.com",
-  "sitePath":     "/sites/InstalledBaseServices",
-  "listName":     "ECIIBSSiteNotes"
-}

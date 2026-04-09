@@ -21,6 +21,7 @@ const systemRegistryRoutes = require('./routes/systemRegistry');
 const systemRegistrySyncRoutes = require('./routes/systemRegistrySync');
 const locationRoutes = require('./routes/locations');
 const sharepointRoutes = require('./routes/sharepoint');
+const customErrorTypesRoutes = require('./routes/customErrorTypes');
 
 const PORT = process.env.PORT || 3000;
 
@@ -41,8 +42,8 @@ function createApp(options = {}) {
 
   const app = express();
 
-  app.use(bodyParser.json({ limit: '10mb' }));
-  app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
+  app.use(bodyParser.json({ limit: '50mb' }));
+  app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
   app.use(session({
     secret: 'cabinet-pm-secret-key',
@@ -85,6 +86,7 @@ function createApp(options = {}) {
   app.use('/', systemRegistryRoutes);
   app.use('/api/customers', systemRegistrySyncRoutes);
   app.use('/api', locationRoutes);
+  app.use('/api/custom-error-types', customErrorTypesRoutes);
   app.use('/', sharepointRoutes);
 
   if (!catchAllPath) {

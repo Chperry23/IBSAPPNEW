@@ -11,7 +11,7 @@ router.get('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
   try {
     const maintenanceData = await db.prepare(`
       SELECT node_id, dv_checked, os_checked, macafee_checked, 
-             free_time, redundancy_checked, cold_restart_checked, no_errors_checked,
+             free_time, redundancy_checked, cold_restart_checked, has_io_errors,
              hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked,
              notes, is_custom_node, completed
       FROM session_node_maintenance 
@@ -28,7 +28,7 @@ router.get('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
         free_time: item.free_time || '',
         redundancy_checked: Boolean(item.redundancy_checked),
         cold_restart_checked: Boolean(item.cold_restart_checked),
-        no_errors_checked: Boolean(item.no_errors_checked),
+        has_io_errors: item.has_io_errors == null ? true : Boolean(item.has_io_errors),
         hdd_replaced: Boolean(item.hdd_replaced),
         performance_type: item.performance_type || null,
         performance_value: item.performance_value || null,
@@ -64,7 +64,7 @@ router.post('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
     for (const [nodeId, maintenance] of Object.entries(maintenanceData)) {
       const hasData = maintenance.dv_checked || maintenance.os_checked || maintenance.macafee_checked ||
                      maintenance.redundancy_checked || maintenance.cold_restart_checked || 
-                     (maintenance.no_errors_checked !== undefined) ||
+                     (maintenance.has_io_errors !== undefined) ||
                      maintenance.hdd_replaced || maintenance.hf_updated ||
                      maintenance.firmware_updated_checked || (maintenance.free_time && String(maintenance.free_time).trim()) ||
                      maintenance.performance_type || maintenance.performance_value != null ||
@@ -79,14 +79,14 @@ router.post('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
       await db.prepare(`
         INSERT INTO session_node_maintenance (
           session_id, node_id, dv_checked, os_checked, macafee_checked,
-          free_time, redundancy_checked, cold_restart_checked, no_errors_checked,
+          free_time, redundancy_checked, cold_restart_checked, has_io_errors,
           hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked,
           notes, is_custom_node, completed
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(session_id, node_id) DO UPDATE SET
           dv_checked=excluded.dv_checked, os_checked=excluded.os_checked, macafee_checked=excluded.macafee_checked,
           free_time=excluded.free_time, redundancy_checked=excluded.redundancy_checked, cold_restart_checked=excluded.cold_restart_checked,
-          no_errors_checked=excluded.no_errors_checked, hdd_replaced=excluded.hdd_replaced,
+          has_io_errors=excluded.has_io_errors, hdd_replaced=excluded.hdd_replaced,
           performance_type=excluded.performance_type, performance_value=excluded.performance_value,
           hf_updated=excluded.hf_updated, firmware_updated_checked=excluded.firmware_updated_checked,
           notes=excluded.notes, is_custom_node=excluded.is_custom_node, completed=excluded.completed,
@@ -95,7 +95,7 @@ router.post('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
         sessionId, nid,
         maintenance.dv_checked ? 1 : 0, maintenance.os_checked ? 1 : 0, maintenance.macafee_checked ? 1 : 0,
         maintenance.free_time || null, maintenance.redundancy_checked ? 1 : 0, maintenance.cold_restart_checked ? 1 : 0,
-        maintenance.no_errors_checked ? 1 : 0, maintenance.hdd_replaced ? 1 : 0,
+        maintenance.has_io_errors != null ? (maintenance.has_io_errors ? 1 : 0) : 1, maintenance.hdd_replaced ? 1 : 0,
         maintenance.performance_type || 'free_time', maintenance.performance_value != null ? maintenance.performance_value : null,
         maintenance.hf_updated ? 1 : 0, maintenance.firmware_updated_checked ? 1 : 0,
         maintenance.notes || null, maintenance.is_custom_node ? 1 : 0, maintenance.completed ? 1 : 0

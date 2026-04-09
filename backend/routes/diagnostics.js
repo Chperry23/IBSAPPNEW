@@ -48,7 +48,9 @@ router.get('/:sessionId/diagnostics/io-devices/:controllerName', requireAuth, as
       'SELECT id, name, model FROM sys_controllers WHERE customer_id = ? AND name = ?'
     ).get([customerId, controllerName]);
     
-    const isCioc = !!cioc;
+    // Also treat as CIOC if the model indicates a CIOC2 imported into sys_controllers
+    const controllerModel = (controller?.model || '').toLowerCase();
+    const isCioc = !!cioc || (!!controller && (controllerModel.includes('cioc') || controllerModel.includes('charm io card')));
     
     let ioDevices = [];
     
@@ -303,6 +305,8 @@ router.put('/:sessionId/diagnostics/:diagnosticId', requireAuth, async (req, res
 });
 
 // Delete diagnostic (soft delete for sync)
+// If the deleted row is an io_card_slot (registered card placeholder), also cascade-delete
+// all error rows that belong to that card (same controller_name + card_type + card_number).
 router.delete('/:sessionId/diagnostics/:diagnosticId', requireAuth, async (req, res) => {
   const sessionId = req.params.sessionId;
   const diagnosticId = req.params.diagnosticId;
@@ -315,19 +319,44 @@ router.delete('/:sessionId/diagnostics/:diagnosticId', requireAuth, async (req, 
         message: 'This PM session has been completed and cannot be modified. Create a new session to make changes.'
       });
     }
-    
-    // Soft delete for sync tracking
-    const result = await db.prepare(`
-      UPDATE session_diagnostics SET 
-        deleted = 1, synced = 0, updated_at = CURRENT_TIMESTAMP 
-      WHERE id = ? AND session_id = ?
-    `).run([diagnosticId, sessionId]);
-    
-    if (result.changes === 0) {
+
+    // Fetch the row being deleted so we know if it's a card slot
+    const target = await db.prepare(
+      'SELECT error_type, controller_name, card_type, card_number FROM session_diagnostics WHERE id = ? AND session_id = ? AND deleted = 0'
+    ).get([diagnosticId, sessionId]);
+
+    if (!target) {
       return res.status(404).json({ error: 'Diagnostic not found' });
     }
+
+    // Soft-delete the requested row
+    await db.prepare(`
+      UPDATE session_diagnostics SET deleted = 1, synced = 0, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND session_id = ?
+    `).run([diagnosticId, sessionId]);
+
+    let cascadeCount = 0;
+
+    // If this was a registered card slot, also remove all error rows for that card
+    if (target.error_type === 'io_card_slot') {
+      const cascade = await db.prepare(`
+        UPDATE session_diagnostics SET deleted = 1, synced = 0, updated_at = CURRENT_TIMESTAMP
+        WHERE session_id = ?
+          AND controller_name = ?
+          AND card_type = ?
+          AND card_number = ?
+          AND error_type != 'io_card_slot'
+          AND deleted = 0
+      `).run([sessionId, target.controller_name, target.card_type, target.card_number]);
+      cascadeCount = cascade.changes;
+    }
     
-    res.json({ success: true, message: 'Diagnostic marked for deletion and will be synced to cloud' });
+    res.json({
+      success: true,
+      message: cascadeCount > 0
+        ? `Card removed along with ${cascadeCount} associated error(s)`
+        : 'Diagnostic removed'
+    });
   } catch (error) {
     console.error('Delete diagnostic error:', error);
     res.status(500).json({ error: 'Database error' });

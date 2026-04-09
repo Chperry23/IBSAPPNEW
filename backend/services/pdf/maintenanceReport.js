@@ -71,13 +71,12 @@ function generateMaintenanceReportPage(nodeMaintenanceData) {
     } else if (tableType === 'workstations') {
       headers = ['Computer', 'Type', 'Model', 'DV HF', 'OS Update', 'McAfee', 'HDD Replaced', 'Notes/Reason', 'Done'];
     } else {
-      headers = ['Node Name', 'Type', 'Serial', 'DV HF', 'Firmware Updated', 'Notes/Reason', 'Done'];
+      headers = ['Node Name', 'Model', 'Type', 'Serial', 'DV HF', 'Firmware Updated', 'Notes/Reason', 'Done'];
     }
 
-    const isNoErrors = (node) => {
-      if (node.no_errors_checked === undefined || node.no_errors_checked === null) return true;
-      return Boolean(node.no_errors_checked);
-    };
+    // has_io_errors false = no I/O issues; true = has I/O issues (Errors column checked)
+    const isNoErrors = (node) =>
+      node.has_io_errors === false || node.has_io_errors === 0 ? true : false;
 
     return `
       <div class="maintenance-section">
@@ -130,6 +129,7 @@ function generateMaintenanceReportPage(nodeMaintenanceData) {
               return `
               <tr>
                 <td>${node.node_name || 'Unknown'}</td>
+                <td>${node.model || '—'}</td>
                 <td>${(node.node_type || '—')}</td>
                 <td>${node.serial || 'N/A'}</td>
                 <td class="${node.hf_updated ? 'checked-cell' : ''}">${node.hf_updated ? '✅' : ''}</td>
@@ -159,6 +159,21 @@ function generateMaintenanceReportPage(nodeMaintenanceData) {
   return `
     <div class="page-break" style="page-break-before: always;">
       <h2 style="text-align: center; color: #2563eb; font-size: 28px; margin: 20px 0; padding: 15px; border-bottom: 3px solid #2563eb;">Node Maintenance Report</h2>
+
+      ${controllers.length ? `
+      <div style="background:#fffbe6; border-left:4px solid #f0a500; padding:12px 16px; margin-bottom:16px; font-size:11px; border-radius:2px;">
+        <strong>Controller Performance Reference (KBA AP-0900-0129)</strong>
+        <p style="margin:6px 0 4px;">Controllers use one of two diagnostic parameters depending on hardware/software generation:</p>
+        <ul style="margin:0 0 4px; padding-left:18px;">
+          <li><strong>FRETIM (Free Time %)</strong> &mdash; Recommended minimum: <strong>20%</strong> (M5/M5 Plus, MD/MD Plus, MX, SD Plus, SX).
+              For controllers using CIOC: no less than <strong>28%</strong> (SD Plus and SX).</li>
+          <li><strong>PERF_INDEX (Performance Index)</strong> &mdash; Recommended minimum: <strong>2 or higher</strong> on all sub-indices
+              (Control, Comms, System, Free Memory). The overall Performance Index is determined by the lowest sub-score.</li>
+        </ul>
+        <p style="margin:0;">Values shown as <strong>&#9888; RISKY</strong> in the table below are below these thresholds and should be trended historically for optimal controller performance.</p>
+      </div>
+      ` : ''}
+
       ${controllers.length ? generateMaintenanceTable(controllers, 'Controllers', 'controllers') : ''}
     </div>
     ${computers.length ? `<div style="page-break-before: always;">${generateMaintenanceTable(computers, 'Computers & Workstations', 'workstations')}</div>` : ''}

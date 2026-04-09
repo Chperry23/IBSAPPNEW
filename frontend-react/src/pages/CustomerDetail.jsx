@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import api from '../services/api';
 import soundSystem from '../utils/sounds';
+import { formatSessionNameWithLabel } from '../utils/sessionName';
 
 export default function CustomerDetail() {
   const { id } = useParams();
@@ -22,6 +23,7 @@ export default function CustomerDetail() {
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
   const [newSessionType, setNewSessionType] = useState('pm');
   const [newSessionDate, setNewSessionDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [newSessionSiteLabel, setNewSessionSiteLabel] = useState('');
   const [showEditSessionModal, setShowEditSessionModal] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
   const [showSystemRegModal, setShowSystemRegModal] = useState(false);
@@ -32,6 +34,7 @@ export default function CustomerDetail() {
   const [showTrendModal, setShowTrendModal] = useState(false);
   const [metricHistory, setMetricHistory] = useState([]);
   const [metricHistoryLoading, setMetricHistoryLoading] = useState(false);
+  const [expandedMetricRow, setExpandedMetricRow] = useState(null);
   const [showSystemPassword, setShowSystemPassword] = useState(false);
   const [systemRegStats, setSystemRegStats] = useState(null);
   const [spSyncing, setSpSyncing] = useState(false);
@@ -300,21 +303,17 @@ export default function CustomerDetail() {
     }
   };
 
-  const generateNewSessionName = (type, dateStr) => {
-    const d = dateStr ? new Date(dateStr + 'T12:00:00') : new Date();
-    const m = d.getMonth() + 1;
-    const day = d.getDate();
-    const yr = d.getFullYear();
-    const prefix = type === 'ii' ? 'I&I' : 'PM';
-    return `${prefix}-${m}/${day}/${yr}`;
-  };
-
   const handleCreateSession = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
     const data = {
-      ...Object.fromEntries(formData),
       customer_id: id,
+      session_type: formData.get('session_type') || 'pm',
+      session_name: formatSessionNameWithLabel(
+        newSessionSiteLabel,
+        newSessionType,
+        newSessionDate
+      ),
     };
 
     console.log('Creating session with data:', data);
@@ -325,6 +324,7 @@ export default function CustomerDetail() {
       if (result.success) {
         soundSystem.playSuccess();
         setShowNewSessionModal(false);
+        setNewSessionSiteLabel('');
         loadCustomerData();
         showMessage(`${data.session_type?.toUpperCase() || 'Session'} created successfully`, 'success');
         e.target.reset();
@@ -437,34 +437,129 @@ export default function CustomerDetail() {
                 <p className="text-gray-500 text-center py-8">No history yet. Complete PM sessions and check &quot;Save to customer history&quot; to build trends here.</p>
               ) : (
                 <div className="overflow-x-auto">
+                  <p className="text-xs text-gray-500 mb-3">Risk Score is 0–100 (normalized failure rate — comparable across site sizes). Click a row to see domain breakdown.</p>
                   <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr className="border-b border-gray-600">
                         <th className="text-left py-2 px-3 text-gray-400 font-medium">Date</th>
                         <th className="text-left py-2 px-3 text-gray-400 font-medium">Session</th>
                         <th className="text-right py-2 px-3 text-gray-400 font-medium">Errors</th>
-                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Risk score</th>
-                        <th className="text-left py-2 px-3 text-gray-400 font-medium">Risk level</th>
-                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Components</th>
-                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Failed</th>
+                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Risk Score (0–100)</th>
+                        <th className="text-left py-2 px-3 text-gray-400 font-medium">Status</th>
+                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Coverage</th>
+                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Failed / Total</th>
                         <th className="text-right py-2 px-3 text-gray-400 font-medium">Cabinets</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {metricHistory.map((row) => (
-                        <tr key={row.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                          <td className="py-2 px-3 text-gray-300">
-                            {row.recorded_at ? new Date(row.recorded_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
-                          </td>
-                          <td className="py-2 px-3 text-gray-200">{row.session_name || row.session_id || '—'}</td>
-                          <td className="py-2 px-3 text-right text-gray-300">{row.error_count ?? '—'}</td>
-                          <td className="py-2 px-3 text-right text-gray-300">{row.risk_score ?? '—'}</td>
-                          <td className="py-2 px-3 text-gray-300">{row.risk_level || '—'}</td>
-                          <td className="py-2 px-3 text-right text-gray-300">{row.total_components ?? '—'}</td>
-                          <td className="py-2 px-3 text-right text-gray-300">{row.failed_components ?? '—'}</td>
-                          <td className="py-2 px-3 text-right text-gray-300">{row.cabinet_count ?? '—'}</td>
-                        </tr>
-                      ))}
+                      {metricHistory.map((row) => {
+                        const isExpanded = expandedMetricRow === row.id;
+                        const domainScores = (() => {
+                          try { return row.domain_scores ? JSON.parse(row.domain_scores) : null; } catch { return null; }
+                        })();
+                        const coveragePct = (row.coverage_total > 0)
+                          ? Math.round(100 * (row.coverage_completed ?? 0) / row.coverage_total)
+                          : null;
+                        const badgeColors = {
+                          CRITICAL: 'bg-red-900/60 text-red-300',
+                          MODERATE: 'bg-orange-900/60 text-orange-300',
+                          LOW:       'bg-yellow-900/60 text-yellow-300',
+                          GOOD:      'bg-green-900/60 text-green-300',
+                        };
+                        const badgeCls = badgeColors[row.risk_level] || 'bg-gray-700 text-gray-300';
+                        const scoreColor = (row.risk_score >= 60) ? 'text-red-400' : (row.risk_score >= 30) ? 'text-orange-400' : (row.risk_score >= 10) ? 'text-yellow-400' : 'text-green-400';
+                        const domainLabels = {
+                          controllers:       'Controllers',
+                          network:           'Network',
+                          power:             'Power',
+                          cabinet_condition: 'Cabinet',
+                          environmental:     'Environ.',
+                          node_maintenance:  'Nodes',
+                        };
+                        return (
+                          <>
+                            <tr
+                              key={row.id}
+                              className="border-b border-gray-700/50 hover:bg-gray-700/30 cursor-pointer select-none"
+                              onClick={() => setExpandedMetricRow(isExpanded ? null : row.id)}
+                            >
+                              <td className="py-2 px-3 text-gray-300">
+                                {row.recorded_at ? new Date(row.recorded_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                              </td>
+                              <td className="py-2 px-3 text-gray-200 max-w-[180px] truncate">{row.session_name || row.session_id || '—'}</td>
+                              <td className="py-2 px-3 text-right text-gray-300">{row.error_count ?? '—'}</td>
+                              <td className={`py-2 px-3 text-right font-bold ${scoreColor}`}>{row.risk_score ?? '—'}</td>
+                              <td className="py-2 px-3">
+                                {row.risk_level ? (
+                                  <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded ${badgeCls}`}>{row.risk_level}</span>
+                                ) : '—'}
+                              </td>
+                              <td className="py-2 px-3 text-right text-gray-300">
+                                {coveragePct !== null ? `${coveragePct}%` : '—'}
+                              </td>
+                              <td className="py-2 px-3 text-right text-gray-300">
+                                {(row.failed_components != null && row.total_components != null)
+                                  ? `${row.failed_components} / ${row.total_components}`
+                                  : '—'}
+                              </td>
+                              <td className="py-2 px-3 text-right text-gray-300">{row.cabinet_count ?? '—'}</td>
+                            </tr>
+                            {isExpanded && (
+                              <tr key={`${row.id}-detail`} className="border-b border-gray-700/50 bg-gray-900/40">
+                                <td colSpan={8} className="py-3 px-4">
+                                  <div className="grid grid-cols-2 gap-4 text-xs">
+                                    <div>
+                                      <div className="text-gray-400 font-semibold mb-2 uppercase tracking-wide">Domain Scores (0–100)</div>
+                                      {domainScores ? (
+                                        <div className="space-y-1.5">
+                                          {Object.entries(domainLabels).map(([key, label]) => {
+                                            const val = domainScores[key];
+                                            if (val === null || val === undefined) return (
+                                              <div key={key} className="flex items-center gap-2">
+                                                <span className="w-20 text-gray-500">{label}</span>
+                                                <span className="text-gray-600 italic">not inspected</span>
+                                              </div>
+                                            );
+                                            const barColor = val >= 60 ? 'bg-red-500' : val >= 30 ? 'bg-orange-500' : val >= 10 ? 'bg-yellow-500' : 'bg-green-500';
+                                            const textColor = val >= 60 ? 'text-red-400' : val >= 30 ? 'text-orange-400' : val >= 10 ? 'text-yellow-400' : 'text-green-400';
+                                            return (
+                                              <div key={key} className="flex items-center gap-2">
+                                                <span className="w-20 text-gray-400">{label}</span>
+                                                <div className="flex-1 bg-gray-700 rounded h-2 overflow-hidden">
+                                                  <div className={`h-full rounded ${barColor}`} style={{ width: `${Math.min(val, 100)}%` }} />
+                                                </div>
+                                                <span className={`w-8 text-right font-bold ${textColor}`}>{val}</span>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      ) : (
+                                        <span className="text-gray-600 italic">No domain data (session pre-dates this feature)</span>
+                                      )}
+                                    </div>
+                                    <div>
+                                      <div className="text-gray-400 font-semibold mb-2 uppercase tracking-wide">Coverage</div>
+                                      {row.coverage_total > 0 ? (
+                                        <div className="space-y-1 text-gray-300">
+                                          <div>{row.coverage_completed} / {row.coverage_total} check-points recorded</div>
+                                          <div className="flex items-center gap-2 mt-2">
+                                            <div className="flex-1 bg-gray-700 rounded h-2 overflow-hidden">
+                                              <div className="h-full rounded bg-blue-500" style={{ width: `${coveragePct}%` }} />
+                                            </div>
+                                            <span className="text-blue-400 font-bold w-10 text-right">{coveragePct}%</span>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <span className="text-gray-600 italic">No coverage data</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1157,6 +1252,20 @@ export default function CustomerDetail() {
                   </select>
                 </div>
                 <div>
+                  <label className="form-label">Site / session label</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. Sherwood"
+                    value={newSessionSiteLabel}
+                    onChange={(e) => setNewSessionSiteLabel(e.target.value)}
+                    autoComplete="off"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Optional. Example: <strong className="text-gray-400">Sherwood PM-3/5/2026</strong>
+                  </p>
+                </div>
+                <div>
                   <label className="form-label">Session Date *</label>
                   <input
                     type="date"
@@ -1168,12 +1277,15 @@ export default function CustomerDetail() {
                   />
                 </div>
                 <div>
-                  <label className="form-label">Session Name (Auto-generated)</label>
+                  <label className="form-label">Full session name (preview)</label>
                   <input
                     type="text"
-                    name="session_name"
                     readOnly
-                    value={generateNewSessionName(newSessionType, newSessionDate)}
+                    value={formatSessionNameWithLabel(
+                      newSessionSiteLabel,
+                      newSessionType,
+                      newSessionDate
+                    )}
                     className="form-input bg-gray-700 cursor-default"
                   />
                 </div>
@@ -1185,6 +1297,7 @@ export default function CustomerDetail() {
                     setShowNewSessionModal(false);
                     setNewSessionType('pm');
                     setNewSessionDate(new Date().toISOString().split('T')[0]);
+                    setNewSessionSiteLabel('');
                   }}
                   className="btn btn-secondary"
                 >

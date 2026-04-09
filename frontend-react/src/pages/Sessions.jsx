@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import api from '../services/api';
 import soundSystem from '../utils/sounds';
+import { formatSessionNameWithLabel, defaultDuplicateSessionName } from '../utils/sessionName';
 
 export default function Sessions() {
   const [searchParams] = useSearchParams();
@@ -17,11 +18,18 @@ export default function Sessions() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedSession, setSelectedSession] = useState(null);
   const [message, setMessage] = useState(null);
+  const [newSessionSiteLabel, setNewSessionSiteLabel] = useState('');
+  const [newSessionDate, setNewSessionDate] = useState(() =>
+    new Date().toISOString().split('T')[0]
+  );
+  const [newSessionType, setNewSessionType] = useState('pm');
 
   useEffect(() => {
     loadData();
-    // Check if we should open new session modal
     if (searchParams.get('action') === 'new') {
+      setNewSessionSiteLabel('');
+      setNewSessionDate(new Date().toISOString().split('T')[0]);
+      setNewSessionType('pm');
       setShowNewModal(true);
     }
   }, [searchParams]);
@@ -50,13 +58,24 @@ export default function Sessions() {
   const handleCreateSession = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
-    const data = Object.fromEntries(formData);
+    const data = {
+      customer_id: formData.get('customer_id'),
+      session_type: newSessionType,
+      session_name: formatSessionNameWithLabel(
+        newSessionSiteLabel,
+        newSessionType,
+        newSessionDate
+      ),
+    };
 
     try {
       const result = await api.createSession(data);
       if (result.success) {
         soundSystem.playSuccess();
         setShowNewModal(false);
+        setNewSessionSiteLabel('');
+        setNewSessionDate(new Date().toISOString().split('T')[0]);
+        setNewSessionType('pm');
         loadData();
         showMessage('PM Session created successfully', 'success');
         e.target.reset();
@@ -203,7 +222,12 @@ export default function Sessions() {
           <p className="text-gray-400">Manage preventative maintenance sessions</p>
         </div>
         <button
-          onClick={() => setShowNewModal(true)}
+          onClick={() => {
+            setNewSessionSiteLabel('');
+            setNewSessionDate(new Date().toISOString().split('T')[0]);
+            setNewSessionType('pm');
+            setShowNewModal(true);
+          }}
           className="btn btn-primary"
         >
           ➕ New PM Session
@@ -387,23 +411,48 @@ export default function Sessions() {
                   </select>
                 </div>
                 <div>
-                  <label className="form-label">Session Date *</label>
+                  <label className="form-label">Session Type *</label>
+                  <select
+                    className="form-select"
+                    value={newSessionType}
+                    onChange={(e) => setNewSessionType(e.target.value)}
+                  >
+                    <option value="pm">PM - Preventive Maintenance</option>
+                    <option value="ii">I&amp;I - Installation &amp; Integration</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="form-label">Site / session label</label>
                   <input
-                    type="date"
-                    name="session_date"
-                    required
+                    type="text"
                     className="form-input"
-                    defaultValue={new Date().toISOString().split('T')[0]}
+                    placeholder="e.g. Sherwood"
+                    value={newSessionSiteLabel}
+                    onChange={(e) => setNewSessionSiteLabel(e.target.value)}
+                    autoComplete="off"
                   />
                 </div>
                 <div>
-                  <label className="form-label">Session Name (Auto-generated)</label>
+                  <label className="form-label">Session Date *</label>
+                  <input
+                    type="date"
+                    required
+                    className="form-input"
+                    value={newSessionDate}
+                    onChange={(e) => setNewSessionDate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Full session name (preview)</label>
                   <input
                     type="text"
-                    name="session_name"
-                    value={generateSessionName()}
                     readOnly
-                    className="form-input bg-gray-100"
+                    value={formatSessionNameWithLabel(
+                      newSessionSiteLabel,
+                      newSessionType,
+                      newSessionDate
+                    )}
+                    className="form-input bg-gray-700 cursor-default text-gray-200"
                   />
                 </div>
               </div>
@@ -448,7 +497,9 @@ export default function Sessions() {
                     type="text"
                     name="session_name"
                     required
-                    defaultValue={generateDuplicateSessionName(selectedSession.session_name)}
+                    defaultValue={defaultDuplicateSessionName(
+                      selectedSession.session_name
+                    )}
                     className="form-input"
                   />
                 </div>

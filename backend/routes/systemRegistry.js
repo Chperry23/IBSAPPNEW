@@ -92,6 +92,18 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
           root.Controller = dvSys.Controller || dvSys.CONTROLLER || dvSys.controller;
           root.SmartSwitch = dvSys.SmartSwitch || dvSys.SMARTSWITCH || dvSys.smartswitch;
           root.CharmsIOCard = dvSys.CharmsIOCard || dvSys.CHARMSIOCARD || dvSys.charmsiocard;
+          // Ethernet I/O cards, SIS SZ controllers, LSN bridges (same shape as Controller for DB)
+          root.EIOC = dvSys.EIOC || dvSys.eioc;
+          root.SZController = dvSys.SZController || dvSys.szcontroller || dvSys.SZCONTROLLER;
+          root.LocalSafetyNetworkBridge =
+            dvSys.LocalSafetyNetworkBridge ||
+            dvSys.localsafetynetworkbridge ||
+            dvSys.LOCALSAFETYNETWORKBRIDGE;
+          // SIS / CHARMs logic solvers — same nested Charm shape as CharmsIOCard
+          root.CharmsSmartLogicSolver =
+            dvSys.CharmsSmartLogicSolver ||
+            dvSys.charmssmartlogicsolver ||
+            dvSys.CHARMSSMARTLOGICSOLVER;
         } else {
           console.warn('⚠️ [SYSTEM REGISTRY] DeltaVSystem not found in AutoData');
           console.warn('⚠️ [SYSTEM REGISTRY] AutoData keys:', Object.keys(autoData));
@@ -263,14 +275,16 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
     // ─── End UserInfo extraction ───
     
     // Check what table names are present
-    const availableTables = Object.keys(root).filter(key => 
-      ['Workstation', 'Controller', 'SmartSwitch', 'IODevice', 'CharmsIOCard', 'Charm', 'AMSSystem'].includes(key)
-    );
+    const knownRootKeys = [
+      'Workstation', 'Controller', 'SmartSwitch', 'IODevice', 'CharmsIOCard', 'Charm', 'AMSSystem',
+      'UserInfo', 'EIOC', 'SZController', 'LocalSafetyNetworkBridge', 'CharmsSmartLogicSolver'
+    ];
+    const availableTables = Object.keys(root).filter(key => knownRootKeys.includes(key));
     console.log('🔵 [SYSTEM REGISTRY] Available table names:', availableTables);
     
     if (availableTables.length === 0) {
       console.warn('⚠️ [SYSTEM REGISTRY] No recognized table names found in XML');
-      console.warn('⚠️ [SYSTEM REGISTRY] Expected: Workstation, Controller, SmartSwitch, IODevice, CharmsIOCard, Charm, AMSSystem');
+      console.warn('⚠️ [SYSTEM REGISTRY] Expected: Workstation, Controller, SmartSwitch, IODevice, CharmsIOCard, EIOC, SZController, LocalSafetyNetworkBridge, CharmsSmartLogicSolver, Charm, AMSSystem');
       console.warn('⚠️ [SYSTEM REGISTRY] Found keys:', Object.keys(root));
     }
     
@@ -279,9 +293,18 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       smartSwitches: 0,
       ioDevices: 0,
       controllers: 0,
+      eioc: 0,
+      szControllers: 0,
+      localSafetyNetworkBridges: 0,
       charmsIOCards: 0,
+      charmsSmartLogicSolvers: 0,
       charms: 0,
       amsSystems: 0
+    };
+
+    const asArray = (v) => {
+      if (v == null) return [];
+      return Array.isArray(v) ? v : [v];
     };
     
     // Helper: upsert that preserves assigned_cabinet_id and assigned_at
@@ -414,11 +437,76 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
         }
       }
     }
+
+    // EIOC, SZ (SIS) controllers, Local Safety Network bridges — same columns as Controller
+    const importControllerLike = async (items, statKey, logLabel) => {
+      const list = asArray(items);
+      if (list.length === 0) return;
+      console.log('🔵 [SYSTEM REGISTRY] Processing', list.length, logLabel);
+      for (const ctrl of list) {
+        try {
+          const getField = (obj, fieldName) =>
+            obj[fieldName] || obj[fieldName.toUpperCase()] || obj[fieldName.toLowerCase()] || null;
+          const result = await upsertPreservingAssignment(
+            'sys_controllers',
+            customerId,
+            getField(ctrl, 'Name') || '',
+            [
+              'model',
+              'software_revision',
+              'hardware_revision',
+              'serial_number',
+              'controller_free_memory',
+              'redundant',
+              'partner_model',
+              'partner_software_revision',
+              'partner_hardware_revision',
+              'partner_serial_number'
+            ],
+            [
+              getField(ctrl, 'Model'),
+              getField(ctrl, 'SoftwareRevision'),
+              getField(ctrl, 'HardwareRevision'),
+              getField(ctrl, 'SerialNumber'),
+              getField(ctrl, 'ControllerFreeMemory'),
+              getField(ctrl, 'Redundant'),
+              getField(ctrl, 'PartnerModel'),
+              getField(ctrl, 'PartnerSoftwareRevision'),
+              getField(ctrl, 'PartnerHardwareRevision'),
+              getField(ctrl, 'PartnerSerialNumber')
+            ]
+          );
+          stats[statKey]++;
+          stats.controllers++;
+          if (result === 'created') newCount++;
+          else updatedCount++;
+        } catch (err) {
+          console.error(`Error inserting ${logLabel}:`, err);
+        }
+      }
+    };
+
+    await importControllerLike(root.EIOC, 'eioc', 'EIOC (Ethernet I/O cards)');
+    await importControllerLike(root.SZController, 'szControllers', 'SZ controllers (SIS)');
+    await importControllerLike(
+      root.LocalSafetyNetworkBridge,
+      'localSafetyNetworkBridges',
+      'Local Safety Network bridges'
+    );
     
-    // Parse CharmsIOCard table (and nested Charms)
-    if (root.CharmsIOCard) {
-      const cards = Array.isArray(root.CharmsIOCard) ? root.CharmsIOCard : [root.CharmsIOCard];
-      console.log('🔵 [SYSTEM REGISTRY] Processing', cards.length, 'Charms I/O cards');
+    // Charms I/O cards + CHARMs Smart Logic Solvers (SIS) — same table + nested Charm import
+    const charmsCardSources = [
+      ...asArray(root.CharmsIOCard).map((c) => ({ card: c, kind: 'cioc' })),
+      ...asArray(root.CharmsSmartLogicSolver).map((c) => ({ card: c, kind: 'sisSolver' }))
+    ];
+
+    if (charmsCardSources.length > 0) {
+      const cards = charmsCardSources.map((x) => x.card);
+      console.log(
+        '🔵 [SYSTEM REGISTRY] Processing',
+        cards.length,
+        'Charms I/O + Smart Logic Solver cards'
+      );
 
       // Returns true when every data field is blank / "Not available" — these are
       // empty hardware slots with no real device installed; skip them to avoid
@@ -432,7 +520,7 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       await db.prepare('DELETE FROM sys_charms WHERE customer_id = ?').run([customerId]);
       console.log('🔵 [SYSTEM REGISTRY] Cleared existing Charms for fresh import');
       
-      for (const card of cards) {
+      for (const { card, kind } of charmsCardSources) {
         try {
           const getField = (obj, fieldName) => {
             return obj[fieldName] || obj[fieldName.toUpperCase()] || obj[fieldName.toLowerCase()] || null;
@@ -442,7 +530,8 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
             ['model', 'software_revision', 'hardware_revision', 'serial_number', 'redundant', 'partner_model', 'partner_software_revision', 'partner_hardware_revision', 'partner_serial_number'],
             [getField(card, 'Model'), getField(card, 'SoftwareRevision'), getField(card, 'HardwareRevision'), getField(card, 'SerialNumber'), getField(card, 'Redundant'), getField(card, 'PartnerModel'), getField(card, 'PartnerSoftwareRevision'), getField(card, 'PartnerHardwareRevision'), getField(card, 'PartnerSerialNumber')]
           );
-          stats.charmsIOCards++;
+          if (kind === 'sisSolver') stats.charmsSmartLogicSolvers++;
+          else stats.charmsIOCards++;
           if (result === 'created') newCount++; else updatedCount++;
           
           // Extract nested Charm elements from within this CharmsIOCard (check case variations)
@@ -480,7 +569,7 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
             }
           }
         } catch (err) {
-          console.error('Error inserting Charms IO card:', err);
+          console.error('Error inserting Charms IO / Smart Logic Solver card:', err);
         }
       }
     }
@@ -852,7 +941,12 @@ async function syncSystemRegistryToNodes(customerId) {
   console.log('🔄 [SYNC] Starting sync for customer:', customerId);
   let totalCreated = 0;
   let totalUpdated = 0;
-  
+  const redundantFromXml = (r) => {
+    if (r == null || r === '') return false;
+    const v = String(r).trim().toLowerCase();
+    return v === 'yes' || v === 'true' || v === '1';
+  };
+
   // Sync Workstations
   const workstations = await db.prepare('SELECT * FROM sys_workstations WHERE customer_id = ?').all([customerId]);
   console.log(`🔄 [SYNC] Processing ${workstations.length} workstations...`);
@@ -905,7 +999,7 @@ async function syncSystemRegistryToNodes(customerId) {
     }
     
     // Create partner if redundant
-    if (ctrl.redundant && ctrl.redundant.toLowerCase() === 'yes' && ctrl.partner_serial_number) {
+    if (redundantFromXml(ctrl.redundant) && ctrl.partner_serial_number) {
       const partnerName = `${ctrl.name}-partner`;
       const partnerExists = await db.prepare('SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?').get([customerId, partnerName]);
       if (!partnerExists) {
@@ -975,7 +1069,7 @@ async function syncSystemRegistryToNodes(customerId) {
     }
     
     // Create partner if redundant
-    if (cioc.redundant && cioc.redundant.toLowerCase() === 'yes' && cioc.partner_serial_number) {
+    if (redundantFromXml(cioc.redundant) && cioc.partner_serial_number) {
       const partnerName = `${cioc.name}-partner`;
       const partnerExists = await db.prepare('SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?').get([customerId, partnerName]);
       if (!partnerExists) {

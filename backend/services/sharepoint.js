@@ -25,10 +25,18 @@ function loadConfig() {
   if (fs.existsSync(cfgPath)) {
     try { file = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch (_) {}
   }
+  // Azure portal exports a secret object with { clientSecret: "<id-guid>", value: "<actual-secret>" }.
+  // Accept either form: prefer file.value (the real secret string) over file.clientSecret when
+  // file.clientSecret looks like a plain GUID (36 chars, all hex+dashes) with no special chars.
+  const fileSecretId    = file.clientSecret || '';
+  const fileSecretValue = file.value || '';
+  const looksLikeGuid   = /^[0-9a-f-]{36}$/i.test(fileSecretId.trim());
+  const fileSecret = fileSecretValue || (!looksLikeGuid ? fileSecretId : '');
+
   return {
     tenantId:     process.env.SP_TENANT_ID     || file.tenantId     || '',
     clientId:     process.env.SP_CLIENT_ID     || file.clientId     || '',
-    clientSecret: process.env.SP_CLIENT_SECRET || file.clientSecret || '',
+    clientSecret: process.env.SP_CLIENT_SECRET || fileSecret        || '',
     siteHost:     process.env.SP_SITE_HOST     || file.siteHost     || 'eciit.sharepoint.com',
     sitePath:     process.env.SP_SITE_PATH     || file.sitePath     || '/sites/InstalledBaseServices',
     listName:     process.env.SP_LIST_NAME     || file.listName     || 'ECIIBSSiteNotes',
@@ -274,10 +282,20 @@ function isConfigured() {
   return !!(cfg.tenantId && cfg.clientId && cfg.clientSecret);
 }
 
+/**
+ * Return all lists on the SharePoint site — used to discover the correct listName.
+ */
+async function discoverLists() {
+  const siteId = await getSiteId();
+  const data   = await graphGet(`/v1.0/sites/${siteId}/lists`);
+  return (data.value || []).map(l => ({ id: l.id, name: l.displayName, template: l.list?.template }));
+}
+
 module.exports = {
   fetchListItems,
   parseListItem,
   pushNoteToSharePoint,
+  discoverLists,
   isConfigured,
   loadConfig,
 };

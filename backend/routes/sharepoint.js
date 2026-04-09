@@ -17,6 +17,22 @@ router.get('/api/sharepoint/status', requireAuth, (req, res) => {
   });
 });
 
+// ── GET /api/sharepoint/discover-lists ───────────────────────────────────────
+// Returns all list names on the SharePoint site so you can verify/correct
+// the listName value in sharepoint-config.json.
+router.get('/api/sharepoint/discover-lists', requireAuth, async (req, res) => {
+  if (!sp.isConfigured()) {
+    return res.status(503).json({ success: false, error: 'SharePoint not configured. Add credentials to sharepoint-config.json.' });
+  }
+  try {
+    const lists = await sp.discoverLists();
+    res.json({ success: true, lists });
+  } catch (err) {
+    console.error('SharePoint discover-lists error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ── POST /api/sharepoint/sync-customer/:customerId ────────────────────────────
 // Fetches all SharePoint list items, finds those whose Dongle ID list contains
 // this customer's dongle_id, then upserts them into customer_notes.

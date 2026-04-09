@@ -69,8 +69,13 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
   const autoSave = async (nodeId, field, value, debounce = false) => {
     if (isCompleted) return;
 
-    // Update local state immediately
-    const updatedNodeData = { ...maintenanceData[nodeId], [field]: value };
+    // Update local state immediately; preserve has_io_errors default (true = Errors column on)
+    const existing = maintenanceData[nodeId] || {};
+    const updatedNodeData = {
+      has_io_errors: true,
+      ...existing,
+      [field]: value,
+    };
     const allMaintenanceData = {
       ...maintenanceData,
       [nodeId]: updatedNodeData,
@@ -138,7 +143,12 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
       if (!updatedData[controller.id]) {
         updatedData[controller.id] = {};
       }
-      updatedData[controller.id][field] = true;
+      // Mark every controller as having I/O issues (has_io_errors = true)
+      if (field === 'has_io_errors') {
+        updatedData[controller.id][field] = true;
+      } else {
+        updatedData[controller.id][field] = true;
+      }
     }
     
     // Force state update
@@ -445,11 +455,12 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                     All Restart
                   </button>
                   <button
-                    onClick={() => bulkCheckControllers('no_errors_checked')}
+                    onClick={() => bulkCheckControllers('has_io_errors')}
                     disabled={isCompleted}
                     className="btn btn-secondary btn-sm text-xs"
+                    title="Mark all controllers as having I/O errors (Diagnostics checklist)"
                   >
-                    All Errors
+                    All: Has errors
                   </button>
                   <button
                     onClick={() => bulkCheckControllers('completed')}
@@ -588,28 +599,19 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                           </td>
                           <td className="px-3 py-2 text-center">
                             {(() => {
-                              const noErrors = maint.no_errors_checked ?? true; // default: no errors
-                              const hasErrors = !noErrors;
+                              const hasIoErrors = maint.has_io_errors !== false && maint.has_io_errors !== 0;
 
                               return (
                                 <input
                                   type="checkbox"
-                                  checked={hasErrors}
+                                  checked={!!hasIoErrors}
                                   onChange={(e) => {
-                                    const newNoErrors = !e.target.checked; // checked Errors => noErrors=false
-                                    console.log('🔧 [NodeMaintenance] Errors checkbox changed for controller:', controller.id, controller.node_name);
-                                    console.log('🔧 [NodeMaintenance] Checkbox checked:', e.target.checked, '=> no_errors_checked:', newNoErrors);
-                                    
-                                    // Update local state immediately
+                                    const hasIo = e.target.checked;
                                     const updated = { ...maintenanceData };
                                     if (!updated[controller.id]) updated[controller.id] = {};
-                                    updated[controller.id].no_errors_checked = newNoErrors;
+                                    updated[controller.id].has_io_errors = hasIo;
                                     setMaintenanceData(updated);
-                                    
-                                    console.log('🔧 [NodeMaintenance] Updated local state for node:', controller.id);
-                                    
-                                    // Then save
-                                    autoSave(controller.id, 'no_errors_checked', newNoErrors);
+                                    autoSave(controller.id, 'has_io_errors', hasIo);
                                   }}
                                   disabled={isCompleted}
                                   className="w-4 h-4"
@@ -982,9 +984,13 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                   <button
                     onClick={async () => {
                       if (isCompleted) return;
-                      for (const switchNode of filteredSwitches) {
-                        await autoSave(switchNode.id, 'completed', true);
+                      const updatedData = { ...maintenanceData };
+                      for (const sw of filteredSwitches) {
+                        if (!updatedData[sw.id]) updatedData[sw.id] = {};
+                        updatedData[sw.id].completed = true;
                       }
+                      setMaintenanceData(updatedData);
+                      await performSave(updatedData);
                       soundSystem.playSuccess();
                       showMessage('All switches marked done!', 'success');
                     }}
