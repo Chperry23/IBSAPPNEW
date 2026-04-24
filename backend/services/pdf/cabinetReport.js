@@ -1149,17 +1149,19 @@ function generatePDFHtml(data) {
 
 /**
  * Generate HTML for the session-level Risk Assessment page.
- * Renders two independent outputs:
- *   - Normalized risk score (0-100): weighted failure-rate, comparable across site sizes
- *   - Risk badge: worst severity present (CRITICAL / MODERATE / LOW / GOOD)
- * Also renders domain subscores and inspection coverage.
+ * Renders:
+ *   - Site Health Index (100 = perfect, decreases with failures)
+ *   - Risk badge: score-driven 5-level severity
+ *   - IO Subsystem health (error count vs total IO channels from sys_cards)
+ *   - Domain subscores and inspection coverage.
  *
- * @param {object} risk - Result from generateRiskAssessment(cabinets, nodeMaintenanceData)
- * @param {string} sessionName - Session name for the header
+ * @param {object} risk         - Result from generateRiskAssessment(cabinets, nodeMaintenanceData)
+ * @param {string} sessionName  - Session name for the header
+ * @param {object} [ioSubsystem] - { totalErrors, totalChannels } from sys_cards + session_diagnostics
  */
-function generateRiskAssessmentPage(risk, sessionName) {
+function generateRiskAssessmentPage(risk, sessionName, ioSubsystem = null) {
   const {
-    riskScore,
+    siteScore,
     riskLevel,
     riskColor,
     criticalIssues,
@@ -1174,9 +1176,22 @@ function generateRiskAssessmentPage(risk, sessionName) {
     coverageTotal
   } = risk;
 
-  // Score bar width for visual representation (capped at 100%)
-  const scoreBarWidth = Math.min(riskScore, 100);
-  const scoreBarColor = riskScore >= 60 ? '#dc3545' : riskScore >= 30 ? '#fd7e14' : riskScore >= 10 ? '#ffc107' : '#28a745';
+  // Score bar: full width = 100 (healthy), shrinks as score drops
+  const scoreBarWidth = Math.min(siteScore, 100);
+  const scoreBarColor =
+    siteScore >= 95 ? '#28a745' :
+    siteScore >= 75 ? '#6f42c1' :
+    siteScore >= 50 ? '#fd7e14' :
+    siteScore >= 25 ? '#ffc107' : '#dc3545';
+
+  // Severity level label mapping
+  const levelLabel = {
+    GOOD:     'Good',
+    ADVISORY: 'Advisory',
+    MODERATE: 'Moderate',
+    WARNING:  'Warning',
+    CRITICAL: 'Critical'
+  }[riskLevel] || riskLevel;
 
   // Domain display names and order
   const domainLabels = {
@@ -1190,23 +1205,29 @@ function generateRiskAssessmentPage(risk, sessionName) {
   const domainOrder = ['controllers', 'network', 'power', 'cabinet_condition', 'environmental', 'node_maintenance'];
 
   const domainRows = domainOrder.map(domain => {
-    const score = domainScores && domainScores[domain];
-    if (score === null || score === undefined) {
+    const penalty = domainScores && domainScores[domain];
+    if (penalty === null || penalty === undefined) {
       return `<tr>
         <td style="padding: 5px 8px; border: 1px solid #d1d5db;">${domainLabels[domain]}</td>
         <td style="padding: 5px 8px; border: 1px solid #d1d5db; color: #9ca3af; font-style: italic;">Not inspected</td>
         <td style="padding: 5px 8px; border: 1px solid #d1d5db;">—</td>
       </tr>`;
     }
-    const domainBarColor = score >= 60 ? '#dc3545' : score >= 30 ? '#fd7e14' : score >= 10 ? '#ffc107' : '#28a745';
+    // Domain health = 100 - penalty; bar color reflects health
+    const domainHealth = Math.max(0, 100 - penalty);
+    const domainBarColor =
+      domainHealth >= 95 ? '#28a745' :
+      domainHealth >= 75 ? '#6f42c1' :
+      domainHealth >= 50 ? '#fd7e14' :
+      domainHealth >= 25 ? '#ffc107' : '#dc3545';
     return `<tr>
       <td style="padding: 5px 8px; border: 1px solid #d1d5db; font-weight: bold;">${domainLabels[domain]}</td>
       <td style="padding: 5px 8px; border: 1px solid #d1d5db;">
         <div style="background: #e5e7eb; border-radius: 4px; height: 10px; width: 100%; overflow: hidden;">
-          <div style="background: ${domainBarColor}; height: 100%; width: ${Math.min(score, 100)}%; border-radius: 4px;"></div>
+          <div style="background: ${domainBarColor}; height: 100%; width: ${domainHealth}%; border-radius: 4px;"></div>
         </div>
       </td>
-      <td style="padding: 5px 8px; border: 1px solid #d1d5db; font-weight: bold; color: ${domainBarColor}; text-align: right;">${score}</td>
+      <td style="padding: 5px 8px; border: 1px solid #d1d5db; font-weight: bold; color: ${domainBarColor}; text-align: right;">${domainHealth}</td>
     </tr>`;
   }).join('');
 
@@ -1238,60 +1259,97 @@ function generateRiskAssessmentPage(risk, sessionName) {
   const coverageLine1 = (coverageTotal > 0) ? `${coverageCompleted} / ${coverageTotal} check-points` : 'No check data';
   const coverageLine2 = (coverageTotal > 0) ? `(${Math.round(100 * coverageCompleted / coverageTotal)}% coverage)` : '';
 
+  // IO Subsystem domain row — shown inline in the domain table
+  let ioSubsystemRow = '';
+  if (ioSubsystem && ioSubsystem.totalChannels > 0) {
+    const ioErrors      = ioSubsystem.totalErrors || 0;
+    const ioChannels    = ioSubsystem.totalChannels;
+    const cardChannels  = ioSubsystem.cardChannels || 0;
+    const charmCount    = ioSubsystem.charmCount || 0;
+    const ioRate        = ioErrors / ioChannels;
+    const ioPenalty     = Math.min(1, ioRate / 0.5) * 100;
+    const ioHealth      = Math.max(0, Math.round(100 - ioPenalty));
+    const ioBarColor    =
+      ioHealth >= 95 ? '#28a745' :
+      ioHealth >= 75 ? '#6f42c1' :
+      ioHealth >= 50 ? '#fd7e14' :
+      ioHealth >= 25 ? '#ffc107' : '#dc3545';
+    const ioRatePct     = (ioRate * 100).toFixed(1);
+    ioSubsystemRow = `<tr>
+      <td style="padding: 5px 8px; border: 1px solid #d1d5db; font-weight: bold;">
+        I/O Subsystem
+        <div style="font-size: 10px; font-weight: normal; color: #6b7280; margin-top: 1px;">${ioErrors} / ${ioChannels} &nbsp;(${ioRatePct}%)</div>
+      </td>
+      <td style="padding: 5px 8px; border: 1px solid #d1d5db;">
+        <div style="background: #e5e7eb; border-radius: 4px; height: 10px; width: 100%; overflow: hidden;">
+          <div style="background: ${ioBarColor}; height: 100%; width: ${ioHealth}%; border-radius: 4px;"></div>
+        </div>
+      </td>
+      <td style="padding: 5px 8px; border: 1px solid #d1d5db; font-weight: bold; color: ${ioBarColor}; text-align: right;">${ioHealth}</td>
+    </tr>`;
+  }
+
+  // Severity legend
+  const severityLegend = `
+    <div style="margin-top: 8px; display: flex; gap: 5px; flex-wrap: wrap; font-size: 9px;">
+      <span style="background:#28a745; color:white; padding:2px 7px; border-radius:10px; font-weight:600;">Good 95–100</span>
+      <span style="background:#6f42c1; color:white; padding:2px 7px; border-radius:10px; font-weight:600;">Advisory 75–94</span>
+      <span style="background:#fd7e14; color:white; padding:2px 7px; border-radius:10px; font-weight:600;">Moderate 50–74</span>
+      <span style="background:#ffc107; color:#333; padding:2px 7px; border-radius:10px; font-weight:600;">Warning 25–49</span>
+      <span style="background:#dc3545; color:white; padding:2px 7px; border-radius:10px; font-weight:600;">Critical 0–24</span>
+    </div>
+  `;
+
   return `
     <div class="page-break" style="page-break-before: always;">
-      <h2 style="text-align: center; color: #2563eb; font-size: 28px; margin: 20px 0; padding: 15px; border-bottom: 3px solid #2563eb;">Risk Assessment — ${sessionName || 'PM Session'}</h2>
+      <h2 style="text-align: center; color: #2563eb; font-size: 18px; margin: 8px 0; padding: 8px 15px; border-bottom: 2px solid #2563eb;">Site Health Assessment — ${sessionName || 'PM Session'}</h2>
 
-      <!-- Dual output: score + badge side by side -->
+      <!-- Score + badge + stats side by side -->
       <div class="risk-summary" style="align-items: stretch;">
 
-        <!-- Condition Risk Index card (0-100) -->
-        <div style="background: #1e293b; color: white; text-align: center; padding: 18px 22px; border-radius: 12px; min-width: 145px; box-shadow: 0 4px 8px rgba(0,0,0,0.15);">
-          <div style="font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; opacity: 0.65; margin-bottom: 6px;">Condition Risk Index</div>
-          <div style="font-size: 54px; font-weight: bold; line-height: 1;">${riskScore}</div>
-          <div style="font-size: 12px; opacity: 0.55; margin-top: 3px;">out of 100</div>
-          <div style="background: rgba(255,255,255,0.15); border-radius: 4px; height: 7px; margin-top: 10px; overflow: hidden;">
-            <div style="background: ${scoreBarColor}; height: 100%; width: ${scoreBarWidth}%; border-radius: 4px;"></div>
+        <!-- Site Health Index card — background matches score color -->
+        <div style="background: ${scoreBarColor}; color: white; text-align: center; padding: 14px 18px; border-radius: 12px; min-width: 135px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+          <div style="font-size: 9px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; opacity: 0.85; margin-bottom: 4px;">Site Health Index</div>
+          <div style="font-size: 52px; font-weight: bold; line-height: 1; color: white;">${siteScore}</div>
+          <div style="font-size: 11px; opacity: 0.8; margin-top: 2px;">out of 100</div>
+          <div style="background: rgba(255,255,255,0.25); border-radius: 4px; height: 6px; margin-top: 8px; overflow: hidden;">
+            <div style="background: white; height: 100%; width: ${scoreBarWidth}%; border-radius: 4px; opacity: 0.9;"></div>
           </div>
-          <div style="font-size: 9px; opacity: 0.45; margin-top: 8px; line-height: 1.3;">Weighted prevalence<br>across inspected items</div>
         </div>
 
         <!-- Severity badge card -->
         <div class="risk-score-box" style="background: ${riskColor}; color: white; display: flex; flex-direction: column; justify-content: center;">
-          <div style="font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; opacity: 0.85; margin-bottom: 6px;">Status</div>
-          <div class="risk-score" style="font-size: 34px;">${riskLevel}</div>
-          <div style="font-size: 10px; opacity: 0.85; margin-top: 8px; line-height: 1.3;">Highest severity<br>finding present</div>
+          <div style="font-size: 9px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; opacity: 0.85; margin-bottom: 4px;">Status</div>
+          <div class="risk-score" style="font-size: 30px;">${levelLabel}</div>
+          <div style="font-size: 9px; opacity: 0.85; margin-top: 6px; line-height: 1.3;">Score-driven<br>severity level</div>
         </div>
 
         <!-- Quick stats (compact) -->
-        <div class="risk-stats" style="font-size: 12px;">
-          <div class="stat-item" style="padding: 5px 0;"><span class="stat-label">Assessed components</span><span class="stat-value">${totalComponents}</span></div>
-          <div class="stat-item" style="padding: 5px 0;"><span class="stat-label">Failed / out of spec</span><span class="stat-value">${failedComponents}</span></div>
-          <div class="stat-item" style="padding: 5px 0;"><span class="stat-label">Failure rate</span><span class="stat-value">${failureRatePct}%</span></div>
-          <div class="stat-item" style="padding: 5px 0;"><span class="stat-label">Critical findings</span><span class="stat-value" style="color: ${criticalIssues.length > 0 ? '#dc3545' : '#28a745'};">${criticalIssues.length}</span></div>
-          <div class="stat-item" style="padding: 5px 0;"><span class="stat-label">Moderate findings</span><span class="stat-value" style="color: ${warnings.length > 0 ? '#fd7e14' : '#28a745'};">${warnings.length}</span></div>
-          <div class="stat-item" style="padding: 5px 0;"><span class="stat-label">Slight findings</span><span class="stat-value" style="color: ${slightIssues.length > 0 ? '#17a2b8' : '#28a745'};">${slightIssues.length}</span></div>
-          <div class="stat-item" style="padding: 5px 0; border-bottom: none;"><span class="stat-label">Inspection coverage</span><span class="stat-value" style="text-align: right;">${coverageLine1}<br><span style="font-weight: normal; color: #666;">${coverageLine2}</span></span></div>
+        <div class="risk-stats" style="font-size: 11px;">
+          <div class="stat-item" style="padding: 4px 0;"><span class="stat-label">Assessed components</span><span class="stat-value">${totalComponents}</span></div>
+          <div class="stat-item" style="padding: 4px 0;"><span class="stat-label">Failed / out of spec</span><span class="stat-value">${failedComponents}</span></div>
+          <div class="stat-item" style="padding: 4px 0;"><span class="stat-label">Failure rate</span><span class="stat-value">${failureRatePct}%</span></div>
+          <div class="stat-item" style="padding: 4px 0;"><span class="stat-label">Critical findings</span><span class="stat-value" style="color: ${criticalIssues.length > 0 ? '#dc3545' : '#28a745'};">${criticalIssues.length}</span></div>
+          <div class="stat-item" style="padding: 4px 0;"><span class="stat-label">Moderate findings</span><span class="stat-value" style="color: ${warnings.length > 0 ? '#fd7e14' : '#28a745'};">${warnings.length}</span></div>
+          <div class="stat-item" style="padding: 4px 0;"><span class="stat-label">Slight findings</span><span class="stat-value" style="color: ${slightIssues.length > 0 ? '#17a2b8' : '#28a745'};">${slightIssues.length}</span></div>
+          <div class="stat-item" style="padding: 4px 0; border-bottom: none;"><span class="stat-label">Inspection coverage</span><span class="stat-value" style="text-align: right;">${coverageLine1}<br><span style="font-weight: normal; color: #666;">${coverageLine2}</span></span></div>
         </div>
       </div>
 
-      <!-- Clarifying note -->
-      <div style="margin-top: 10px; font-size: 11px; color: #6b7280; font-style: italic; text-align: center;">
-        Status reflects the worst severity class found, independent of the 0–100 score.
-      </div>
+      ${severityLegend}
 
-      <!-- Domain weighted prevalence (full width, compact) -->
-      <div style="margin-top: 16px;">
-        <div class="breakdown-header">Domain Weighted Prevalence</div>
-        <table style="width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px;">
+      <!-- Domain health scores including IO Subsystem (full width, compact) -->
+      <div style="margin-top: 10px;">
+        <div class="breakdown-header">Domain Health Scores (100 = healthy, decreases with failures)</div>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 5px; font-size: 12px;">
           <thead>
             <tr style="background: #e5e7eb;">
               <th style="text-align: left; padding: 5px 8px; border: 1px solid #d1d5db; width: 28%;">Domain</th>
-              <th style="text-align: left; padding: 5px 8px; border: 1px solid #d1d5db;">Weighted prevalence (0–100)</th>
+              <th style="text-align: left; padding: 5px 8px; border: 1px solid #d1d5db;">Health (0–100)</th>
               <th style="text-align: right; padding: 5px 8px; border: 1px solid #d1d5db; width: 50px;"></th>
             </tr>
           </thead>
-          <tbody>${domainRows}</tbody>
+          <tbody>${domainRows}${ioSubsystemRow}</tbody>
         </table>
       </div>
 
@@ -1304,7 +1362,7 @@ function generateRiskAssessmentPage(risk, sessionName) {
         </table>
       </div>
 
-      <!-- Issue lists (unchanged) -->
+      <!-- Issue lists -->
       ${criticalIssues.length > 0 ? `
       <div class="issues-section critical">
         <div class="issues-header">Critical issues (${criticalIssues.length})</div>

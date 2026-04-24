@@ -462,12 +462,16 @@ export default function CustomerDetail() {
                           : null;
                         const badgeColors = {
                           CRITICAL: 'bg-red-900/60 text-red-300',
+                          WARNING:  'bg-yellow-900/60 text-yellow-300',
                           MODERATE: 'bg-orange-900/60 text-orange-300',
-                          LOW:       'bg-yellow-900/60 text-yellow-300',
-                          GOOD:      'bg-green-900/60 text-green-300',
+                          ADVISORY: 'bg-purple-900/60 text-purple-300',
+                          GOOD:     'bg-green-900/60 text-green-300',
+                          // legacy labels
+                          LOW:      'bg-yellow-900/60 text-yellow-300',
                         };
                         const badgeCls = badgeColors[row.risk_level] || 'bg-gray-700 text-gray-300';
-                        const scoreColor = (row.risk_score >= 60) ? 'text-red-400' : (row.risk_score >= 30) ? 'text-orange-400' : (row.risk_score >= 10) ? 'text-yellow-400' : 'text-green-400';
+                        // risk_score now stores Site Health Index (100=perfect, lower=worse)
+                        const scoreColor = (row.risk_score >= 95) ? 'text-green-400' : (row.risk_score >= 75) ? 'text-purple-400' : (row.risk_score >= 50) ? 'text-orange-400' : (row.risk_score >= 25) ? 'text-yellow-400' : 'text-red-400';
                         const domainLabels = {
                           controllers:       'Controllers',
                           network:           'Network',

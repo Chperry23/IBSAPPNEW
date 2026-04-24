@@ -432,9 +432,44 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
       customErrorLabels[`custom_${r.id}`] = `${r.icon || '⚠️'} ${r.label}`;
     });
 
+    // IO Subsystem: total IO = card channel counts + active charm count
+    // Cards contribute their channel count (8 Ch = 8 IO points, 32 Ch = 32 IO points, etc.)
+    // Each charm in sys_charms with real data = 1 active IO point
+    // Active charms are any row that survived import (empty/Not-available placeholders are skipped at import time)
+    let ioSubsystem = null;
+    if (session.customer_id) {
+      const cardRow = await db.prepare(
+        'SELECT COALESCE(SUM(channel_count), 0) as total_channels FROM sys_cards WHERE customer_id = ?'
+      ).get([session.customer_id]).catch(() => null);
+
+      // Active charms: exclude empty/undefined slots (same logic as import-time filter)
+      const charmRow = await db.prepare(`
+        SELECT COUNT(*) as charm_count FROM sys_charms
+        WHERE customer_id = ?
+          AND (deleted IS NULL OR deleted = 0)
+          AND model IS NOT NULL AND TRIM(model) != ''
+          AND LOWER(TRIM(model)) NOT IN (
+            'not available','no charm','none','undefined',
+            'sis_chmio_undefined_charm','undefined_charm','uninstalled'
+          )
+          AND LOWER(TRIM(model)) NOT LIKE '%undefined_charm%'
+          AND LOWER(TRIM(model)) NOT LIKE '%no charm%'
+      `).get([session.customer_id]).catch(() => null);
+
+      const totalChannels = (cardRow?.total_channels || 0) + (charmRow?.charm_count || 0);
+      if (totalChannels > 0) {
+        ioSubsystem = {
+          totalChannels,
+          cardChannels: cardRow?.total_channels || 0,
+          charmCount: charmRow?.charm_count || 0,
+          totalErrors: diagnostics.length
+        };
+      }
+    }
+
     log('Building report sections (risk, maintenance, diagnostics, cabinets HTML)...');
     const riskResult = generateRiskAssessment(cabinets, nodeMaintenanceData);
-    const riskAssessmentHtml = generateRiskAssessmentPage(riskResult, session.session_name);
+    const riskAssessmentHtml = generateRiskAssessmentPage(riskResult, session.session_name, ioSubsystem);
     const maintenanceHtml = generateMaintenanceReportPage(nodeMaintenanceData);
     
     // Generate I/O Errors Summary (chart + Complete Error Log table, before cabinets)
@@ -829,7 +864,7 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
           sessionId,
           session.session_name || '',
           diagCount?.c ?? 0,
-          riskResult.riskScore ?? 0,
+          riskResult.siteScore ?? 100,
           riskResult.riskLevel || '',
           riskResult.totalComponents ?? 0,
           riskResult.failedComponents ?? 0,

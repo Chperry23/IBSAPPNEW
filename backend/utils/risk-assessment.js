@@ -490,13 +490,19 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
     return TIER_ALLOCATIONS[tierKey] * Math.min(1, rate * 2);
   }
 
+  // Total penalty (0–100): how much is deducted from a perfect score
   const riskScore = Math.round(
     computeTierContribution('CRITICAL') +
     computeTierContribution('MODERATE') +
     computeTierContribution('SLIGHT')
   );
 
+  // Site Health Index: starts at 100, deductions subtracted out
+  // 50% bad within any tier = full tier allocation deducted
+  const siteScore = Math.max(0, 100 - riskScore);
+
   // Domain scores: independent 0-100, weighted failure rate × 2, capped at 100
+  // Domain score represents the PENALTY within that domain (0 = healthy, 100 = all bad)
   const domainScores = {};
   DOMAINS.forEach(domain => {
     const da = domainAccum[domain];
@@ -508,42 +514,49 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
     }
   });
 
-  // ── Badge (severity-driven, independent of score) ─────────────────────────
-  let riskLevel = 'GOOD';
-  let riskColor = '#28a745';
+  // ── Badge (score-driven, 5 levels) ────────────────────────────────────────
+  // Good 95-100 (Green), Advisory 75-95 (Purple), Moderate 50-75 (Orange),
+  // Warning 25-50 (Amber), Critical 0-25 (Red)
+  let riskLevel;
+  let riskColor;
   const recommendations = [];
 
-  const hasCriticalIssues = criticalIssues.length > 0;
-  const hasModerateIssues = moderateIssues.length > 0;
-  const hasSlightIssues   = slightIssues.length > 0;
-
-  if (hasCriticalIssues) {
-    riskLevel = 'CRITICAL';
-    riskColor = '#dc3545';
-    recommendations.push('Critical issues identified - Schedule priority maintenance');
-    recommendations.push('Address critical items within 1-2 weeks');
-    recommendations.push('Monitor affected systems closely until resolved');
-  } else if (hasModerateIssues) {
+  if (siteScore >= 95) {
+    riskLevel = 'GOOD';
+    riskColor = '#28a745';
+    recommendations.push('System is operating within acceptable parameters');
+    recommendations.push('Continue regular maintenance schedule');
+    recommendations.push('Monitor for any developing issues');
+  } else if (siteScore >= 75) {
+    riskLevel = 'ADVISORY';
+    riskColor = '#6f42c1';
+    recommendations.push('Minor issues identified - Include in next maintenance cycle');
+    recommendations.push('Continue regular maintenance schedule');
+    recommendations.push('Monitor for any developing issues');
+  } else if (siteScore >= 50) {
     riskLevel = 'MODERATE';
     riskColor = '#fd7e14';
     recommendations.push('Moderate issues identified - Schedule maintenance');
     recommendations.push('Address issues within 30-60 days');
     recommendations.push('Continue normal system monitoring');
-  } else if (hasSlightIssues) {
-    riskLevel = 'LOW';
+  } else if (siteScore >= 25) {
+    riskLevel = 'WARNING';
     riskColor = '#ffc107';
-    recommendations.push('Minor issues identified - Include in next maintenance cycle');
-    recommendations.push('Continue regular maintenance schedule');
-    recommendations.push('Monitor for any developing issues');
+    recommendations.push('Significant issues identified - Schedule priority maintenance');
+    recommendations.push('Address issues within 2-4 weeks');
+    recommendations.push('Increase monitoring frequency until resolved');
   } else {
-    recommendations.push('System is operating within acceptable parameters');
-    recommendations.push('Continue regular maintenance schedule');
-    recommendations.push('Monitor for any developing issues');
+    riskLevel = 'CRITICAL';
+    riskColor = '#dc3545';
+    recommendations.push('Critical issues identified - Schedule immediate maintenance');
+    recommendations.push('Address critical items within 1-2 weeks');
+    recommendations.push('Monitor affected systems closely until resolved');
   }
 
   return {
-    riskScore,       // 0-100 normalized weighted failure rate
-    riskLevel,       // CRITICAL / MODERATE / LOW / GOOD
+    riskScore,       // 0-100 penalty (how much was deducted)
+    siteScore,       // 0-100 health index (100 = perfect, decreases with failures)
+    riskLevel,       // GOOD / ADVISORY / MODERATE / WARNING / CRITICAL  (score-driven)
     riskColor,
     criticalIssues,
     warnings: moderateIssues,
@@ -552,7 +565,7 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
     totalComponents,
     failedComponents,
     riskBreakdown,
-    domainScores,       // { power, network, environmental, cabinet_condition, node_maintenance } — null if not inspected
+    domainScores,       // { controllers, power, network, environmental, cabinet_condition, node_maintenance } — null if not inspected
     coverageCompleted,  // actual check-points recorded
     coverageTotal       // expected check-points (cabinet inspection coverage gap is visible here)
   };

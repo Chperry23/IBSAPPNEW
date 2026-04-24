@@ -1156,6 +1156,32 @@ function initializeDatabase() {
       addColumnIfNotExists('sys_ams_systems', 'device_id', 'TEXT');
       addColumnIfNotExists('sys_ams_systems', 'deleted', 'INTEGER DEFAULT 0');
 
+      // System Registry: Card table (IO cards with channel counts)
+      db.run(
+        `CREATE TABLE IF NOT EXISTS sys_cards (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          model TEXT,
+          software_revision TEXT,
+          hardware_revision TEXT,
+          serial_number TEXT,
+          redundant TEXT,
+          partner_model TEXT,
+          partner_software_revision TEXT,
+          partner_hardware_revision TEXT,
+          partner_serial_number TEXT,
+          channel_count INTEGER,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (customer_id) REFERENCES customers(id)
+        )`,
+        (err) => {
+          if (err) console.error('❌ Error creating sys_cards table:', err);
+          else console.log('✅ Created (or found) sys_cards table');
+        }
+      );
+
       // Customer site notes
       db.run(
         `CREATE TABLE IF NOT EXISTS customer_notes (

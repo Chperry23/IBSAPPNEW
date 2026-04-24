@@ -92,6 +92,9 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
           root.Controller = dvSys.Controller || dvSys.CONTROLLER || dvSys.controller;
           root.SmartSwitch = dvSys.SmartSwitch || dvSys.SMARTSWITCH || dvSys.smartswitch;
           root.CharmsIOCard = dvSys.CharmsIOCard || dvSys.CHARMSIOCARD || dvSys.charmsiocard;
+          // Card may be under DeltaVSystem or at AutoData level — check both
+          root.Card = dvSys.Card || dvSys.CARD || dvSys.card
+                   || autoData.Card || autoData.CARD || autoData.card;
           // Ethernet I/O cards, SIS SZ controllers, LSN bridges (same shape as Controller for DB)
           root.EIOC = dvSys.EIOC || dvSys.eioc;
           root.SZController = dvSys.SZController || dvSys.szcontroller || dvSys.SZCONTROLLER;
@@ -138,6 +141,15 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
         console.warn('⚠️ [SYSTEM REGISTRY] First few chars of reg:', JSON.stringify(reg).substring(0, 500));
       }
       
+      // Card table may also appear directly under registration or at result root
+      if (!root.Card) {
+        root.Card = reg.Card || reg.CARD || reg.card
+                 || result.Card || result.CARD || result.card;
+        if (root.Card) {
+          console.log('🔵 [SYSTEM REGISTRY] Found Card table at registration/root level');
+        }
+      }
+
       // Also check for UserInfo directly under registration (not nested in AutoData)
       if (!root.UserInfo) {
         const uInfoReg = reg.UserInfo || reg.USERINFO || reg.userinfo || reg.Userinfo;
@@ -277,7 +289,7 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
     // Check what table names are present
     const knownRootKeys = [
       'Workstation', 'Controller', 'SmartSwitch', 'IODevice', 'CharmsIOCard', 'Charm', 'AMSSystem',
-      'UserInfo', 'EIOC', 'SZController', 'LocalSafetyNetworkBridge', 'CharmsSmartLogicSolver'
+      'UserInfo', 'EIOC', 'SZController', 'LocalSafetyNetworkBridge', 'CharmsSmartLogicSolver', 'Card'
     ];
     const availableTables = Object.keys(root).filter(key => knownRootKeys.includes(key));
     console.log('🔵 [SYSTEM REGISTRY] Available table names:', availableTables);
@@ -299,7 +311,8 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       charmsIOCards: 0,
       charmsSmartLogicSolvers: 0,
       charms: 0,
-      amsSystems: 0
+      amsSystems: 0,
+      cards: 0
     };
 
     const asArray = (v) => {
@@ -415,7 +428,57 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       }
     }
     
-    // Parse Controller table
+    // Helper to extract channel count from a card model string e.g. "AI Card, 8 Ch." → 8
+    const parseCardChannelCount = (model) => {
+      if (!model) return null;
+      const m = model.match(/(\d+)\s*Ch/i);
+      return m ? parseInt(m[1], 10) : null;
+    };
+
+    // Clear existing cards before any controller is processed (fresh import each time)
+    await db.prepare('DELETE FROM sys_cards WHERE customer_id = ?').run([customerId]);
+    console.log('🔵 [IO-CARDS] Cleared existing cards for fresh import');
+
+    // insertCard — shared helper used for cards nested in Controllers, EIOCs, etc.
+    let _cardChannelSum = 0;
+    let _cardCount      = 0;
+    let _cardNoChannel  = 0;
+    const channelBuckets = {};
+    const insertCard = async (ctrl_name, card) => {
+      const gf = (o, f) => o[f] || o[f.toUpperCase()] || o[f.toLowerCase()] || null;
+      const name     = gf(card, 'Name') || '';
+      const model    = gf(card, 'Model');
+      const channels = parseCardChannelCount(model);
+      if (channels) {
+        _cardChannelSum += channels;
+        channelBuckets[channels] = (channelBuckets[channels] || 0) + 1;
+        console.log(`  📟 [IO-CARDS] ${ctrl_name}/${name} | "${model}" → ${channels} Ch`);
+      } else {
+        _cardNoChannel++;
+        console.log(`  ⚠️  [IO-CARDS] ${ctrl_name}/${name} | "${model || '(no model)'}" → no Ch count`);
+      }
+      try {
+        await db.prepare(`
+          INSERT INTO sys_cards (
+            customer_id, name, model, software_revision, hardware_revision, serial_number,
+            redundant, partner_model, partner_software_revision, partner_hardware_revision,
+            partner_serial_number, channel_count, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `).run([
+          customerId, name, model,
+          gf(card, 'SoftwareRevision'), gf(card, 'HardwareRevision'), gf(card, 'SerialNumber'),
+          gf(card, 'Redundant'), gf(card, 'PartnerModel'), gf(card, 'PartnerSoftwareRevision'),
+          gf(card, 'PartnerHardwareRevision'), gf(card, 'PartnerSerialNumber'),
+          channels
+        ]);
+        _cardCount++;
+        stats.cards++;
+      } catch (err) {
+        console.error('Error inserting card:', err);
+      }
+    };
+
+    // Parse Controller table — also extracts nested Card elements
     if (root.Controller) {
       const controllers = Array.isArray(root.Controller) ? root.Controller : [root.Controller];
       console.log('🔵 [SYSTEM REGISTRY] Processing', controllers.length, 'controllers');
@@ -432,6 +495,17 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
           );
           stats.controllers++;
           if (result === 'created') newCount++; else updatedCount++;
+
+          // Extract nested Card elements from this controller
+          const nestedCards = ctrl.Card || ctrl.CARD || ctrl.card;
+          if (nestedCards) {
+            const cardList = Array.isArray(nestedCards) ? nestedCards : [nestedCards];
+            const ctrlName = getField(ctrl, 'Name') || 'Unknown';
+            console.log(`🔵 [IO-CARDS] Controller ${ctrlName} has ${cardList.length} card(s)`);
+            for (const card of cardList) {
+              await insertCard(ctrlName, card);
+            }
+          }
         } catch (err) {
           console.error('Error inserting controller:', err);
         }
@@ -439,6 +513,7 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
     }
 
     // EIOC, SZ (SIS) controllers, Local Safety Network bridges — same columns as Controller
+    // Also extracts nested Card elements (same pattern as regular controllers)
     const importControllerLike = async (items, statKey, logLabel) => {
       const list = asArray(items);
       if (list.length === 0) return;
@@ -452,34 +527,32 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
             customerId,
             getField(ctrl, 'Name') || '',
             [
-              'model',
-              'software_revision',
-              'hardware_revision',
-              'serial_number',
-              'controller_free_memory',
-              'redundant',
-              'partner_model',
-              'partner_software_revision',
-              'partner_hardware_revision',
-              'partner_serial_number'
+              'model', 'software_revision', 'hardware_revision', 'serial_number',
+              'controller_free_memory', 'redundant', 'partner_model',
+              'partner_software_revision', 'partner_hardware_revision', 'partner_serial_number'
             ],
             [
-              getField(ctrl, 'Model'),
-              getField(ctrl, 'SoftwareRevision'),
-              getField(ctrl, 'HardwareRevision'),
-              getField(ctrl, 'SerialNumber'),
-              getField(ctrl, 'ControllerFreeMemory'),
-              getField(ctrl, 'Redundant'),
-              getField(ctrl, 'PartnerModel'),
-              getField(ctrl, 'PartnerSoftwareRevision'),
-              getField(ctrl, 'PartnerHardwareRevision'),
-              getField(ctrl, 'PartnerSerialNumber')
+              getField(ctrl, 'Model'), getField(ctrl, 'SoftwareRevision'),
+              getField(ctrl, 'HardwareRevision'), getField(ctrl, 'SerialNumber'),
+              getField(ctrl, 'ControllerFreeMemory'), getField(ctrl, 'Redundant'),
+              getField(ctrl, 'PartnerModel'), getField(ctrl, 'PartnerSoftwareRevision'),
+              getField(ctrl, 'PartnerHardwareRevision'), getField(ctrl, 'PartnerSerialNumber')
             ]
           );
           stats[statKey]++;
           stats.controllers++;
           if (result === 'created') newCount++;
           else updatedCount++;
+
+          // Extract nested Card elements from this controller-like node
+          const nestedCards = ctrl.Card || ctrl.CARD || ctrl.card;
+          if (nestedCards) {
+            const cardList = Array.isArray(nestedCards) ? nestedCards : [nestedCards];
+            const ctrlName = getField(ctrl, 'Name') || logLabel;
+            for (const card of cardList) {
+              await insertCard(ctrlName, card);
+            }
+          }
         } catch (err) {
           console.error(`Error inserting ${logLabel}:`, err);
         }
@@ -508,11 +581,18 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
         'Charms I/O + Smart Logic Solver cards'
       );
 
-      // Returns true when every data field is blank / "Not available" — these are
-      // empty hardware slots with no real device installed; skip them to avoid
-      // cluttering the database with thousands of useless placeholder rows.
+      // Returns true when the charm is an empty/undefined slot with no real device.
+      // Catches: blank fields, "Not available", "No Charm", "SIS_CHMIO_UNDEFINED_CHARM", etc.
+      const UNDEFINED_CHARM_PATTERNS = [
+        'not available', 'no charm', 'none', 'undefined',
+        'sis_chmio_undefined_charm', 'undefined_charm', 'uninstalled'
+      ];
       const isCharmEmpty = (model, swRev, hwRev, serial) => {
-        const NA = (v) => !v || v.trim() === '' || v.trim().toLowerCase() === 'not available';
+        const NA = (v) => {
+          if (!v || v.trim() === '') return true;
+          const lower = v.trim().toLowerCase();
+          return UNDEFINED_CHARM_PATTERNS.some(p => lower === p || lower.includes(p));
+        };
         return NA(model) && NA(swRev) && NA(hwRev) && NA(serial);
       };
 
@@ -581,10 +661,18 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       
       // Reuse the same helper defined above for nested charms (or define it if
       // standalone charms appear without a CharmsIOCard section)
+      const _UNDEFINED_CHARM_PATTERNS = [
+        'not available', 'no charm', 'none', 'undefined',
+        'sis_chmio_undefined_charm', 'undefined_charm', 'uninstalled'
+      ];
       const _isCharmEmpty = typeof isCharmEmpty === 'function'
         ? isCharmEmpty
         : (model, swRev, hwRev, serial) => {
-            const NA = (v) => !v || v.trim() === '' || v.trim().toLowerCase() === 'not available';
+            const NA = (v) => {
+              if (!v || v.trim() === '') return true;
+              const lower = v.trim().toLowerCase();
+              return _UNDEFINED_CHARM_PATTERNS.some(p => lower === p || lower.includes(p));
+            };
             return NA(model) && NA(swRev) && NA(hwRev) && NA(serial);
           };
 
@@ -625,6 +713,13 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
     await db.prepare(`UPDATE sys_charms_io_cards SET id = CAST(rowid AS TEXT) WHERE customer_id = ? AND id IS NULL`).run([customerId]);
     await db.prepare(`UPDATE sys_charms SET id = CAST(rowid AS TEXT) WHERE customer_id = ? AND id IS NULL`).run([customerId]);
 
+    // Log active charm count (real charms only — undefined/No Charm slots were skipped above)
+    const activeCharmRow = await db.prepare(
+      `SELECT COUNT(*) as cnt FROM sys_charms WHERE customer_id = ? AND (deleted IS NULL OR deleted = 0)`
+    ).get([customerId]).catch(() => null);
+    console.log(`✅ [IO-CHARMS] ${activeCharmRow?.cnt ?? 0} active CHARMs stored (undefined/No Charm slots excluded)`);
+    console.log(`📊 [IO-CHARMS] Each active CHARM = 1 IO point`);
+
     // Parse AMSSystem table
     if (root.AMSSystem) {
       const ams = Array.isArray(root.AMSSystem) ? root.AMSSystem[0] : root.AMSSystem;
@@ -649,6 +744,17 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       }
     }
     
+    // Card summary — cards were extracted inline from each Controller/EIOC above
+    console.log(`✅ [IO-CARDS] ${_cardCount} cards stored total across all controllers`);
+    console.log(`📊 [IO-CARDS] Total channel IO points from cards: ${_cardChannelSum}`);
+    console.log(`📊 [IO-CARDS] Channel breakdown:`, channelBuckets);
+    if (_cardNoChannel > 0) {
+      console.log(`⚠️  [IO-CARDS] ${_cardNoChannel} card(s) had no recognizable Ch count — contributed 0 IO points`);
+    }
+    if (_cardCount === 0) {
+      console.log('⚠️  [IO-CARDS] No cards found — verify controllers have nested <Card> elements in the XML');
+    }
+
     // If no standard tables found, provide helpful message
     const totalImported = Object.values(stats).reduce((a, b) => a + b, 0);
     if (totalImported === 0) {
@@ -657,6 +763,19 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       console.warn('⚠️ [SYSTEM REGISTRY] Please check the sample XML file for the correct format.');
     }
     
+    // IO subsystem summary log
+    const finalCardRow = await db.prepare(
+      `SELECT COUNT(*) as cnt, COALESCE(SUM(channel_count),0) as total FROM sys_cards WHERE customer_id = ?`
+    ).get([customerId]).catch(() => null);
+    const finalCharmRow = await db.prepare(
+      `SELECT COUNT(*) as cnt FROM sys_charms WHERE customer_id = ? AND (deleted IS NULL OR deleted = 0)`
+    ).get([customerId]).catch(() => null);
+    const totalIO = (finalCardRow?.total || 0) + (finalCharmRow?.cnt || 0);
+    console.log(`🎯 [IO-SUBSYSTEM] Total IO for this site:`);
+    console.log(`   Cards: ${finalCardRow?.cnt || 0} cards × their Ch count = ${finalCardRow?.total || 0} channel IO points`);
+    console.log(`   CHARMs: ${finalCharmRow?.cnt || 0} active CHARMs = ${finalCharmRow?.cnt || 0} IO points`);
+    console.log(`   TOTAL IO: ${totalIO}`);
+
     console.log('✅ [SYSTEM REGISTRY] Import completed successfully');
     console.log('✅ [SYSTEM REGISTRY] Stats:', JSON.stringify(stats, null, 2));
     console.log(`✅ [SYSTEM REGISTRY] New: ${newCount}, Updated: ${updatedCount}`);
@@ -868,6 +987,32 @@ router.get('/api/customers/:customerId/system-registry/charms', requireAuth, asy
   }
 });
 
+// Get IO cards for a customer (Card table from sys reg)
+router.get('/api/customers/:customerId/system-registry/cards', requireAuth, async (req, res) => {
+  const customerId = req.params.customerId;
+  try {
+    const cards = await db.prepare('SELECT * FROM sys_cards WHERE customer_id = ? ORDER BY name').all([customerId]);
+    res.json(cards);
+  } catch (error) {
+    console.error('Get IO cards error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Get total IO channel count for a customer (sum of channel_count from sys_cards)
+router.get('/api/customers/:customerId/system-registry/total-io', requireAuth, async (req, res) => {
+  const customerId = req.params.customerId;
+  try {
+    const row = await db.prepare(
+      'SELECT COUNT(*) as card_count, COALESCE(SUM(channel_count), 0) as total_channels FROM sys_cards WHERE customer_id = ?'
+    ).get([customerId]);
+    res.json({ card_count: row?.card_count || 0, total_channels: row?.total_channels || 0 });
+  } catch (error) {
+    console.error('Get total IO error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 // Get AMS system for a customer
 router.get('/api/customers/:customerId/system-registry/ams-system', requireAuth, async (req, res) => {
   const customerId = req.params.customerId;
@@ -893,6 +1038,7 @@ router.delete('/api/customers/:customerId/system-registry', requireAuth, async (
     await db.prepare('DELETE FROM sys_charms_io_cards WHERE customer_id = ?').run([customerId]);
     await db.prepare('DELETE FROM sys_charms WHERE customer_id = ?').run([customerId]);
     await db.prepare('DELETE FROM sys_ams_systems WHERE customer_id = ?').run([customerId]);
+    await db.prepare('DELETE FROM sys_cards WHERE customer_id = ?').run([customerId]);
     
     res.json({ success: true, message: 'System registry data deleted' });
   } catch (error) {
