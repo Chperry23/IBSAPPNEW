@@ -383,6 +383,107 @@ router.put('/:cabinetId', requireAuth, async (req, res) => {
   }
 });
 
+// Duplicate a cabinet (copies counts/inspection, clears controllers)
+router.post('/:cabinetId/duplicate', requireAuth, async (req, res) => {
+  const cabinetId = req.params.cabinetId;
+  const { new_name } = req.body;
+
+  try {
+    const source = await db.prepare(`
+      SELECT c.*, s.status as session_status
+      FROM cabinets c
+      LEFT JOIN sessions s ON c.pm_session_id = s.id
+      WHERE c.id = ?
+    `).get(cabinetId);
+
+    if (!source) {
+      return res.status(404).json({ error: 'Cabinet not found' });
+    }
+    if (source.session_status === 'completed') {
+      return res.status(403).json({ error: 'Cannot duplicate cabinet in a completed session' });
+    }
+
+    const newName = (new_name || '').trim() || `${source.cabinet_name} (Copy)`;
+    const newId = require('crypto').randomUUID();
+
+    // Helper: generate N blank items of a given shape (preserves count, clears all values)
+    const blankItems = (jsonStr, blankFn) => {
+      try {
+        const items = JSON.parse(jsonStr || '[]');
+        return JSON.stringify(items.map((_, i) => blankFn(i)));
+      } catch (_) { return '[]'; }
+    };
+
+    const blankPs = (i) => ({ id: Date.now() + i, voltage_type: '24VDC', line_neutral: '', line_ground: '', neutral_ground: '', dc_reading: '', status: '', comments: '' });
+    const blankDb = (i) => ({ id: Date.now() + i, type: '', condition: '', comments: '', voltage_type: '24VDC', dc_reading: '' });
+    const blankDiode = (i) => ({ id: Date.now() + i, diode_name: `Diode ${i + 1}`, voltage_type: '24VDC', dc_reading: '' });
+    const blankMc = (i) => ({ id: Date.now() + i, mc_name: `MC ${i + 1}`, voltage_type: '24VDC', dc_reading: '' });
+    const blankPib = (i) => ({ id: Date.now() + i, pib_name: `Carrier/Baseplate ${i + 1}` });
+    const blankNet = (i) => ({ id: Date.now() + i, equipment_type: '', model_number: '', port_count: '', condition: '', comments: '', serial: '', firmware: '' });
+
+    await db.prepare(`
+      INSERT INTO cabinets (
+        id, pm_session_id, cabinet_name, cabinet_date, cabinet_type,
+        power_supplies, distribution_blocks, diodes, media_converters,
+        power_injected_baseplates, network_equipment,
+        controllers, workstations,
+        inspection_data, comments,
+        rack_has_ups, rack_has_hmi, rack_has_kvm, rack_has_monitor,
+        status, synced, updated_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+    `).run([
+      newId,
+      source.pm_session_id,
+      newName,
+      source.cabinet_date,
+      source.cabinet_type || 'cabinet',
+      blankItems(source.power_supplies, blankPs),
+      blankItems(source.distribution_blocks, blankDb),
+      blankItems(source.diodes, blankDiode),
+      blankItems(source.media_converters, blankMc),
+      blankItems(source.power_injected_baseplates, blankPib),
+      blankItems(source.network_equipment, blankNet),
+      '[]',  // controllers not duplicated
+      '[]',  // workstations not duplicated
+      '{}',  // inspection starts fresh
+      null,  // comments start fresh
+      source.rack_has_ups || 0,
+      source.rack_has_hmi || 0,
+      source.rack_has_kvm || 0,
+      source.rack_has_monitor || 0,
+      'active',
+      0,
+    ]);
+
+    const newCabinet = await db.prepare('SELECT * FROM cabinets WHERE id = ?').get(newId);
+    res.json({ success: true, message: 'Cabinet duplicated', cabinet: newCabinet });
+  } catch (error) {
+    console.error('Duplicate cabinet error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Bulk-complete all active cabinets in a session
+router.put('/session/:sessionId/complete-all', requireAuth, async (req, res) => {
+  const { sessionId } = req.params;
+  try {
+    const session = await db.prepare(`SELECT id, status FROM sessions WHERE id = ?`).get(sessionId);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    if (session.status === 'completed') {
+      return res.status(403).json({ error: 'Session is already completed' });
+    }
+    const result = await db.prepare(`
+      UPDATE cabinets SET status = 'completed', synced = 0, updated_at = CURRENT_TIMESTAMP
+      WHERE pm_session_id = ? AND (deleted IS NULL OR deleted = 0) AND status != 'completed'
+    `).run([sessionId]);
+    console.log(`[CABINETS] Bulk completed ${result.changes} cabinets for session ${sessionId}`);
+    res.json({ success: true, count: result.changes });
+  } catch (error) {
+    console.error('Bulk complete cabinets error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 // Mark a single cabinet as completed
 router.put('/:cabinetId/complete', requireAuth, async (req, res) => {
   const cabinetId = req.params.cabinetId;

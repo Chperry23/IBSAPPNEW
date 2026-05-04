@@ -23,6 +23,9 @@ export default function Sessions() {
     new Date().toISOString().split('T')[0]
   );
   const [newSessionType, setNewSessionType] = useState('pm');
+  const [newSessionCustomerId, setNewSessionCustomerId] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -30,6 +33,9 @@ export default function Sessions() {
       setNewSessionSiteLabel('');
       setNewSessionDate(new Date().toISOString().split('T')[0]);
       setNewSessionType('pm');
+      setNewSessionCustomerId('');
+      setCustomerSearch('');
+      setShowCustomerDropdown(false);
       setShowNewModal(true);
     }
   }, [searchParams]);
@@ -57,9 +63,12 @@ export default function Sessions() {
 
   const handleCreateSession = async (e) => {
     e.preventDefault();
-    const formData = new FormData(e.target);
+    if (!newSessionCustomerId) {
+      showMessage('Please select a customer', 'error');
+      return;
+    }
     const data = {
-      customer_id: formData.get('customer_id'),
+      customer_id: newSessionCustomerId,
       session_type: newSessionType,
       session_name: formatSessionNameWithLabel(
         newSessionSiteLabel,
@@ -76,9 +85,10 @@ export default function Sessions() {
         setNewSessionSiteLabel('');
         setNewSessionDate(new Date().toISOString().split('T')[0]);
         setNewSessionType('pm');
+        setNewSessionCustomerId('');
+        setCustomerSearch('');
         loadData();
         showMessage('PM Session created successfully', 'success');
-        e.target.reset();
       } else {
         soundSystem.playError();
         showMessage(result.error || 'Error creating session', 'error');
@@ -332,7 +342,42 @@ export default function Sessions() {
                         {(session.status || 'ACTIVE').toUpperCase()}
                       </span>
                     </td>
-                    <td>{session.cabinet_count || 0} cabinets</td>
+                    <td>
+                      {(() => {
+                        const total     = session.cabinet_count || 0;
+                        const done      = session.completed_cabinet_count || 0;
+                        const completed = session.status === 'completed';
+                        if (total === 0) {
+                          return (
+                            <div className="min-w-[90px]">
+                              <div className="flex justify-between text-xs text-gray-400 mb-1">
+                                <span>0 / 0</span>
+                                <span className={completed ? 'text-green-400' : 'text-gray-500'}>{completed ? '100%' : '—'}</span>
+                              </div>
+                              <div className="w-full bg-gray-700 rounded-full h-1.5">
+                                <div className={`h-1.5 rounded-full ${completed ? 'bg-green-500 w-full' : 'w-0'}`} />
+                              </div>
+                            </div>
+                          );
+                        }
+                        const pct     = Math.round((done / total) * 100);
+                        const allDone = done === total;
+                        return (
+                          <div className="min-w-[90px]">
+                            <div className="flex justify-between text-xs text-gray-400 mb-1">
+                              <span>{done} / {total}</span>
+                              <span className={allDone ? 'text-green-400' : ''}>{pct}%</span>
+                            </div>
+                            <div className="w-full bg-gray-700 rounded-full h-1.5">
+                              <div
+                                className={`h-1.5 rounded-full transition-all ${allDone ? 'bg-green-500' : 'bg-blue-500'}`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td>{new Date(session.created_at).toLocaleDateString()}</td>
                     <td>
                       <div className="flex gap-3">
@@ -391,7 +436,12 @@ export default function Sessions() {
             <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
               <h3 className="text-lg font-semibold text-gray-100">New PM Session</h3>
               <button
-                onClick={() => setShowNewModal(false)}
+                onClick={() => {
+                  setShowNewModal(false);
+                  setNewSessionCustomerId('');
+                  setCustomerSearch('');
+                  setShowCustomerDropdown(false);
+                }}
                 className="text-gray-400 hover:text-gray-200 text-2xl"
               >
                 ×
@@ -399,16 +449,53 @@ export default function Sessions() {
             </div>
             <form onSubmit={handleCreateSession}>
               <div className="px-6 py-4 space-y-4">
-                <div>
+                {/* Searchable customer picker */}
+                <div className="relative">
                   <label className="form-label">Customer *</label>
-                  <select name="customer_id" required className="form-input">
-                    <option value="">Select a customer</option>
-                    {customers.map((customer) => (
-                      <option key={customer.id} value={customer.id}>
-                        {customer.name}
-                      </option>
-                    ))}
-                  </select>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Search customers..."
+                    value={customerSearch}
+                    autoComplete="off"
+                    onFocus={() => setShowCustomerDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 150)}
+                    onChange={(e) => {
+                      setCustomerSearch(e.target.value);
+                      setNewSessionCustomerId('');
+                      setShowCustomerDropdown(true);
+                    }}
+                  />
+                  {newSessionCustomerId && (
+                    <div className="mt-1 text-xs text-green-400">
+                      ✓ {customers.find(c => String(c.id) === String(newSessionCustomerId))?.name}
+                    </div>
+                  )}
+                  {showCustomerDropdown && (
+                    <div className="absolute z-50 w-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl max-h-52 overflow-y-auto">
+                      {customers
+                        .filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()))
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map(c => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-blue-600 hover:text-white transition-colors"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setNewSessionCustomerId(String(c.id));
+                              setCustomerSearch(c.name);
+                              setShowCustomerDropdown(false);
+                            }}
+                          >
+                            {c.name}
+                          </button>
+                        ))}
+                      {customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase())).length === 0 && (
+                        <div className="px-4 py-3 text-sm text-gray-400">No customers found</div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="form-label">Session Type *</label>

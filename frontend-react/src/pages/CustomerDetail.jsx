@@ -28,6 +28,8 @@ export default function CustomerDetail() {
   const [editingSession, setEditingSession] = useState(null);
   const [showSystemRegModal, setShowSystemRegModal] = useState(false);
   const [systemRegSummary, setSystemRegSummary] = useState(null);
+  const [hddHistory, setHddHistory] = useState([]);
+  const [hddLoading, setHddLoading] = useState(false);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [duplicatingSession, setDuplicatingSession] = useState(null);
   const [duplicateProgress, setDuplicateProgress] = useState(false);
@@ -828,6 +830,26 @@ export default function CustomerDetail() {
             >
               📋 Site Notes ({notes.length})
             </button>
+            <button
+              onClick={async () => {
+                setActiveTab('hdd');
+                if (hddHistory.length === 0) {
+                  setHddLoading(true);
+                  try {
+                    const data = await fetch(`/api/customers/${id}/hdd-replacements`, { credentials: 'include' }).then(r => r.json());
+                    setHddHistory(Array.isArray(data) ? data : []);
+                  } catch { setHddHistory([]); }
+                  finally { setHddLoading(false); }
+                }
+              }}
+              className={`pb-2 px-4 font-medium transition-colors ${
+                activeTab === 'hdd'
+                  ? 'text-orange-400 border-b-2 border-orange-400'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              💾 Drive History
+            </button>
           </div>
         </div>
         {/* Site Notes Panel */}
@@ -958,7 +980,61 @@ export default function CustomerDetail() {
           </div>
         )}
 
-        <div className="overflow-x-auto" style={{ display: activeTab === 'notes' ? 'none' : undefined }}>
+        {/* Drive History Panel */}
+        {activeTab === 'hdd' && (
+          <div className="p-6">
+            {hddLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-400"></div>
+              </div>
+            ) : hddHistory.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                <div className="text-4xl mb-3">💾</div>
+                <p className="text-sm">No HDD replacements recorded for this customer.</p>
+                <p className="text-xs text-gray-500 mt-1">HDD replacements are logged in the node maintenance section of each PM session.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="table-dark">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Session</th>
+                      <th>Node</th>
+                      <th>Type</th>
+                      <th>Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hddHistory.map((row, i) => (
+                      <tr key={i}>
+                        <td className="text-gray-300 whitespace-nowrap">
+                          {new Date(row.session_date).toLocaleDateString()}
+                        </td>
+                        <td>
+                          <Link
+                            to={`/session/${row.session_id}`}
+                            className="text-blue-400 hover:text-blue-300 hover:underline"
+                          >
+                            {row.session_name}
+                          </Link>
+                        </td>
+                        <td className="font-medium text-gray-200">{row.node_name}</td>
+                        <td>
+                          <span className="badge badge-blue text-xs">{row.node_type}</span>
+                        </td>
+                        <td className="text-gray-400 text-sm">{row.notes || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-xs text-gray-500 mt-3">{hddHistory.length} replacement{hddHistory.length !== 1 ? 's' : ''} recorded</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="overflow-x-auto" style={{ display: (activeTab === 'notes' || activeTab === 'hdd') ? 'none' : undefined }}>
           <table className="table-dark">
             <thead>
               <tr>
@@ -990,7 +1066,42 @@ export default function CustomerDetail() {
                     {activeTab === 'completed' && (
                       <td>{session.completed_at ? new Date(session.completed_at).toLocaleDateString() : 'N/A'}</td>
                     )}
-                    <td>{session.cabinet_count || 0} cabinets</td>
+                    <td>
+                      {(() => {
+                        const total     = session.cabinet_count || 0;
+                        const done      = session.completed_cabinet_count || 0;
+                        const completed = session.status === 'completed';
+                        if (total === 0) {
+                          return (
+                            <div className="min-w-[80px]">
+                              <div className="flex justify-between text-xs text-gray-400 mb-1">
+                                <span>0 / 0</span>
+                                <span className={completed ? 'text-green-400' : 'text-gray-500'}>{completed ? '100%' : '—'}</span>
+                              </div>
+                              <div className="w-full bg-gray-700 rounded-full h-1.5">
+                                <div className={`h-1.5 rounded-full ${completed ? 'bg-green-500 w-full' : 'w-0'}`} />
+                              </div>
+                            </div>
+                          );
+                        }
+                        const pct     = Math.round((done / total) * 100);
+                        const allDone = done === total;
+                        return (
+                          <div className="min-w-[80px]">
+                            <div className="flex justify-between text-xs text-gray-400 mb-1">
+                              <span>{done} / {total}</span>
+                              <span className={allDone ? 'text-green-400' : ''}>{pct}%</span>
+                            </div>
+                            <div className="w-full bg-gray-700 rounded-full h-1.5">
+                              <div
+                                className={`h-1.5 rounded-full transition-all ${allDone ? 'bg-green-500' : 'bg-blue-500'}`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td>
                       <div className="flex gap-3 flex-wrap">
                         <Link

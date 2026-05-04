@@ -110,6 +110,69 @@ router.post('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
   }
 });
 
+// HDD replacement history for a customer — all nodes where hdd_replaced=1 across all sessions
+router.get('/:customerId/hdd-replacements', requireAuth, async (req, res) => {
+  const { customerId } = req.params;
+  const ID_WORKSTATION = 1000000;
+  const ID_CONTROLLER  = 2000000;
+  const ID_SWITCH      = 3000000;
+  const ID_CIOC        = 4000000;
+
+  try {
+    // Fetch all hdd_replaced rows for this customer's sessions
+    const rows = await db.prepare(`
+      SELECT m.node_id, m.notes, s.id as session_id, s.session_name, s.created_at as session_date
+      FROM session_node_maintenance m
+      JOIN sessions s ON m.session_id = s.id
+      WHERE s.customer_id = ? AND m.hdd_replaced = 1 AND (s.deleted IS NULL OR s.deleted = 0)
+      ORDER BY s.created_at DESC
+    `).all([customerId]);
+
+    if (rows.length === 0) return res.json([]);
+
+    // Resolve node names using the synthetic ID ranges
+    const resolve = async (nodeId) => {
+      if (nodeId >= ID_CIOC) {
+        const r = await db.prepare(`SELECT name, 'CIOC' as type FROM sys_charms_io_cards WHERE id = ?`).get(nodeId - ID_CIOC);
+        return r || { name: `Node ${nodeId}`, type: 'CIOC' };
+      }
+      if (nodeId >= ID_SWITCH) {
+        const r = await db.prepare(`SELECT name, 'Smart Switch' as type FROM sys_smart_switches WHERE id = ?`).get(nodeId - ID_SWITCH);
+        return r || { name: `Node ${nodeId}`, type: 'Smart Switch' };
+      }
+      if (nodeId >= ID_CONTROLLER) {
+        const r = await db.prepare(`SELECT name, 'Controller' as type FROM sys_controllers WHERE id = ?`).get(nodeId - ID_CONTROLLER);
+        return r || { name: `Node ${nodeId}`, type: 'Controller' };
+      }
+      if (nodeId >= ID_WORKSTATION) {
+        const r = await db.prepare(`SELECT name, type FROM sys_workstations WHERE id = ?`).get(nodeId - ID_WORKSTATION);
+        return r || { name: `Node ${nodeId}`, type: 'Workstation' };
+      }
+      // Custom node in nodes table
+      const r = await db.prepare(`SELECT node_name as name, node_type as type FROM nodes WHERE id = ?`).get(nodeId);
+      return r || { name: `Node ${nodeId}`, type: 'Unknown' };
+    };
+
+    const results = await Promise.all(rows.map(async row => {
+      const node = await resolve(row.node_id);
+      return {
+        session_id:   row.session_id,
+        session_name: row.session_name,
+        session_date: row.session_date,
+        node_id:      row.node_id,
+        node_name:    node.name || `Node ${row.node_id}`,
+        node_type:    node.type || 'Unknown',
+        notes:        row.notes || '',
+      };
+    }));
+
+    res.json(results);
+  } catch (error) {
+    console.error('HDD replacements error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 // Clear all node maintenance data for a session
 router.delete('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
   const sessionId = req.params.sessionId;

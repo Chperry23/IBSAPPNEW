@@ -167,10 +167,15 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
 
     // Load Charms I/O Cards from sys_charms_io_cards (with assignment status)
     const ciocs = await db.prepare(`
-      SELECT 
+      SELECT
         cio.id,
         cio.name as node_name,
-        'CIOC' as node_type,
+        CASE
+          WHEN LOWER(cio.name)  LIKE '%csls%' OR LOWER(cio.name)  LIKE '%charms logic solver%' OR LOWER(cio.name)  LIKE '%smart logic solver%'
+            OR LOWER(cio.model) LIKE '%csls%' OR LOWER(cio.model) LIKE '%logic solver%'
+          THEN 'CSLS'
+          ELSE 'CIOC'
+        END as node_type,
         cio.model,
         cio.serial_number as serial,
         cio.software_revision as firmware,
@@ -190,14 +195,14 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
     nodes.push(...ciocs);
     console.log(`   📟 Loaded ${ciocs.length} Charms I/O cards from sys_charms_io_cards`);
 
-    // Add partner nodes for redundant CIOCs
+    // Add partner nodes for redundant CIOCs/CSLSs
     for (const cioc of ciocs) {
       if (isRedundantFlag(cioc.redundant)) {
         const baseId = cioc.id - ID_CIOC;
         nodes.push({
           id: ID_CIOC_PARTNER + baseId,
           node_name: `${cioc.node_name}-partner`,
-          node_type: 'CIOC',
+          node_type: cioc.node_type,  // inherits CSLS or CIOC from parent
           node_category: 'cioc',
           model: cioc.model,
           serial: null,
@@ -358,10 +363,15 @@ router.get('/api/customers/:customerId/available-controllers', requireAuth, asyn
     `).all([customerId]);
     
     const ciocs = await db.prepare(`
-      SELECT 
+      SELECT
         id,
         name as node_name,
-        'CIOC' as node_type,
+        CASE
+          WHEN LOWER(name)  LIKE '%csls%' OR LOWER(name)  LIKE '%charms logic solver%' OR LOWER(name)  LIKE '%smart logic solver%'
+            OR LOWER(model) LIKE '%csls%' OR LOWER(model) LIKE '%logic solver%'
+          THEN 'CSLS'
+          ELSE 'CIOC'
+        END as node_type,
         model,
         serial_number as serial,
         software_revision as firmware,

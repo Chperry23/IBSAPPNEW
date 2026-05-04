@@ -104,15 +104,17 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
     { value: 'device_error', label: 'Device Error', icon: '⚙️', description: 'Hardware failure' },
     { value: 'short_circuit', label: 'Short Circuit', icon: '⚡', description: 'Electrical short' },
     { value: 'no_card', label: 'No Card', icon: '🚫', description: 'Card missing' },
-    { value: 'device_errors_on_link', label: 'Device Errors on Link', icon: '🔗', description: 'One or more devices reporting errors on Fieldbus link', onlyCardTypes: ['fieldbus'] },
-    { value: 'function_block_problems', label: 'Function Block Problems on Link', icon: '📦', description: '1 or more function block problems on Fieldbus link', onlyCardTypes: ['fieldbus'] },
-    { value: 'device_not_in_range', label: 'Device Not in Range on Link', icon: '📡', description: 'Device not in range on Fieldbus link', onlyCardTypes: ['fieldbus'] },
+    { value: 'device_errors_on_link', label: 'Device Errors on Link', icon: '🔗', description: 'One or more devices reporting errors on Fieldbus link', onlyCardTypes: ['fieldbus', 'profibus', 'asi_bus'] },
+    { value: 'function_block_problems', label: 'Function Block Problems on Link', icon: '📦', description: '1 or more function block problems on Fieldbus link', onlyCardTypes: ['fieldbus', 'profibus', 'asi_bus'] },
+    { value: 'device_not_in_range', label: 'Device Not in Range on Link', icon: '📡', description: 'Device not in range on Fieldbus link', onlyCardTypes: ['fieldbus', 'profibus', 'asi_bus'] },
   ];
 
   const cardTypes = [
     { value: 'devicenet', label: 'DeviceNet', portLabel: 'Port Number' },
     { value: 'hart', label: 'AI / AO / DI / DO (HART)', portLabel: 'Channel Number' },
     { value: 'fieldbus', label: 'Fieldbus', portLabel: 'Port Number' },
+    { value: 'profibus', label: 'Profibus', portLabel: 'Port Number' },
+    { value: 'asi_bus', label: 'ASi-bus', portLabel: 'Port Number' },
     { value: 'serial', label: 'Serial', portLabel: 'Port Number' },
     { value: 'eioc', label: 'EIOC', portLabel: 'PDT' },
   ];
@@ -473,7 +475,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
     if (ct === 'hart' && manualChannels.length === 0) errs.channels = 'Select at least one channel';
     if (ct === 'eioc' && !manualPdt.trim()) errs.pdt = 'PDT is required';
     if (ct === 'eioc' && !manualLdt.trim()) errs.ldt = 'LDT is required';
-    if ((ct === 'devicenet' || ct === 'fieldbus' || ct === 'serial') && manualPort == null) errs.port = 'Select a port';
+    if ((ct === 'devicenet' || ct === 'fieldbus' || ct === 'profibus' || ct === 'asi_bus' || ct === 'serial') && manualPort == null) errs.port = 'Select a port';
 
     if (Object.keys(errs).length > 0) {
       setCardDetailErrors(errs);
@@ -581,7 +583,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
     const ct = cardDetailContext.card_type;
     if (ct === 'hart') return manualChannels.length === 0;
     if (ct === 'eioc') return !manualPdt;
-    if (ct === 'devicenet' || ct === 'fieldbus' || ct === 'serial') return manualPort == null;
+    if (ct === 'devicenet' || ct === 'fieldbus' || ct === 'profibus' || ct === 'asi_bus' || ct === 'serial') return manualPort == null;
     return false;
   };
 
@@ -1786,6 +1788,8 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
               )}
               {(cardDetailContext.card_type === 'devicenet' ||
                 cardDetailContext.card_type === 'fieldbus' ||
+                cardDetailContext.card_type === 'profibus' ||
+                cardDetailContext.card_type === 'asi_bus' ||
                 cardDetailContext.card_type === 'serial') && (
                 <>
                   <div>

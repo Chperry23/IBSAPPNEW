@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import SoundToggle from './SoundToggle';
+import GlobalSearch from './GlobalSearch';
 
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
@@ -89,6 +90,7 @@ export default function Layout({ children }) {
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              <GlobalSearch />
               {buildInfo && (
                 <span
                   className="text-xs text-gray-500 font-mono cursor-default"

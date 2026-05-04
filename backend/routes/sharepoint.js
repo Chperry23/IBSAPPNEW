@@ -17,6 +17,129 @@ router.get('/api/sharepoint/status', requireAuth, (req, res) => {
   });
 });
 
+// ── GET /api/sharepoint/test-connection ──────────────────────────────────────
+// Diagnoses the SharePoint configuration and attempts a live token + site fetch.
+// Safe to call even when not configured — returns detailed diagnostics.
+router.get('/api/sharepoint/test-connection', requireAuth, async (req, res) => {
+  const cfg = sp.loadConfig();
+
+  const diag = {
+    configured:   sp.isConfigured(),
+    tenantId:     cfg.tenantId     ? `${cfg.tenantId.slice(0, 8)}…`     : '(missing)',
+    clientId:     cfg.clientId     ? `${cfg.clientId.slice(0, 8)}…`     : '(missing)',
+    clientSecret: cfg.clientSecret ? `${'*'.repeat(8)} (set)`           : '(missing)',
+    siteHost:     cfg.siteHost,
+    sitePath:     cfg.sitePath,
+    listName:     cfg.listName,
+    configSource: (() => {
+      const fs   = require('fs');
+      const path = require('path');
+      const cfgPath = path.join(__dirname, '..', '..', 'sharepoint-config.json');
+      if (fs.existsSync(cfgPath)) return 'sharepoint-config.json';
+      if (process.env.SP_TENANT_ID) return 'environment variables';
+      return 'none found';
+    })(),
+  };
+
+  if (!sp.isConfigured()) {
+    return res.status(503).json({
+      success: false,
+      step: 'config-check',
+      error: 'SharePoint credentials are not configured. Either set SP_TENANT_ID / SP_CLIENT_ID / SP_CLIENT_SECRET as environment variables, or create sharepoint-config.json in the app root.',
+      diagnostics: diag,
+    });
+  }
+
+  // Step 1: Try to get an access token
+  let token;
+  try {
+    const { loadConfig } = sp;
+    // Re-use internal getAccessToken via a thin test
+    token = await (async () => {
+      const https = require('https');
+      const body  = new URLSearchParams({
+        grant_type:    'client_credentials',
+        client_id:     cfg.clientId,
+        client_secret: cfg.clientSecret,
+        scope:         'https://graph.microsoft.com/.default',
+      }).toString();
+      return new Promise((resolve, reject) => {
+        const req = https.request({
+          hostname: 'login.microsoftonline.com',
+          path:     `/${cfg.tenantId}/oauth2/v2.0/token`,
+          method:   'POST',
+          headers:  { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) },
+        }, r => {
+          let d = '';
+          r.on('data', c => { d += c; });
+          r.on('end', () => {
+            try { resolve({ status: r.statusCode, body: JSON.parse(d) }); }
+            catch (_) { resolve({ status: r.statusCode, body: d }); }
+          });
+        });
+        req.on('error', reject);
+        req.write(body);
+        req.end();
+      });
+    })();
+  } catch (err) {
+    return res.status(500).json({ success: false, step: 'token-request', error: err.message, diagnostics: diag });
+  }
+
+  if (!token.body?.access_token) {
+    return res.status(401).json({
+      success: false,
+      step: 'token-request',
+      error: `Azure AD token request failed (HTTP ${token.status})`,
+      azureError: token.body?.error,
+      azureDescription: token.body?.error_description,
+      diagnostics: diag,
+    });
+  }
+
+  diag.tokenObtained = true;
+
+  // Step 2: Try to resolve the SharePoint site
+  try {
+    const https = require('https');
+    const siteRes = await new Promise((resolve, reject) => {
+      const req = https.request({
+        hostname: 'graph.microsoft.com',
+        path:     `/v1.0/sites/${cfg.siteHost}:${cfg.sitePath}`,
+        method:   'GET',
+        headers:  { Authorization: `Bearer ${token.body.access_token}`, Accept: 'application/json' },
+      }, r => {
+        let d = '';
+        r.on('data', c => { d += c; });
+        r.on('end', () => {
+          try { resolve({ status: r.statusCode, body: JSON.parse(d) }); }
+          catch (_) { resolve({ status: r.statusCode, body: d }); }
+        });
+      });
+      req.on('error', reject);
+      req.end();
+    });
+
+    if (siteRes.status >= 400) {
+      return res.status(502).json({
+        success: false,
+        step: 'site-lookup',
+        error: `SharePoint site lookup failed (HTTP ${siteRes.status})`,
+        graphError: siteRes.body?.error,
+        diagnostics: diag,
+      });
+    }
+
+    diag.siteName = siteRes.body?.displayName || siteRes.body?.name;
+    diag.siteId   = siteRes.body?.id ? `${siteRes.body.id.slice(0, 16)}…` : null;
+    diag.siteOk   = true;
+
+    res.json({ success: true, message: 'SharePoint connection successful!', diagnostics: diag });
+  } catch (err) {
+    res.status(500).json({ success: false, step: 'site-lookup', error: err.message, diagnostics: diag });
+  }
+});
+
 // ── GET /api/sharepoint/discover-lists ───────────────────────────────────────
 // Returns all list names on the SharePoint site so you can verify/correct
 // the listName value in sharepoint-config.json.

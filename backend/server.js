@@ -22,6 +22,8 @@ const systemRegistrySyncRoutes = require('./routes/systemRegistrySync');
 const locationRoutes = require('./routes/locations');
 const sharepointRoutes = require('./routes/sharepoint');
 const customErrorTypesRoutes = require('./routes/customErrorTypes');
+const searchRoutes = require('./routes/search');
+const demoReportRoutes = require('./routes/demoReport');
 
 const PORT = process.env.PORT || 3000;
 
@@ -79,6 +81,7 @@ function createApp(options = {}) {
   app.use('/api/cabinets', cabinetRoutes);
   app.use('/', nodeRoutes);
   app.use('/api/sessions', nodeMaintenanceRoutes);
+  app.use('/api/customers', nodeMaintenanceRoutes);
   app.use('/api/sessions', nodeTrackerRoutes);
   app.use('/api/sessions', diagnosticsRoutes);
   app.use('/api/sessions', pmNotesRoutes);
@@ -87,6 +90,8 @@ function createApp(options = {}) {
   app.use('/api/customers', systemRegistrySyncRoutes);
   app.use('/api', locationRoutes);
   app.use('/api/custom-error-types', customErrorTypesRoutes);
+  app.use('/api', searchRoutes);
+  app.use('/api/reports/demo-pm', demoReportRoutes);
   app.use('/', sharepointRoutes);
 
   if (!catchAllPath) {

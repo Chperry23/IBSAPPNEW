@@ -13,6 +13,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
   const [showCustomComputer, setShowCustomComputer] = useState(false);
   const [showCustomSwitch, setShowCustomSwitch] = useState(false);
   const [customNode, setCustomNode] = useState({ node_name: '', node_type: '', model: '', serial: '' });
+  const [wsModelIsCustom, setWsModelIsCustom] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -243,10 +244,11 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
     // CIOC 2 is a specific card type distinct from generic CIOC (which is free-time)
     if (nodeType.startsWith('se') || nodeType.startsWith('sz') || nodeType.startsWith('sx') ||
         nodeType.startsWith('sq') || nodeType.startsWith('mq') || nodeType.includes('csls') ||
+        nodeType.includes('charms logic solver') || nodeType.includes('smart logic solver') ||
         nodeType.includes('pk') || nodeType.includes('eioc') || nodeType.includes('sis') ||
         nodeType.includes('cioc 2') || nodeType.includes('cioc2') ||
         (nodeType.includes('kl') && nodeType.includes('ba1')) ||
-        nodeName.includes('csls') || nodeName.includes('eioc') ||
+        nodeName.includes('csls') || nodeName.includes('charms logic solver') || nodeName.includes('eioc') ||
         model.includes('mq') || model.includes('pk') || model.includes('sq') ||
         model.includes('sz') || model.includes('sx') ||
         model.includes('csls') || model.includes('logic solver') ||
@@ -306,6 +308,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
         }
         
         setCustomNode({ node_name: '', node_type: '', model: '', serial: '' });
+        setWsModelIsCustom(false);
         setShowCustomController(false);
         setShowCustomComputer(false);
         setShowCustomSwitch(false);
@@ -355,12 +358,34 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
 
   // Separate equipment types
   const controllers = nodes.filter((n) =>
-    ['Controller', 'CIOC', 'CSLS', 'DeltaV EIOC', 'SIS'].includes(n.node_type)
+    ['Controller', 'CIOC', 'CSLS', 'DeltaV EIOC', 'SIS'].includes(n.node_type) ||
+    (n.node_name || '').toLowerCase().includes('csls') ||
+    (n.node_name || '').toLowerCase().includes('charms logic solver') ||
+    (n.node_name || '').toLowerCase().includes('smart logic solver') ||
+    (n.model || '').toLowerCase().includes('csls') ||
+    (n.model || '').toLowerCase().includes('logic solver')
   );
   
-  const computers = nodes.filter((n) =>
-    ['Local Operator', 'Local ProfessionalPlus', 'Local Application', 'Professional Plus', 'Application Station'].includes(n.node_type)
-  );
+  const workstationTypes = [
+    'Local Operator',
+    'Local Application',
+    'Local Professional Plus',
+    'Local Pro',
+    'Local ProfessionalPlus',
+    'Professional Plus',
+    'Application Station',
+    'Local Safety',
+    'VRTX Chassis (Virtual)',
+    'Host (Virtual)',
+    'File Witness (Virtual)',
+    'Non-DV Node',
+  ];
+
+  const workstationModels = [
+    'VE3008', 'VE3007', 'VE3006', 'VE2001', 'VE2002',
+  ];
+
+  const computers = nodes.filter((n) => workstationTypes.includes(n.node_type));
   
   const switches = nodes.filter((n) => n.node_type === 'Smart Network Devices');
 
@@ -929,17 +954,51 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                           onChange={(e) => setCustomNode({...customNode, node_name: e.target.value})}
                           className="form-input text-sm"
                         />
-                        <input
-                          type="text"
-                          placeholder="Model"
-                          value={customNode.model}
-                          onChange={(e) => setCustomNode({...customNode, model: e.target.value})}
-                          className="form-input text-sm"
-                        />
+                        <select
+                          value={customNode.node_type || 'Local Operator'}
+                          onChange={(e) => setCustomNode({...customNode, node_type: e.target.value})}
+                          className="form-select text-sm"
+                        >
+                          {[
+                            'Local Operator', 'Local Application', 'Local Professional Plus', 'Local Pro',
+                            'VRTX Chassis (Virtual)', 'Host (Virtual)', 'File Witness (Virtual)', 'Non-DV Node',
+                          ].map((t) => (
+                            <option key={t} value={t}>{t}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={wsModelIsCustom ? '__custom__' : (customNode.model || '')}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              setWsModelIsCustom(true);
+                              setCustomNode({...customNode, model: ''});
+                            } else {
+                              setWsModelIsCustom(false);
+                              setCustomNode({...customNode, model: e.target.value});
+                            }
+                          }}
+                          className="form-select text-sm"
+                        >
+                          <option value="">Select model...</option>
+                          {workstationModels.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                          <option value="__custom__">Other (custom)...</option>
+                        </select>
+                        {wsModelIsCustom && (
+                          <input
+                            type="text"
+                            placeholder="Enter custom model..."
+                            value={customNode.model}
+                            onChange={(e) => setCustomNode({...customNode, model: e.target.value})}
+                            className="form-input text-sm"
+                            autoFocus
+                          />
+                        )}
                       </div>
                       <div className="flex gap-2 mt-3">
                         <button
-                          onClick={() => addCustomNode('Local Operator')}
+                          onClick={() => addCustomNode(customNode.node_type || 'Local Operator')}
                           className="btn btn-success btn-sm"
                         >
                           Add Workstation
@@ -948,6 +1007,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                           onClick={() => {
                             setShowCustomComputer(false);
                             setCustomNode({ node_name: '', node_type: '', model: '', serial: '' });
+                            setWsModelIsCustom(false);
                           }}
                           className="btn btn-secondary btn-sm"
                         >

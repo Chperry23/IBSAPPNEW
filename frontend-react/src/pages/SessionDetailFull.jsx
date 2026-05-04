@@ -32,6 +32,9 @@ export default function SessionDetailFull() {
   const [showCompleteSessionModal, setShowCompleteSessionModal] = useState(false);
   const [completeSaveToHistory, setCompleteSaveToHistory] = useState(true);
   const [completionWarnings, setCompletionWarnings] = useState([]);
+  const [showDuplicateCabinetModal, setShowDuplicateCabinetModal] = useState(false);
+  const [duplicatingCabinetId, setDuplicatingCabinetId] = useState(null);
+  const [duplicateCabinetName, setDuplicateCabinetName] = useState('');
 
   useEffect(() => {
     loadSessionData();
@@ -327,6 +330,33 @@ export default function SessionDetailFull() {
     }
   };
 
+  const openDuplicateCabinetModal = (cabinet) => {
+    setDuplicatingCabinetId(cabinet.id);
+    setDuplicateCabinetName(`${cabinet.cabinet_name} (Copy)`);
+    setShowDuplicateCabinetModal(true);
+  };
+
+  const handleDuplicateCabinet = async () => {
+    if (!duplicatingCabinetId) return;
+    try {
+      const result = await api.request(`/api/cabinets/${duplicatingCabinetId}/duplicate`, {
+        method: 'POST',
+        body: JSON.stringify({ new_name: duplicateCabinetName }),
+      });
+      if (result.success) {
+        setShowDuplicateCabinetModal(false);
+        setDuplicatingCabinetId(null);
+        setDuplicateCabinetName('');
+        loadSessionData();
+        showMessage('Cabinet duplicated successfully', 'success');
+      } else {
+        showMessage(result.error || 'Error duplicating cabinet', 'error');
+      }
+    } catch (error) {
+      showMessage('Error duplicating cabinet', 'error');
+    }
+  };
+
   const handleCompleteSession = async () => {
     setCompletionWarnings([]);
     setShowCompleteSessionModal(true);
@@ -458,6 +488,32 @@ export default function SessionDetailFull() {
                 </>
               )}
             </>
+          )}
+          {session.status !== 'completed' && cabinets.some(c => c.status !== 'completed') && (
+            <button
+              onClick={async () => {
+                const pending = cabinets.filter(c => c.status !== 'completed').length;
+                if (!confirm(`Mark all ${pending} pending cabinet${pending !== 1 ? 's' : ''} as complete?`)) return;
+                try {
+                  const result = await api.bulkCompleteCabinets(id);
+                  if (result.success) {
+                    soundSystem.playSuccess();
+                    loadSessionData();
+                    showMessage(`${result.count} cabinet${result.count !== 1 ? 's' : ''} marked complete`, 'success');
+                  } else {
+                    soundSystem.playError();
+                    showMessage(result.error || 'Error completing cabinets', 'error');
+                  }
+                } catch {
+                  soundSystem.playError();
+                  showMessage('Error completing cabinets', 'error');
+                }
+              }}
+              className="btn btn-secondary"
+              title="Mark all pending cabinets as complete at once"
+            >
+              ✓ Mark all complete
+            </button>
           )}
           {session.status !== 'completed' && (
             <button onClick={handleCompleteSession} className="btn btn-success" title="Lock session and create node snapshot">
@@ -783,49 +839,60 @@ export default function SessionDetailFull() {
                                   </div>
                                 </div>
                                 
-                                <div className="flex flex-wrap gap-2">
-                                  <Link
-                                    to={`/cabinet/${cabinet.id}`}
-                                    className="flex-1 btn btn-primary text-sm py-2 min-w-0"
-                                  >
-                                    Inspect
-                                  </Link>
-                                  {session.status !== 'completed' && cabinet.status !== 'completed' && (
-                                    <button
-                                      onClick={async () => {
-                                        try {
-                                          await api.markCabinetComplete(cabinet.id);
-                                          soundSystem.playSuccess();
-                                          showMessage('Cabinet marked complete', 'success');
-                                          loadSessionData();
-                                        } catch (err) {
-                                          soundSystem.playError();
-                                          showMessage(err?.error || err?.message || 'Failed to mark cabinet complete', 'error');
-                                        }
-                                      }}
-                                      className="btn btn-success text-sm py-2"
-                                      title="Mark this cabinet as completed"
+                                <div className="space-y-2">
+                                  {/* Primary action row */}
+                                  <div className="flex gap-2">
+                                    <Link
+                                      to={`/cabinet/${cabinet.id}`}
+                                      className="flex-1 btn btn-primary text-sm py-2 min-w-0 text-center"
                                     >
-                                      ✓ Complete
-                                    </button>
-                                  )}
+                                      Inspect
+                                    </Link>
+                                    {session.status !== 'completed' && cabinet.status !== 'completed' && (
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            await api.markCabinetComplete(cabinet.id);
+                                            soundSystem.playSuccess();
+                                            showMessage('Cabinet marked complete', 'success');
+                                            loadSessionData();
+                                          } catch (err) {
+                                            soundSystem.playError();
+                                            showMessage(err?.error || err?.message || 'Failed to mark cabinet complete', 'error');
+                                          }
+                                        }}
+                                        className="flex-1 btn btn-success text-sm py-2"
+                                        title="Mark this cabinet as completed"
+                                      >
+                                        ✓ Complete
+                                      </button>
+                                    )}
+                                  </div>
+                                  {/* Secondary icon-button row */}
                                   {session.status !== 'completed' && (
-                                    <button
-                                      onClick={() => openAssignLocationModal(cabinet.id, cabinet.location_id)}
-                                      className="btn btn-secondary text-sm py-2"
-                                      title="Assign to Location"
-                                    >
-                                      📍
-                                    </button>
-                                  )}
-                                  {session.status !== 'completed' && (
-                                    <button
-                                      onClick={() => handleDeleteCabinet(cabinet.id)}
-                                      className="btn btn-danger text-sm py-2"
-                                      title="Delete Cabinet"
-                                    >
-                                      🗑️
-                                    </button>
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => openAssignLocationModal(cabinet.id, cabinet.location_id)}
+                                        className="flex-1 btn btn-secondary text-sm py-1"
+                                        title="Assign to Location"
+                                      >
+                                        📍
+                                      </button>
+                                      <button
+                                        onClick={() => openDuplicateCabinetModal(cabinet)}
+                                        className="flex-1 btn btn-secondary text-sm py-1"
+                                        title="Duplicate Cabinet"
+                                      >
+                                        ⧉
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteCabinet(cabinet.id)}
+                                        className="flex-1 btn btn-danger text-sm py-1"
+                                        title="Delete Cabinet"
+                                      >
+                                        🗑️
+                                      </button>
+                                    </div>
                                   )}
                                 </div>
                               </div>
@@ -1087,6 +1154,56 @@ export default function SessionDetailFull() {
                 className="btn btn-primary"
               >
                 📍 Assign Location
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Cabinet Modal */}
+      {showDuplicateCabinetModal && (
+        <div className="modal-backdrop">
+          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-md w-full mx-4 border border-gray-700">
+            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-100">⧉ Duplicate Cabinet</h3>
+              <button
+                onClick={() => { setShowDuplicateCabinetModal(false); setDuplicatingCabinetId(null); setDuplicateCabinetName(''); }}
+                className="text-gray-400 hover:text-gray-200 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <p className="text-gray-400 text-sm">
+                Copies power supplies, diodes, distribution blocks, switches, and inspection settings. Controllers are not duplicated.
+              </p>
+              <div>
+                <label className="form-label">New Cabinet Name</label>
+                <input
+                  type="text"
+                  value={duplicateCabinetName}
+                  onChange={(e) => setDuplicateCabinetName(e.target.value)}
+                  className="form-input"
+                  placeholder="Enter name for the new cabinet"
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleDuplicateCabinet(); }}
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => { setShowDuplicateCabinetModal(false); setDuplicatingCabinetId(null); setDuplicateCabinetName(''); }}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDuplicateCabinet}
+                className="btn btn-primary"
+                disabled={!duplicateCabinetName.trim()}
+              >
+                ⧉ Duplicate
               </button>
             </div>
           </div>

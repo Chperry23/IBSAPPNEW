@@ -715,6 +715,7 @@ export default function CabinetInspectionFull() {
       equipment_type: 'Switch',
       model_number: selectedSwitch.model || '',
       serial: selectedSwitch.serial || '',
+      firmware: selectedSwitch.firmware || '',
       port_count: '', // Leave blank for user to fill
       condition: 'good', // Default to good
     };
@@ -2535,6 +2536,17 @@ export default function CabinetInspectionFull() {
                             <option value="replace">🔴 Replace</option>
                           </select>
                         </div>
+                        {equipment.node_id && equipment.firmware && (
+                          <div>
+                            <label className="form-label">Software Rev.</label>
+                            <input
+                              type="text"
+                              value={equipment.firmware}
+                              readOnly
+                              className="form-input bg-gray-700/50 text-gray-400 cursor-default"
+                            />
+                          </div>
+                        )}
                         <div className="md:col-span-2">
                           <label className="form-label">Comments</label>
                           <input

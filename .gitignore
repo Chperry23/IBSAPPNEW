@@ -22,6 +22,10 @@ logs/
 # SharePoint credentials (contains client secret — never commit)
 sharepoint-config.json
 
+# Sync services — local only, do not commit
+backend/services/enhanced-merge-sync-endpoints.js
+backend/services/enhanced-merge-replication.js
+
 # Archive and old files
 archive/
 old-executables/

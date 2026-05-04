@@ -115,18 +115,34 @@ Domain scores let you see *where* the risk is concentrated without having to rea
 
 ---
 
+## Critical Issue Hard Cap
+
+Regardless of site size, any **critical issue** (controller LED fault, I/O failure, network failure, Entron switch failure) applies a hard penalty that bypasses the normalization:
+
+- **Each critical issue deducts 20 points flat** from the final site score.
+- **The score is also capped at 79** whenever any critical issue exists — this forces the badge to WARNING or lower, so a critical fault can never produce a GOOD or ADVISORY result no matter how large the site.
+
+**Example — Dominion 26-cabinet site:**
+- Normalized score (rate-based) = 93
+- 1 critical issue → cap to 79, then subtract 20 → **final score = 59 (MODERATE)**
+
+This means critical issues are always visible in the score and badge, even on large sites with hundreds of healthy components.
+
+---
+
 ## The Status Badge
 
-The badge is completely separate from the score. It answers: **"What is the worst category of problem found?"**
+The badge is driven by the final site score (after the critical cap is applied):
 
-| Badge | Color | What triggers it |
+| Badge | Score Range | Color |
 |---|---|---|
-| **CRITICAL** | Red | Any controller LED fault, I/O failure, network failure, or Entron switch failure |
-| **MODERATE** | Orange | No critical issues, but at least one moderate-class problem found |
-| **LOW** | Yellow | Only slight issues (cleanliness, temperature, filters) |
-| **GOOD** | Green | No issues of any kind |
+| **GOOD** | 95 – 100 | Green |
+| **ADVISORY** | 75 – 94 | Purple |
+| **MODERATE** | 50 – 74 | Orange |
+| **WARNING** | 25 – 49 | Amber |
+| **CRITICAL** | 0 – 24 | Red |
 
-The badge is driven purely by **presence** of issues, not by how many. One critical finding = CRITICAL badge, regardless of site size or score.
+Because critical issues cap the score at 79 and subtract 20 per issue, a single critical finding always lands in MODERATE or lower. Two critical issues land in WARNING or lower.
 
 ---
 
@@ -161,6 +177,7 @@ Coverage below 100% means some inspection fields were left blank on one or more 
 | Score is rate-based | Big sites and small sites are comparable |
 | Tier-blended (70/20/10) | Controller faults always control up to 70 points — they can't be diluted by a large site |
 | ×2 display scale | 50% failure rate within a tier = that tier's full allocation |
-| Badge is presence-based | One critical finding = CRITICAL regardless of score |
+| Critical hard cap | Each critical issue deducts 20 pts flat and caps score at 79 — never washed out by site size |
+| Badge is score-driven | Determined by the final score after the critical cap is applied |
 | 6 domain scores | Shows which area of the site is driving the risk |
 | Coverage | Shows how complete the inspection data is |

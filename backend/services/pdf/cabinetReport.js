@@ -805,7 +805,7 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
             <tr>
               <td><strong>${equipment.equipment_type}</strong></td>
               <td>${equipment.node_name || equipment.model_number || 'Not specified'}</td>
-              <td class="status-${equipment.status}">${formatStatus(equipment.status)}</td>
+              <td class="status-${equipment.condition || equipment.status}">${formatStatus(equipment.condition || equipment.status || 'good')}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -1095,7 +1095,7 @@ function generatePDFHtml(data) {
               <tr>
                 <td><strong>${equipment.equipment_type}</strong></td>
                 <td>${equipment.node_name || equipment.model_number || 'Not specified'}</td>
-                <td class="status-${equipment.status}">${formatStatus(equipment.status)}</td>
+                <td class="status-${equipment.condition || equipment.status}">${formatStatus(equipment.condition || equipment.status || 'good')}</td>
               </tr>
             `).join('')}
           </tbody>

@@ -26,7 +26,8 @@ router.get('/all', requireAuth, async (req, res) => {
              c.location as customer_location,
              s.customer_id,
              u.username,
-             (SELECT COUNT(*) FROM cabinets cab WHERE cab.pm_session_id = s.id AND COALESCE(cab.deleted, 0) = 0) as cabinet_count
+             (SELECT COUNT(*) FROM cabinets cab WHERE cab.pm_session_id = s.id AND COALESCE(cab.deleted, 0) = 0) as cabinet_count,
+             (SELECT COUNT(*) FROM cabinets cab WHERE cab.pm_session_id = s.id AND COALESCE(cab.deleted, 0) = 0 AND cab.status = 'completed') as completed_cabinet_count
       FROM sessions s
       LEFT JOIN customers c ON s.customer_id = c.id
       LEFT JOIN users u ON s.user_id = u.id
@@ -200,7 +201,14 @@ router.get('/:sessionId', requireAuth, async (req, res) => {
       network_equipment: JSON.parse(cabinet.network_equipment || '[]'),
       controllers: JSON.parse(cabinet.controllers || '[]'),
       workstations: JSON.parse(cabinet.workstations || '[]'),
-      inspection: JSON.parse(cabinet.inspection_data || '{}')
+      inspection: (() => {
+        const base = JSON.parse(cabinet.inspection_data || '{}');
+        // Merge top-level comments column into inspection so PDF template finds it
+        if (cabinet.comments && cabinet.comments.trim() && !base.comments) {
+          base.comments = cabinet.comments;
+        }
+        return base;
+      })()
     }));
 
     // Controller/CIOC assignment stats
@@ -322,7 +330,12 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
       }
       const inspection = (() => {
         try {
-          return typeof row.inspection_data === 'string' ? JSON.parse(row.inspection_data || '{}') : (row.inspection_data || {});
+          const base = typeof row.inspection_data === 'string' ? JSON.parse(row.inspection_data || '{}') : (row.inspection_data || {});
+          // Merge top-level comments column into inspection so PDF template finds it
+          if (row.comments && row.comments.trim() && !base.comments) {
+            base.comments = row.comments;
+          }
+          return base;
         } catch (_) { return {}; }
       })();
       cabinets.push({
@@ -359,11 +372,11 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
       const nodes = [];
       const ws = await db.prepare(`SELECT id, name as node_name, type as node_type, model, dell_service_tag_number as serial FROM sys_workstations WHERE customer_id = ?`).all([session.customer_id]);
       ws.forEach((n) => { n.id = ID_WORKSTATION + n.id; });
-      const ctrl = await db.prepare(`SELECT id, name as node_name, 'Controller' as node_type, model, serial_number as serial FROM sys_controllers WHERE customer_id = ?`).all([session.customer_id]);
+      const ctrl = await db.prepare(`SELECT id, name as node_name, 'Controller' as node_type, model, serial_number as serial, redundant, partner_serial_number FROM sys_controllers WHERE customer_id = ?`).all([session.customer_id]);
       ctrl.forEach((n) => { n.id = ID_CONTROLLER + n.id; });
-      const sw = await db.prepare(`SELECT id, name as node_name, 'Smart Network Devices' as node_type, model, serial_number as serial FROM sys_smart_switches WHERE customer_id = ?`).all([session.customer_id]);
+      const sw = await db.prepare(`SELECT id, name as node_name, 'Smart Network Devices' as node_type, model, serial_number as serial, software_revision as firmware FROM sys_smart_switches WHERE customer_id = ?`).all([session.customer_id]);
       sw.forEach((n) => { n.id = ID_SWITCH + n.id; });
-      const cioc = await db.prepare(`SELECT id, name as node_name, 'CIOC' as node_type, model, serial_number as serial FROM sys_charms_io_cards WHERE customer_id = ?`).all([session.customer_id]);
+      const cioc = await db.prepare(`SELECT id, name as node_name, CASE WHEN LOWER(name) LIKE '%csls%' OR LOWER(name) LIKE '%charms logic solver%' OR LOWER(name) LIKE '%smart logic solver%' OR LOWER(model) LIKE '%csls%' OR LOWER(model) LIKE '%logic solver%' THEN 'CSLS' ELSE 'CIOC' END as node_type, model, serial_number as serial FROM sys_charms_io_cards WHERE customer_id = ?`).all([session.customer_id]);
       cioc.forEach((n) => { n.id = ID_CIOC + n.id; });
       nodes.push(...ws, ...ctrl, ...sw, ...cioc);
       // Include custom nodes from legacy nodes table (keep original id)
@@ -469,6 +482,48 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
 
     log('Building report sections (risk, maintenance, diagnostics, cabinets HTML)...');
     const riskResult = generateRiskAssessment(cabinets, nodeMaintenanceData);
+
+    // ── DEBUG: dump full scoring breakdown to console ─────────────────────────
+    log('');
+    log('══════════════════════════════════════════════════════════════');
+    log(`  RISK ASSESSMENT DEBUG — ${session.session_name}`);
+    log('══════════════════════════════════════════════════════════════');
+    log(`  Site Health Score : ${riskResult.siteScore} / 100`);
+    log(`  Penalty Score     : ${riskResult.riskScore} / 100`);
+    log(`  Risk Level (badge): ${riskResult.riskLevel}`);
+    log(`  Total Components  : ${riskResult.totalComponents}`);
+    log(`  Failed Components : ${riskResult.failedComponents}`);
+    log(`  Coverage          : ${riskResult.coverageCompleted} / ${riskResult.coverageTotal} check-points`);
+    log('');
+    log('  Domain Scores (penalty 0=healthy, 100=all bad):');
+    Object.entries(riskResult.domainScores || {}).forEach(([domain, val]) => {
+      log(`    ${domain.padEnd(24)}: ${val === null ? 'not inspected' : val}`);
+    });
+    log('');
+    if (riskResult.criticalIssues?.length) {
+      log(`  CRITICAL issues (${riskResult.criticalIssues.length}):`);
+      riskResult.criticalIssues.forEach(i => log(`    [CRITICAL] ${i}`));
+    } else {
+      log('  CRITICAL issues: none');
+    }
+    if (riskResult.warnings?.length) {
+      log(`  MODERATE / Warning issues (${riskResult.warnings.length}):`);
+      riskResult.warnings.forEach(i => log(`    [MODERATE] ${i}`));
+    } else {
+      log('  MODERATE issues: none');
+    }
+    if (riskResult.slightIssues?.length) {
+      log(`  Advisory issues (${riskResult.slightIssues.length}):`);
+      riskResult.slightIssues.forEach(i => log(`    [ADVISORY] ${i}`));
+    } else {
+      log('  Advisory issues: none');
+    }
+    log('');
+    log('  Risk tier breakdown:', JSON.stringify(riskResult.riskBreakdown, null, 0));
+    log('══════════════════════════════════════════════════════════════');
+    log('');
+    // ── END DEBUG ─────────────────────────────────────────────────────────────
+
     const riskAssessmentHtml = generateRiskAssessmentPage(riskResult, session.session_name, ioSubsystem);
     const maintenanceHtml = generateMaintenanceReportPage(nodeMaintenanceData);
     
@@ -688,7 +743,9 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
     sysControllers.forEach((n) => { n.id = ID_CONTROLLER + n.id; });
 
     const sysCiocs = await db.prepare(`
-      SELECT cioc.id, cioc.name as node_name, 'CIOC' as node_type, cioc.model,
+      SELECT cioc.id, cioc.name as node_name,
+        CASE WHEN LOWER(cioc.name) LIKE '%csls%' OR LOWER(cioc.name) LIKE '%charms logic solver%' OR LOWER(cioc.name) LIKE '%smart logic solver%' OR LOWER(cioc.model) LIKE '%csls%' OR LOWER(cioc.model) LIKE '%logic solver%' THEN 'CSLS' ELSE 'CIOC' END as node_type,
+        cioc.model,
              cioc.serial_number as serial, cioc.software_revision as firmware, cioc.hardware_revision as version,
              'active' as status, cioc.redundant, cioc.assigned_cabinet_id,
              c.cabinet_name as assigned_cabinet_name
@@ -805,7 +862,7 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
         histCtrl.forEach((n) => { n.id = ID_CONTROLLER + n.id; });
         const histSw = await db.prepare("SELECT id, name as node_name, 'Smart Network Devices' as node_type, model FROM sys_smart_switches WHERE customer_id = ?").all([session.customer_id]);
         histSw.forEach((n) => { n.id = ID_SWITCH + n.id; });
-        const histCioc = await db.prepare("SELECT id, name as node_name, 'CIOC' as node_type, model FROM sys_charms_io_cards WHERE customer_id = ?").all([session.customer_id]);
+        const histCioc = await db.prepare("SELECT id, name as node_name, CASE WHEN LOWER(name) LIKE '%csls%' OR LOWER(name) LIKE '%charms logic solver%' OR LOWER(name) LIKE '%smart logic solver%' OR LOWER(model) LIKE '%csls%' OR LOWER(model) LIKE '%logic solver%' THEN 'CSLS' ELSE 'CIOC' END as node_type, model FROM sys_charms_io_cards WHERE customer_id = ?").all([session.customer_id]);
         histCioc.forEach((n) => { n.id = ID_CIOC + n.id; });
         nodes.push(...histWs, ...histCtrl, ...histSw, ...histCioc);
         // Include custom nodes from legacy nodes table

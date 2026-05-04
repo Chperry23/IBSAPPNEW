@@ -53,15 +53,19 @@ function checkVoltageInRange(voltage, voltageType) {
 /**
  * TIER ALLOCATIONS — control what share of the 0-100 score each severity class can influence.
  *
- * Critical checks (controller faults, I/O failures, network failures) → 70 pts max
- * Moderate checks (power, node maintenance, cabinet fans, ground)      → 20 pts max
- * Slight checks   (temps, cleanliness, filter, AC voltage)             → 10 pts max
+ * Critical checks (controller faults, I/O failures, network failures) → 40 pts max
+ * Moderate checks (power, node maintenance, cabinet fans, ground)      → 40 pts max
+ * Slight checks   (temps, cleanliness, filter, AC voltage)             → 20 pts max
+ *
+ * Note: critical issues also apply a hard flat deduction + score cap that bypasses
+ * this rate-based model (see critical hard cap below). The rate-based tier is still
+ * meaningful for sites with widespread critical failures across many nodes.
  *
  * Within each tier: score = weighted failure rate × 2, capped at the tier's allocation.
  * (×2 means 50% failure rate within a tier = that tier's full allocation.)
  * Total is always 0–100.
  */
-const TIER_ALLOCATIONS = { CRITICAL: 70, MODERATE: 20, SLIGHT: 10 };
+const TIER_ALLOCATIONS = { CRITICAL: 40, MODERATE: 40, SLIGHT: 20 };
 
 const RISK_CHECKS = {
   // ── Controllers (own domain — critical: controls live processes) ───────────
@@ -124,7 +128,7 @@ const RISK_CHECKS = {
 
   // ── Per-component: power supplies ─────────────────────────────────────────
   power_supply_fail: {
-    weight: 8, level: 'MODERATE', domain: 'power',
+    weight: 15, level: 'MODERATE', domain: 'power',
     scoring_type: 'per_component',
     description: 'power supply status out of spec'
   },
@@ -171,6 +175,13 @@ const RISK_CHECKS = {
     weight: 12, level: 'MODERATE', domain: 'node_maintenance',
     scoring_type: 'per_node',
     description: 'low free time indicates high controller utilization'
+  },
+
+  // ── Redundancy not verified (controller has partner but redundancy not checked) ───
+  redundancy_not_verified: {
+    weight: 14, level: 'MODERATE', domain: 'node_maintenance',
+    scoring_type: 'per_node',
+    description: 'redundant controller pair not verified — failover capability unknown'
   }
 };
 
@@ -239,31 +250,57 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
   // Values 1-5 stored as free_time are treated as mis-stored perf index; skip.
   nodeMaintenanceData.forEach(maintenance => {
     const nodeName = maintenance.node_name || `Node ${maintenance.node_id}`;
-    if (maintenance.performance_value == null || !maintenance.performance_type) return;
-    const pv = Number(maintenance.performance_value);
 
-    if (maintenance.performance_type === 'perf_index') {
-      const isBad = pv <= 2;
-      observe('perf_index_poor', isBad);
-      coverageCompleted++;
-      coverageTotal++;
-      if (isBad) {
-        riskBreakdown.push(`${nodeName}: Poor performance index (${maintenance.performance_value}/5)`);
-        addIssue('perf_index_poor', `${nodeName}: Performance index ${maintenance.performance_value}/5 indicates degraded controller performance`);
-      }
-    } else if (maintenance.performance_type === 'free_time') {
-      if (pv >= 1 && pv <= 5) return; // mis-stored perf index value — skip
-      const isBad = pv <= 28;
-      observe('free_time_low', isBad);
-      coverageCompleted++;
-      coverageTotal++;
-      if (isBad) {
-        riskBreakdown.push(`${nodeName}: Low free time (${maintenance.performance_value}%)`);
-        addIssue('free_time_low', `${nodeName}: Free time ${maintenance.performance_value}% indicates high controller utilization`);
+    // ── Performance / free-time ──
+    if (maintenance.performance_value != null && maintenance.performance_type) {
+      const pv = Number(maintenance.performance_value);
+
+      if (maintenance.performance_type === 'perf_index') {
+        const isBad = pv <= 2;
+        observe('perf_index_poor', isBad);
+        coverageCompleted++;
+        coverageTotal++;
+        if (isBad) {
+          riskBreakdown.push(`${nodeName}: Poor performance index (${maintenance.performance_value}/5)`);
+          addIssue('perf_index_poor', `${nodeName}: Performance index ${maintenance.performance_value}/5 indicates degraded controller performance`);
+        }
+      } else if (maintenance.performance_type === 'free_time') {
+        if (!(pv >= 1 && pv <= 5)) { // skip mis-stored perf index values
+          const isBad = pv <= 28;
+          observe('free_time_low', isBad);
+          coverageCompleted++;
+          coverageTotal++;
+          if (isBad) {
+            riskBreakdown.push(`${nodeName}: Low free time (${maintenance.performance_value}%)`);
+            addIssue('free_time_low', `${nodeName}: Free time ${maintenance.performance_value}% indicates high controller utilization`);
+          }
+        }
       }
     }
 
-    // HDD replacement is informational only — not scored, slight note only
+    // ── Redundancy not verified ──────────────────────────────────────────────
+    // Only applies to controllers that have a partner (partner_serial_number set
+    // or redundant field is truthy). If redundancy was not checked during PM,
+    // flag it as a MODERATE issue — failover capability is unverified.
+    const isRedundant =
+      (maintenance.redundant &&
+        (String(maintenance.redundant).toLowerCase() === 'yes' ||
+         String(maintenance.redundant).toLowerCase() === 'true' ||
+         String(maintenance.redundant) === '1')) ||
+      (maintenance.partner_serial_number && String(maintenance.partner_serial_number).trim() !== '');
+
+    if (isRedundant) {
+      const redundancyNotChecked = !maintenance.redundancy_checked;
+      observe('redundancy_not_verified', redundancyNotChecked);
+      coverageCompleted++;
+      coverageTotal++;
+      if (redundancyNotChecked) {
+        riskBreakdown.push(`${nodeName}: Redundancy not verified`);
+        addIssue('redundancy_not_verified', `${nodeName}: Controller is redundant but redundancy was not verified — failover capability unknown`);
+      }
+    }
+
+    // ── HDD replacement (informational only) ────────────────────────────────
     if (maintenance.hdd_replaced) {
       riskBreakdown.push(`${nodeName}: HDD replaced`);
       slightIssues.push(`${nodeName}: Hard drive was replaced during this PM`);
@@ -491,15 +528,29 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
   }
 
   // Total penalty (0–100): how much is deducted from a perfect score
-  const riskScore = Math.round(
+  const riskScore = Math.max(0, Math.min(100, Math.round(
     computeTierContribution('CRITICAL') +
     computeTierContribution('MODERATE') +
     computeTierContribution('SLIGHT')
-  );
+  )));
 
   // Site Health Index: starts at 100, deductions subtracted out
   // 50% bad within any tier = full tier allocation deducted
-  const siteScore = Math.max(0, 100 - riskScore);
+  let siteScore = Math.max(0, 100 - riskScore);
+
+  // ── Critical issue hard cap ────────────────────────────────────────────────
+  // Each distinct critical issue (badge_escalation: critical_if_any) applies a
+  // flat 20-point deduction that bypasses normalization. This prevents large
+  // sites from "washing out" a critical fault with a healthy denominator.
+  // Cap: score cannot exceed 79 when any critical issue exists (ensures the
+  // score always lands in WARNING or lower, never ADVISORY/GOOD).
+  const CRITICAL_PENALTY_PER_ISSUE = 20;
+  const CRITICAL_SCORE_CAP = 79; // forces badge to at most WARNING
+  if (criticalIssues.length > 0) {
+    const criticalPenalty = criticalIssues.length * CRITICAL_PENALTY_PER_ISSUE;
+    siteScore = Math.min(siteScore, CRITICAL_SCORE_CAP);
+    siteScore = Math.max(0, siteScore - criticalPenalty);
+  }
 
   // Domain scores: independent 0-100, weighted failure rate × 2, capped at 100
   // Domain score represents the PENALTY within that domain (0 = healthy, 100 = all bad)

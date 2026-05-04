@@ -16,10 +16,21 @@ export default function Nodes() {
   const [message, setMessage] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('');
+  const [newNodeModel, setNewNodeModel] = useState('');
+  const [editNodeModel, setEditNodeModel] = useState('');
 
   useEffect(() => {
     loadNodesData();
   }, [customerId]);
+
+  useEffect(() => {
+    if (editingNode) {
+      const inList = workstationModels.includes(editingNode.model ?? '');
+      setEditNodeModel(inList ? (editingNode.model ?? '') : (editingNode.model ? '__custom__' : ''));
+    } else {
+      setEditNodeModel('');
+    }
+  }, [editingNode]);
 
   const loadNodesData = async () => {
     try {
@@ -214,7 +225,22 @@ export default function Nodes() {
     return matchesSearch && matchesType;
   });
 
-  const nodeTypes = ['Controller', 'CIOC', 'CSLS', 'SZ Controller', 'Charms Smart Logic Solver', 'DeltaV EIOC', 'Wireless', 'Local Operator', 'Local ProfessionalPlus', 'Power Supply', 'Operator', 'Application', 'Other'];
+  const workstationModels = [
+    'VE3008', 'VE3007', 'VE3006', 'VE2001', 'VE2002',
+  ];
+
+  const nodeTypes = [
+    // Controllers & I/O
+    'Controller', 'CIOC', 'CSLS', 'SZ Controller', 'Charms Smart Logic Solver', 'DeltaV EIOC',
+    // DeltaV Workstations
+    'Local Operator', 'Local Application', 'Local Professional Plus', 'Local Pro', 'Local Safety',
+    'Remote Operator', 'Remote ProfessionalPlus', 'Remote Application', 'Remote Safety',
+    'Batch Historian', 'OPC Server',
+    // Virtual / Infrastructure
+    'VRTX Chassis (Virtual)', 'Host (Virtual)', 'File Witness (Virtual)', 'Non-DV Node',
+    // Other
+    'Wireless', 'Power Supply', 'Operator', 'Application', 'Other',
+  ];
 
   if (loading) {
     return (
@@ -465,13 +491,13 @@ export default function Nodes() {
             <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
               <h3 className="text-lg font-semibold text-gray-100">➕ New Node</h3>
               <button
-                onClick={() => setShowNewNodeModal(false)}
+                onClick={() => { setShowNewNodeModal(false); setNewNodeModel(''); }}
                 className="text-gray-400 hover:text-gray-200 text-2xl"
               >
                 ×
               </button>
             </div>
-            <form onSubmit={handleCreateNode}>
+            <form onSubmit={(e) => { handleCreateNode(e); setNewNodeModel(''); }}>
               <div className="px-6 py-4 space-y-4">
                 <div>
                   <label className="form-label">Node Name *</label>
@@ -493,6 +519,30 @@ export default function Nodes() {
                       </option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="form-label">Model</label>
+                  <select
+                    className="form-select"
+                    value={newNodeModel}
+                    onChange={(e) => setNewNodeModel(e.target.value)}
+                  >
+                    <option value="">Select model...</option>
+                    {workstationModels.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                    <option value="__custom__">Other (custom)...</option>
+                  </select>
+                  {newNodeModel === '__custom__' ? (
+                    <input
+                      name="model"
+                      className="form-input mt-2"
+                      placeholder="Enter custom model..."
+                      autoFocus
+                    />
+                  ) : (
+                    <input type="hidden" name="model" value={newNodeModel} />
+                  )}
                 </div>
                 <div>
                   <label className="form-label">Description</label>
@@ -518,7 +568,7 @@ export default function Nodes() {
               <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowNewNodeModal(false)}
+                  onClick={() => { setShowNewNodeModal(false); setNewNodeModel(''); }}
                   className="btn btn-secondary"
                 >
                   Cancel
@@ -569,7 +619,27 @@ export default function Nodes() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="form-label">Model</label>
-                    <input type="text" name="model" className="form-input" defaultValue={editingNode.model ?? ''} placeholder="e.g. VE3007" />
+                    <select
+                      className="form-select"
+                      value={editNodeModel}
+                      onChange={(e) => setEditNodeModel(e.target.value)}
+                    >
+                      <option value="">Select model...</option>
+                      {workstationModels.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                      <option value="__custom__">Other (custom)...</option>
+                    </select>
+                    {editNodeModel === '__custom__' ? (
+                      <input
+                        name="model"
+                        className="form-input mt-2"
+                        placeholder="Enter custom model..."
+                        defaultValue={workstationModels.includes(editingNode.model ?? '') ? '' : (editingNode.model ?? '')}
+                      />
+                    ) : (
+                      <input type="hidden" name="model" value={editNodeModel} />
+                    )}
                   </div>
                   <div>
                     <label className="form-label">Serial</label>

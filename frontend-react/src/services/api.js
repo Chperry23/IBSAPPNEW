@@ -175,6 +175,10 @@ class ApiService {
     return this.request(`/api/cabinets/${cabinetId}/complete`, { method: 'PUT' });
   }
 
+  async bulkCompleteCabinets(sessionId) {
+    return this.request(`/api/cabinets/session/${sessionId}/complete-all`, { method: 'PUT' });
+  }
+
   async deleteCabinet(id) {
     return this.request(`/api/cabinets/${id}`, { method: 'DELETE' });
   }

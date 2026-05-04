@@ -12,7 +12,7 @@ export default function Customers() {
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [message, setMessage] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState('name');
+  const [sortBy, setSortBy] = useState('activity');
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
 
   useEffect(() => {
@@ -35,12 +35,16 @@ export default function Customers() {
     }
   };
 
-  // Calculate session counts for each customer
+  // Calculate session counts and most recent session for each customer
   const getCustomerStats = (customerId) => {
     const customerSessions = sessions.filter(s => s.customer_id === customerId);
+    const sorted = [...customerSessions].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const last = sorted[0] || null;
     return {
       totalSessions: customerSessions.length,
       activeSessions: customerSessions.filter(s => s.status !== 'completed').length,
+      lastSession: last,
+      lastSessionDate: last ? new Date(last.created_at) : null,
     };
   };
 
@@ -128,14 +132,19 @@ export default function Customers() {
       );
     })
     .sort((a, b) => {
-      if (sortBy === 'name') {
+      if (sortBy === 'name') return a.name.localeCompare(b.name);
+      if (sortBy === 'location') return (a.location || '').localeCompare(b.location || '');
+      if (sortBy === 'sessions') return getCustomerStats(b.id).totalSessions - getCustomerStats(a.id).totalSessions;
+      if (sortBy === 'created') return new Date(b.created_at) - new Date(a.created_at);
+      if (sortBy === 'activity') {
+        const sa = getCustomerStats(a.id);
+        const sb = getCustomerStats(b.id);
+        const aHas = sa.totalSessions > 0;
+        const bHas = sb.totalSessions > 0;
+        // Customers with sessions first; within each group sort by most recent session date
+        if (aHas !== bHas) return aHas ? -1 : 1;
+        if (aHas && bHas) return (sb.lastSessionDate || 0) - (sa.lastSessionDate || 0);
         return a.name.localeCompare(b.name);
-      } else if (sortBy === 'location') {
-        return (a.location || '').localeCompare(b.location || '');
-      } else if (sortBy === 'sessions') {
-        return getCustomerStats(b.id).totalSessions - getCustomerStats(a.id).totalSessions;
-      } else if (sortBy === 'created') {
-        return new Date(b.created_at) - new Date(a.created_at);
       }
       return 0;
     });
@@ -202,9 +211,10 @@ export default function Customers() {
                 onChange={(e) => setSortBy(e.target.value)}
                 className="form-select"
               >
+                <option value="activity">Sort by PM Activity</option>
                 <option value="name">Sort by Name</option>
                 <option value="location">Sort by Location</option>
-                <option value="sessions">Sort by Sessions</option>
+                <option value="sessions">Sort by Session Count</option>
                 <option value="created">Sort by Created Date</option>
               </select>
             </div>
@@ -238,21 +248,48 @@ export default function Customers() {
         ) : (
           filteredCustomers.map((customer) => {
             const stats = getCustomerStats(customer.id);
+            const hasSessions = stats.totalSessions > 0;
+            // When dongle_id is the key, name is the friendly/display name
+            const keyName      = customer.dongle_id || null;
+            const friendlyName = customer.name;
             return (
               <div
                 key={customer.id}
-                className="card hover:border-blue-500/50 transition-all cursor-pointer"
+                className={`card hover:border-blue-500/50 transition-all cursor-pointer ${
+                  !hasSessions ? 'opacity-75' : ''
+                }`}
                 onClick={() => navigate(`/customer/${customer.id}`)}
               >
                 <div className="card-header">
-                  <h3 className="text-lg font-semibold text-gray-100">
-                    {customer.dongle_id || customer.name}
+                  {/* Title row */}
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-lg font-semibold text-gray-100 leading-tight">
+                      {keyName || friendlyName}
+                    </h3>
+                    {/* PM activity indicator */}
+                    {hasSessions ? (
+                      <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-green-900/60 text-green-300 border border-green-700 font-medium whitespace-nowrap">
+                        {stats.totalSessions} PM{stats.totalSessions !== 1 ? 's' : ''}
+                      </span>
+                    ) : (
+                      <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-500 border border-gray-600 font-medium whitespace-nowrap">
+                        No PMs
+                      </span>
+                    )}
+                  </div>
+                  {/* Badge row — friendly name + alias */}
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {keyName && (
+                      <span className="text-xs px-2 py-0.5 rounded bg-indigo-900/50 text-indigo-300 border border-indigo-700/50">
+                        {friendlyName}
+                      </span>
+                    )}
                     {customer.alias && (
-                      <span className="ml-2 text-xs px-2 py-0.5 rounded bg-blue-900/50 text-blue-200 font-normal">
+                      <span className="text-xs px-2 py-0.5 rounded bg-blue-900/50 text-blue-300 border border-blue-700/50">
                         {customer.alias}
                       </span>
                     )}
-                  </h3>
+                  </div>
                 </div>
                 <div className="card-body">
                   {/* Customer Info */}
@@ -267,14 +304,9 @@ export default function Customers() {
                         <strong className="text-gray-300">Company:</strong> {customer.company_name}
                       </p>
                     )}
-                    {customer.contact_info && (
-                      <p className="text-gray-400">
-                        <strong className="text-gray-300">Contact:</strong> {customer.contact_info}
-                      </p>
-                    )}
                     {customer.contact_person && (
                       <p className="text-gray-400">
-                        <strong className="text-gray-300">Person:</strong> {customer.contact_person}
+                        <strong className="text-gray-300">Contact:</strong> {customer.contact_person}
                       </p>
                     )}
                     {customer.email && (
@@ -287,30 +319,32 @@ export default function Customers() {
                         <strong className="text-gray-300">Phone:</strong> {customer.phone}
                       </p>
                     )}
-                    {(customer.street_address || customer.city || customer.state) && (
-                      <p className="text-gray-400">
-                        <strong className="text-gray-300">Address:</strong>{' '}
-                        {[
-                          customer.street_address,
-                          [customer.city, customer.state].filter(Boolean).join(', '),
-                          customer.zip,
-                          customer.country
-                        ].filter(Boolean).join(', ')}
-                      </p>
-                    )}
                   </div>
 
                   {/* Session Stats */}
-                  <div className="grid grid-cols-2 gap-4 mb-4 pt-4 border-t border-gray-700">
-                    <div className="text-center bg-gray-700/50 rounded-lg p-3">
+                  <div className="grid grid-cols-2 gap-3 mb-3 pt-3 border-t border-gray-700">
+                    <div className="text-center bg-gray-700/50 rounded-lg p-2.5">
                       <div className="text-2xl font-bold text-blue-400">{stats.totalSessions}</div>
                       <div className="text-xs text-gray-400">Total Sessions</div>
                     </div>
-                    <div className="text-center bg-gray-700/50 rounded-lg p-3">
+                    <div className="text-center bg-gray-700/50 rounded-lg p-2.5">
                       <div className="text-2xl font-bold text-green-400">{stats.activeSessions}</div>
-                      <div className="text-xs text-gray-400">Active Sessions</div>
+                      <div className="text-xs text-gray-400">Active</div>
                     </div>
                   </div>
+
+                  {/* Last PM row */}
+                  {stats.lastSession ? (
+                    <div className="mb-3 px-3 py-2 rounded-lg bg-gray-700/30 border border-gray-700 text-xs text-gray-400">
+                      <span className="text-gray-500">Last PM: </span>
+                      <span className="text-gray-300 font-medium truncate">{stats.lastSession.session_name}</span>
+                      <span className="text-gray-500 ml-1">· {new Date(stats.lastSession.created_at).toLocaleDateString()}</span>
+                    </div>
+                  ) : (
+                    <div className="mb-3 px-3 py-2 rounded-lg bg-gray-700/20 border border-gray-700/50 text-xs text-gray-500 text-center">
+                      No PM sessions yet
+                    </div>
+                  )}
 
                   {/* Action Buttons */}
                   <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>

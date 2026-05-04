@@ -16,7 +16,14 @@ function getEnhancedControllerType(controller) {
   if (nodeType.includes('eioc') || nodeName.includes('eioc') || model.includes('eioc')) {
     return 'EIOC';
   }
-  
+
+  // CSLS detection — must come before generic CIOC check
+  if (nodeType.includes('csls') || nodeType.includes('charms logic solver') || nodeType.includes('smart logic solver') ||
+      nodeName.includes('csls') || nodeName.includes('charms logic solver') || nodeName.includes('smart logic solver') ||
+      model.includes('csls') || model.includes('logic solver')) {
+    return 'CSLS';
+  }
+
   // CIOC detection and mapping
   if (nodeType.includes('deltav charm io card') || nodeType.includes('cioc')) {
     return 'CIOC';
@@ -45,6 +52,11 @@ function getControllerType(node) {
     
     if (nodeType.includes('eioc') || nodeName.includes('eioc') || model.includes('eioc')) return 'EIOC';
     
+    // CSLS detection — must come before generic CIOC check
+    if (nodeType.includes('csls') || nodeType.includes('charms logic solver') || nodeType.includes('smart logic solver') ||
+        nodeName.includes('csls') || nodeName.includes('charms logic solver') || nodeName.includes('smart logic solver') ||
+        model.includes('csls') || model.includes('logic solver')) return 'CSLS';
+
     if (nodeType.includes('deltav charm io card') || nodeType.includes('cioc')) return 'CIOC';
     
     if (nodeType.includes('deltav charm io card 2') || nodeType.includes('cioc2')) return 'CIOC2';
@@ -67,10 +79,10 @@ function getDefaultPerformanceType(node) {
   if (nodeType.startsWith('se') || nodeType.startsWith('sz') ||
       nodeType.startsWith('sx') || nodeType.startsWith('sq') || nodeType.startsWith('mq') ||
       nodeType.startsWith('md') ||
-      nodeType.includes('csls') || nodeType.includes('pk') ||
-      nodeType.includes('eioc') || nodeType.includes('sis') ||
+      nodeType.includes('csls') || nodeType.includes('charms logic solver') || nodeType.includes('smart logic solver') ||
+      nodeType.includes('pk') || nodeType.includes('eioc') || nodeType.includes('sis') ||
       (nodeType.includes('kl') && nodeType.includes('ba1')) ||
-      nodeName.includes('csls') || nodeName.includes('eioc')) {
+      nodeName.includes('csls') || nodeName.includes('charms logic solver') || nodeName.includes('eioc')) {
     return 'perf_index';
   }
   if (model.includes('md') || model.includes('md plus') ||

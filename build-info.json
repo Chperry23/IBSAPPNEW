@@ -1,11 +1,11 @@
 {
   "version": "2.0.0",
-  "buildId": "2.0.0-20260417.1352-9a2293",
-  "buildDate": "2026-04-17T17:52:48.103Z",
-  "buildDateHuman": "Apr 17, 2026, 1:52 PM",
+  "buildId": "2.0.0-20260504.1550-18e457",
+  "buildDate": "2026-05-04T19:50:37.662Z",
+  "buildDateHuman": "May 4, 2026, 3:50 PM",
   "git": {
-    "commit": "7245d2c",
-    "branch": "master",
-    "dirty": true
+    "commit": "unknown",
+    "branch": "unknown",
+    "dirty": false
   }
 }
