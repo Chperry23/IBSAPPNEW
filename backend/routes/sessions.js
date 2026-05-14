@@ -1032,28 +1032,83 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
       console.log('📦 New cabinet ID:', newCabinetId);
       console.log('📦 Source controllers JSON:', sourceCabinet.controllers);
 
-      // Parse and clear readings from power supplies and diodes
+      // Parse power supplies — preserve structural fields/comments/ids; clear readings for fresh PM
       let powerSupplies = [];
-      let diodes = [];
-      
       if (sourceCabinet.power_supplies) {
-        const sourcePowerSupplies = JSON.parse(sourceCabinet.power_supplies);
-        powerSupplies = sourcePowerSupplies.map(ps => ({
-          voltage_type: ps.voltage_type,
-          dc_reading: '', // Clear reading
-          line_neutral: '', // Clear reading
-          line_ground: '', // Clear reading
-          neutral_ground: '', // Clear reading
-          status: 'pass' // Reset status
-        }));
+        try {
+          const sourcePowerSupplies = JSON.parse(sourceCabinet.power_supplies);
+          powerSupplies = sourcePowerSupplies.map((ps) => ({
+            ...ps,
+            dc_reading: '',
+            line_neutral: '',
+            line_ground: '',
+            neutral_ground: '',
+            status: 'pass',
+          }));
+        } catch (_) {
+          powerSupplies = [];
+        }
       }
-      
+
+      // Distribution blocks — keep labels/metadata; clear DC readings / status for new session
+      let distributionBlocksStr = sourceCabinet.distribution_blocks || '[]';
+      try {
+        const distArr = JSON.parse(sourceCabinet.distribution_blocks || '[]');
+        if (Array.isArray(distArr)) {
+          distributionBlocksStr = JSON.stringify(
+            distArr.map((b) => ({ ...b, dc_reading: '', status: 'pass' }))
+          );
+        }
+      } catch (_) { /* keep original string */ }
+
+      // Diodes — preserve names and voltage selector; clear readings
+      let diodesJson = '[]';
       if (sourceCabinet.diodes) {
-        const sourceDiodes = JSON.parse(sourceCabinet.diodes);
-        diodes = sourceDiodes.map(diode => ({
-          dc_reading: '', // Clear reading
-          status: 'pass' // Reset status
-        }));
+        try {
+          const sourceDiodes = JSON.parse(sourceCabinet.diodes);
+          diodesJson = JSON.stringify(
+            sourceDiodes.map((diode) => ({
+              ...diode,
+              dc_reading: '',
+              status: 'pass',
+            }))
+          );
+        } catch (_) {
+          diodesJson = '[]';
+        }
+      }
+
+      // Media converters / carrier-baseplates — copy through with readings cleared (were missing from INSERT entirely)
+      let mediaConvertersJson = '[]';
+      if (sourceCabinet.media_converters) {
+        try {
+          const mcs = JSON.parse(sourceCabinet.media_converters);
+          mediaConvertersJson = JSON.stringify(
+            mcs.map((mc) => ({
+              ...mc,
+              dc_reading: '',
+              status: 'pass',
+            }))
+          );
+        } catch (_) {
+          mediaConvertersJson = '[]';
+        }
+      }
+
+      let powerInjectedBaseplatesJson = '[]';
+      if (sourceCabinet.power_injected_baseplates) {
+        try {
+          const pibs = JSON.parse(sourceCabinet.power_injected_baseplates);
+          powerInjectedBaseplatesJson = JSON.stringify(
+            pibs.map((pib) => ({
+              ...pib,
+              dc_reading: '',
+              status: 'pass',
+            }))
+          );
+        } catch (_) {
+          powerInjectedBaseplatesJson = '[]';
+        }
       }
 
       // Clear inspection data but keep pass/fail structure reset to pass
@@ -1076,13 +1131,14 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
         } catch (e) { /* keep as {} */ }
       }
 
-      // Create new cabinet - include cabinet_type and workstations
+      // Create new cabinet - include cabinet_type, workstations, media converters, carrier/baseplates
       await db.prepare(`
         INSERT INTO cabinets (
           id, pm_session_id, cabinet_name, cabinet_date, cabinet_type, status,
-          power_supplies, distribution_blocks, diodes, network_equipment, 
+          power_supplies, distribution_blocks, diodes, media_converters, power_injected_baseplates,
+          network_equipment,
           inspection_data, controllers, workstations, location_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `).run([
         newCabinetId,
         newSessionId,
@@ -1091,8 +1147,10 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
         sourceCabinet.cabinet_type || 'cabinet', // Keep cabinet type
         'active', // Reset status to active
         JSON.stringify(powerSupplies),
-        sourceCabinet.distribution_blocks, // Keep distribution blocks
-        JSON.stringify(diodes),
+        distributionBlocksStr,
+        diodesJson,
+        mediaConvertersJson,
+        powerInjectedBaseplatesJson,
         sourceCabinet.network_equipment, // Keep network equipment
         inspectionData, // Reset inspection data
         sourceCabinet.controllers, // Keep controller assignments

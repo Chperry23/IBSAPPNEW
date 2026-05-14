@@ -1,8 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { SettingsProvider } from './contexts/SettingsContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Profile from './pages/Profile';
 import Sessions from './pages/Sessions';
 import SessionDetailFull from './pages/SessionDetailFull';
 import IISession from './pages/IISession';
@@ -18,8 +20,9 @@ import CSVTracking from './pages/CSVTracking';
 function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <Routes>
+      <SettingsProvider>
+        <AuthProvider>
+          <Routes>
           {/* Public Routes */}
           <Route path="/" element={<Login />} />
           
@@ -120,11 +123,20 @@ function App() {
               </ProtectedRoute>
             }
           />
-          
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            }
+          />
+
           {/* Catch all - redirect to login */}
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AuthProvider>
+          </Routes>
+        </AuthProvider>
+      </SettingsProvider>
     </BrowserRouter>
   );
 }

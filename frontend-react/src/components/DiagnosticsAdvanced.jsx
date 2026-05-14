@@ -4,7 +4,49 @@ import soundSystem from '../utils/sounds';
 
 /** Placeholder row: card registered for step-2 error entry (hidden from PDF / error log totals) */
 const IO_CARD_SLOT = 'io_card_slot';
+/** Sentinel slot: entire card category on the controller (config may reference cards but none exist — not tied to one card number) */
+const IO_NO_CARD_NUMBER = -1;
 const isIoCardSlot = (d) => d?.error_type === IO_CARD_SLOT;
+
+/** Treat No Card sentinel consistently (API/JSON may use string "-1") */
+const isNoCardSentinelValue = (v) => Number(v) === IO_NO_CARD_NUMBER;
+
+function sortCardNumbersSelected(nums) {
+  return [...nums].sort((a, b) => {
+    const aa = Number(a);
+    const bb = Number(b);
+    if (isNoCardSentinelValue(aa)) return -1;
+    if (isNoCardSentinelValue(bb)) return 1;
+    return aa - bb;
+  });
+}
+
+function formatSlotCardLabel(cardNumber) {
+  return isNoCardSentinelValue(cardNumber) ? 'No Card' : `Card ${cardNumber}`;
+}
+
+/** Collapsed → chevron right; expanded → chevron down */
+function ExpandCollapseChevron({ expanded, className = '' }) {
+  return (
+    <svg
+      className={`${className} transition-transform duration-200 ease-out ${expanded ? 'rotate-90' : 'rotate-0'}`}
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <path
+        d="M9 6l6 6-6 6"
+        stroke="currentColor"
+        strokeWidth="2.25"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId }) {
   const [controllers, setControllers] = useState([]);
@@ -20,7 +62,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
   const [ioLoading, setIoLoading] = useState(false);
   
   // Modal tab: 'detected' | 'manual'
-  const [addErrorTab, setAddErrorTab] = useState('detected');
+  const [addErrorTab, setAddErrorTab] = useState('manual');
   // Flow step (Detected tab): 'pick-device' | 'pick-card' | 'pick-card-device' | 'pick-error'
   const [flowStep, setFlowStep] = useState('pick-device');
   const [selectedDevices, setSelectedDevices] = useState([]); // selected io devices for error (used at submit)
@@ -142,9 +184,9 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
   }, []);
 
   const loadData = async () => {
+    let diagData = [];
     try {
       const diagResponse = await fetch(`/api/sessions/${sessionId}/diagnostics`);
-      let diagData = [];
       if (diagResponse.ok) {
         diagData = await diagResponse.json() || [];
         setDiagnostics(diagData);
@@ -212,6 +254,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
     } finally {
       setLoading(false);
     }
+    return diagData;
   };
 
   const buildControllersStructure = (nodesList, diagList) => {
@@ -250,17 +293,17 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
     setManualLdt('');
     setShowAddErrorModal(true);
     setIoLoading(true);
-    const hasDeviceData = (d) => d?.isCioc || (d?.totalDevices > 0);
-    
     try {
       const data = await api.request(
         `/api/sessions/${sessionId}/diagnostics/io-devices/${encodeURIComponent(node.node_name)}?customerId=${customerId}`
       );
       setIoDeviceData(data);
-      setAddErrorTab(hasDeviceData(data) ? 'detected' : 'manual');
+      setAddErrorTab('manual');
+      // Non-CIOC: always start Detected flow on pick-card (may be empty — see empty state in UI).
+      // Leaving flow on pick-device made the Detected tab render nothing for controllers with no sys_reg I/O.
       if (data.isCioc) {
         setFlowStep('pick-device');
-      } else if (hasDeviceData(data)) {
+      } else {
         setFlowStep('pick-card');
       }
     } catch (err) {
@@ -278,7 +321,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
     setIoDeviceData(null);
     setSelectedDevices([]);
     setSelectedCard(null);
-    setAddErrorTab('detected');
+    setAddErrorTab('manual');
     setFlowStep('pick-device');
     setManualCardType('');
     setManualSelectedCardNumbers([]);
@@ -374,24 +417,32 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
       return;
     }
     if (manualSelectedCardNumbers.length === 0) {
-      showMsg('Select at least one card number', 'error');
+      showMsg('Select at least one card number, or choose No Card (entire card type on controller)', 'error');
       return;
     }
+    const onlyNoCardSlot =
+      manualSelectedCardNumbers.length === 1 &&
+      isNoCardSentinelValue(manualSelectedCardNumbers[0]);
     const existing = new Set(
       diagnostics
         .filter((d) => d.controller_name === currentNode.node_name && isIoCardSlot(d))
-        .map((d) => `${d.card_type}|${d.card_number}`)
+        .map((d) => `${d.card_type}|${Number(d.card_number)}`)
     );
     let added = 0;
+    let newRowId = null;
+    const ctrlName = currentNode.node_name;
+    const cardTypeChosen = manualCardType;
     try {
-      for (const cardNum of [...manualSelectedCardNumbers].sort((a, b) => a - b)) {
-        const key = `${manualCardType}|${cardNum}`;
+      for (const cardNum of sortCardNumbersSelected(manualSelectedCardNumbers)) {
+        const cardNumN = Number(cardNum);
+        const key = `${manualCardType}|${cardNumN}`;
         if (existing.has(key)) continue;
-        await api.request(`/api/sessions/${sessionId}/diagnostics`, {
+        const resp = await api.request(`/api/sessions/${sessionId}/diagnostics`, {
           method: 'POST',
           body: JSON.stringify({
-            controller_name: currentNode.node_name,
-            card_number: cardNum,
+            controller_name: ctrlName,
+            card_number: cardNumN,
+            card_display: isNoCardSentinelValue(cardNumN) ? 'No Card' : null,
             channel_number: null,
             error_type: IO_CARD_SLOT,
             error_description: 'Card software — add I/O errors below',
@@ -403,17 +454,42 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
             ldt: null,
           }),
         });
+        if (resp?.error) {
+          soundSystem.playError();
+          showMsg(resp.message || resp.error || 'Could not register cards', 'error');
+          return;
+        }
+        if (resp?.id != null) newRowId = resp.id;
         existing.add(key);
         added++;
       }
-      soundSystem.playSuccess();
       if (added === 0) {
         showMsg('Those cards are already registered. Pick another type or card numbers.', 'info');
+        return;
+      }
+      soundSystem.playSuccess();
+      if (onlyNoCardSlot) {
+        showMsg(`Saved “No Card” for ${cardTypeLabel(cardTypeChosen)} — choose the I/O error below.`, 'success');
       } else {
         showMsg(`Registered ${added} card(s). Close this dialog and click a card to add ports, channels, and error types.`, 'success');
       }
-      await loadData();
+      const diagData = await loadData();
       setManualSelectedCardNumbers([]);
+      if (onlyNoCardSlot && added > 0) {
+        const slotRow =
+          (newRowId != null && diagData.find((d) => String(d.id) === String(newRowId))) ||
+          diagData.find(
+            (d) =>
+              d.controller_name === ctrlName &&
+              isIoCardSlot(d) &&
+              String(d.card_type) === String(cardTypeChosen) &&
+              isNoCardSentinelValue(d.card_number)
+          );
+        if (slotRow) {
+          closeModal();
+          openCardDetailModal(slotRow);
+        }
+      }
     } catch (e) {
       soundSystem.playError();
       showMsg('Could not register cards', 'error');
@@ -453,7 +529,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
 
   const removeCardSlot = async (slot, e) => {
     e?.stopPropagation?.();
-    if (!confirm(`Remove "${cardTypeLabel(slot.card_type)} · Card ${slot.card_number}" from this controller?`)) return;
+    if (!confirm(`Remove "${cardTypeLabel(slot.card_type)} · ${formatSlotCardLabel(slot.card_number)}" from this controller?`)) return;
     try {
       await api.request(`/api/sessions/${sessionId}/diagnostics/${slot.id}`, { method: 'DELETE' });
       soundSystem.playSuccess();
@@ -468,14 +544,21 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
   const saveCardDetailErrors = async () => {
     if (!cardDetailContext) return;
 
+    const cardNum = Number(cardDetailContext.card_number);
+    const isNoCardSlot = isNoCardSentinelValue(cardDetailContext.card_number);
+    const ct = cardDetailContext.card_type;
+
     // Build validation errors for all required fields
     const errs = {};
-    const ct = cardDetailContext.card_type;
     if (!selectedErrorType) errs.error_type = 'Select an error type';
-    if (ct === 'hart' && manualChannels.length === 0) errs.channels = 'Select at least one channel';
-    if (ct === 'eioc' && !manualPdt.trim()) errs.pdt = 'PDT is required';
-    if (ct === 'eioc' && !manualLdt.trim()) errs.ldt = 'LDT is required';
-    if ((ct === 'devicenet' || ct === 'fieldbus' || ct === 'profibus' || ct === 'asi_bus' || ct === 'serial') && manualPort == null) errs.port = 'Select a port';
+    if (!isNoCardSlot) {
+      if (ct === 'hart' && manualChannels.length === 0) errs.channels = 'Select at least one channel';
+      if (ct === 'eioc' && !manualPdt.trim()) errs.pdt = 'PDT is required';
+      if (ct === 'eioc' && !manualLdt.trim()) errs.ldt = 'LDT is required';
+      if ((ct === 'devicenet' || ct === 'fieldbus' || ct === 'profibus' || ct === 'asi_bus' || ct === 'serial') && manualPort == null) {
+        errs.port = 'Select a port';
+      }
+    }
 
     if (Object.keys(errs).length > 0) {
       setCardDetailErrors(errs);
@@ -483,14 +566,28 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
       return;
     }
     setCardDetailErrors({});
-    const cardNum = Number(cardDetailContext.card_number) || 0;
     const ctrl = cardDetailContext.controller_name;
     const busType = ct || null;
     const ldt = manualLdt || null;
     const desc = errorDescription || errorTypes.find((t) => t.value === selectedErrorType)?.description || '';
 
     const payloads = [];
-    if (ct === 'hart') {
+
+    if (isNoCardSlot) {
+      payloads.push({
+        controller_name: ctrl,
+        card_number: cardNum,
+        card_display: 'No Card',
+        channel_number: null,
+        error_type: selectedErrorType,
+        error_description: desc,
+        bus_type: busType,
+        card_type: ct,
+        port_number: null,
+        ldt,
+        device_name: manualDst?.trim() || null,
+      });
+    } else if (ct === 'hart') {
       if (manualChannels.length === 0) {
         showMsg('Select at least one channel', 'error');
         return;
@@ -580,9 +677,11 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
 
   const cardDetailSaveDisabled = () => {
     if (!cardDetailContext || !selectedErrorType) return true;
+    const cn = Number(cardDetailContext.card_number);
+    if (isNoCardSentinelValue(cn)) return false;
     const ct = cardDetailContext.card_type;
     if (ct === 'hart') return manualChannels.length === 0;
-    if (ct === 'eioc') return !manualPdt;
+    if (ct === 'eioc') return !manualPdt.trim() || !manualLdt.trim();
     if (ct === 'devicenet' || ct === 'fieldbus' || ct === 'profibus' || ct === 'asi_bus' || ct === 'serial') return manualPort == null;
     return false;
   };
@@ -832,12 +931,11 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                     <button
                       type="button"
                       onClick={() => toggleSection(`node-${node.id}`)}
-                      className="text-gray-300 hover:text-white p-1 rounded"
-                      title={isCollapsed(`node-${node.id}`, manyErrors) ? 'Expand' : 'Collapse'}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-blue-500/35 bg-blue-600/15 text-blue-200 hover:bg-blue-600/25 hover:border-blue-400/55 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      title={isCollapsed(`node-${node.id}`, manyErrors) ? 'Expand error table' : 'Collapse error table'}
+                      aria-expanded={!isCollapsed(`node-${node.id}`, manyErrors)}
                     >
-                      <span className="text-lg leading-none">
-                        {isCollapsed(`node-${node.id}`, manyErrors) ? '▶' : '▼'}
-                      </span>
+                      <ExpandCollapseChevron expanded={!isCollapsed(`node-${node.id}`, manyErrors)} />
                     </button>
                     <div>
                       <h4 className="text-lg font-semibold text-gray-100">
@@ -876,7 +974,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
 
                 {cardSlots.length > 0 && (
                   <div className="px-4 py-3 border-b border-gray-700 bg-gray-900/40 space-y-3">
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-between">
                       <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
                         Card software — add I/O on each card
                       </span>
@@ -885,6 +983,11 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                         <span className="text-emerald-400/90">Green</span> = has entries
                       </span>
                     </div>
+                    <p className="text-[11px] leading-snug text-gray-500">
+                      <span className="font-medium text-gray-400">No Card</span> — use when this controller has configuration for this card{' '}
+                      <span className="text-gray-300">type</span> but there are no numbered cards behind it. What you log there applies to the{' '}
+                      <span className="text-gray-300">whole card type</span> on this controller (every slot that category covers), not one physical card.
+                    </p>
                     <div className="space-y-3">
                       {typeKeysOrdered.map((typeKey) => {
                         const slots = slotsByType[typeKey];
@@ -896,8 +999,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                             <div className="px-3 py-2 bg-gray-700/35 border-b border-gray-600/50 flex flex-wrap items-center gap-2">
                               <span className="text-sm font-semibold text-gray-100">{cardTypeLabel(typeKey)}</span>
                               <span className="text-xs text-gray-500">
-                                Cards{' '}
-                                {slots.map((s) => s.card_number).join(', ')}
+                                Registered: {slots.map((s) => formatSlotCardLabel(s.card_number)).join(', ')}
                               </span>
                             </div>
                             <div className="px-3 py-2 flex flex-wrap gap-2">
@@ -907,6 +1009,11 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                                 return (
                                   <span
                                     key={slot.id}
+                                    title={
+                                      isNoCardSentinelValue(slot.card_number)
+                                        ? 'No Card — applies to this entire card type on the controller (config without numbered slots)'
+                                        : undefined
+                                    }
                                     className={`inline-flex items-stretch rounded-lg overflow-hidden border ${
                                       needs
                                         ? 'border-amber-500/55 ring-1 ring-amber-500/25 bg-amber-950/20'
@@ -920,8 +1027,13 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                                       className="px-3 py-2 text-left hover:bg-white/5 disabled:opacity-50 min-w-[5.5rem]"
                                     >
                                       <div className="text-lg font-bold leading-tight text-white tabular-nums">
-                                        Card {slot.card_number}
+                                        {formatSlotCardLabel(slot.card_number)}
                                       </div>
+                                      {isNoCardSentinelValue(slot.card_number) && (
+                                        <div className="text-[10px] font-normal leading-tight text-gray-400 mt-0.5 max-w-[10rem]">
+                                          Whole card type · config, no cards
+                                        </div>
+                                      )}
                                       <div
                                         className={`text-[11px] font-medium mt-0.5 ${
                                           needs ? 'text-amber-400' : 'text-emerald-400'
@@ -954,12 +1066,14 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                 {/* Existing errors for this controller - collapsible */}
                 {nodeErrors.length > 0 && isCollapsed(`node-${node.id}`, manyErrors) && (
                   <div className="px-4 py-2 text-sm text-gray-500 border-b border-gray-700">
-                    {nodeErrors.length} error{nodeErrors.length !== 1 ? 's' : ''} — click ▶ to expand
+                    {nodeErrors.length} error{nodeErrors.length !== 1 ? 's' : ''} — use the arrow button above to expand the table
                   </div>
                 )}
                 {nodeErrors.length === 0 && cardSlots.length > 0 && (
                   <div className="px-4 py-3 text-sm text-gray-500 border-b border-gray-700">
-                    Click a <span className="text-blue-300 font-medium">card</span> above to add channels, ports, and error types.
+                    Click a <span className="text-blue-300 font-medium">card tile</span> above, or{' '}
+                    <span className="text-amber-200 font-medium">No Card</span> when the issue applies to the{' '}
+                    <span className="text-gray-300">entire card type</span> on this controller (no numbered slots).
                   </div>
                 )}
                 {nodeErrors.length > 0 && !isCollapsed(`node-${node.id}`, manyErrors) && (
@@ -1078,18 +1192,17 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
             <button
               type="button"
               onClick={() => toggleSection('fullLog')}
-              className="text-gray-300 hover:text-white p-1 rounded"
-              title={isCollapsed('fullLog', realDiagnostics.length > 10) ? 'Expand' : 'Collapse'}
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-blue-500/35 bg-blue-600/15 text-blue-200 hover:bg-blue-600/25 hover:border-blue-400/55 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              title={isCollapsed('fullLog', realDiagnostics.length > 10) ? 'Expand full error log' : 'Collapse full error log'}
+              aria-expanded={!isCollapsed('fullLog', realDiagnostics.length > 10)}
             >
-              <span className="text-lg leading-none">
-                {isCollapsed('fullLog', realDiagnostics.length > 10) ? '▶' : '▼'}
-              </span>
+              <ExpandCollapseChevron expanded={!isCollapsed('fullLog', realDiagnostics.length > 10)} />
             </button>
             <h4 className="text-lg font-semibold text-gray-100">Complete Error Log ({realDiagnostics.length})</h4>
           </div>
           {isCollapsed('fullLog', realDiagnostics.length > 10) && (
             <div className="px-4 py-2 text-sm text-gray-500 border-b border-gray-700">
-              {realDiagnostics.length} error{realDiagnostics.length !== 1 ? 's' : ''} — click ▶ to expand
+              {realDiagnostics.length} error{realDiagnostics.length !== 1 ? 's' : ''} — use the arrow button above to expand the full log
             </div>
           )}
           {!isCollapsed('fullLog', realDiagnostics.length > 10) && (
@@ -1220,20 +1333,9 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-200 text-2xl">×</button>
             </div>
 
-            {/* Tabs: Detected Cards | Manual Entry — hidden for CIOCs (always show full charm grid) */}
+            {/* Tabs: Manual Entry (default) | Detected Cards — hidden for CIOCs (always show full charm grid) */}
             {!ioDeviceData?.isCioc && (
               <div className="flex border-b border-gray-700 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setAddErrorTab('detected')}
-                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    addErrorTab === 'detected'
-                      ? 'border-blue-500 text-blue-400'
-                      : 'border-transparent text-gray-400 hover:text-gray-200'
-                  }`}
-                >
-                  Detected Cards
-                </button>
                 <button
                   type="button"
                   onClick={() => setAddErrorTab('manual')}
@@ -1244,6 +1346,17 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                   }`}
                 >
                   Manual Entry
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddErrorTab('detected')}
+                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    addErrorTab === 'detected'
+                      ? 'border-blue-500 text-blue-400'
+                      : 'border-transparent text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  Detected Cards
                 </button>
               </div>
             )}
@@ -1259,8 +1372,13 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                 <div className="space-y-4">
                   <h4 className="text-gray-200 font-medium">Step 1 — Register cards with issues</h4>
                   <p className="text-gray-500 text-sm">
-                    Choose the card type, select <strong className="text-gray-300">multiple</strong> card numbers, then <strong className="text-gray-300">Add cards</strong>.
-                    Repeat for another type (e.g. Fieldbus) if needed. Then close this dialog and click each <strong className="text-blue-300">card</strong> under the controller to add ports, channels, and error types.
+                    Choose the card type. Pick <strong className="text-gray-300">specific card numbers</strong> for faults on known slots, or{' '}
+                    <strong className="text-gray-300">No Card</strong> when the controller has config for that card type but{' '}
+                    <strong className="text-gray-300">no cards populated</strong> — that entry applies to the{' '}
+                    <strong className="text-gray-300">whole card type</strong> on this controller (all slots that type covers), not one card number.
+                    Then <strong className="text-gray-300">Submit</strong> (No Card only) or <strong className="text-gray-300">Add cards</strong> (numbered slots).
+                    Repeat for another type if needed. Close this dialog and click each{' '}
+                    <strong className="text-blue-300">tile</strong> below to add ports, channels, and error types.
                   </p>
                   <div>
                     <label className="form-label">Card type</label>
@@ -1280,9 +1398,39 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                         </button>
                       ))}
                     </div>
+                    {manualSelectedCardNumbers.some((c) => isNoCardSentinelValue(c)) && !manualCardType && (
+                      <p className="text-amber-300/95 text-sm mt-2 font-medium">
+                        Select a <span className="text-white">card type</span> above — required before Submit.
+                      </p>
+                    )}
                   </div>
                   <div>
-                    <label className="form-label">Card numbers (1–100, select any combination)</label>
+                    <label className="form-label">Card numbers (1–100) and/or No Card</label>
+                    <p className="text-xs text-gray-500 mb-2">
+                      <strong className="text-gray-300">No Card</strong> — controller has this card type in configuration but there are no physical/populated
+                      cards for it. Use this so your I/O errors apply to that <strong className="text-gray-300">entire card category</strong> on this controller,
+                      as if it affects every slot that type would cover.
+                    </p>
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      <button
+                        type="button"
+                        title="Applies to the entire card type on this controller (config exists but no numbered cards populated)"
+                        onClick={() =>
+                          setManualSelectedCardNumbers((prev) =>
+                            prev.some((c) => isNoCardSentinelValue(c))
+                              ? prev.filter((c) => !isNoCardSentinelValue(c))
+                              : [...prev, IO_NO_CARD_NUMBER]
+                          )
+                        }
+                        className={`rounded-lg border px-4 py-2 text-sm font-semibold transition-all ${
+                          manualSelectedCardNumbers.some((c) => isNoCardSentinelValue(c))
+                            ? 'border-amber-400 bg-amber-600/25 text-amber-100 ring-2 ring-amber-500/40'
+                            : 'border-gray-600 bg-gray-700/30 text-gray-300 hover:border-amber-500/50'
+                        }`}
+                      >
+                        No Card
+                      </button>
+                    </div>
                     <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto border border-gray-600 rounded-lg p-2 bg-gray-900/30">
                       {Array.from({ length: 100 }, (_, i) => i + 1).map((n) => {
                         const selected = manualSelectedCardNumbers.includes(n);
@@ -1294,7 +1442,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                               setManualSelectedCardNumbers(
                                 selected
                                   ? manualSelectedCardNumbers.filter((c) => c !== n)
-                                  : [...manualSelectedCardNumbers, n].sort((a, b) => a - b)
+                                  : sortCardNumbersSelected([...manualSelectedCardNumbers, n])
                               )
                             }
                             className={`w-9 h-9 rounded border text-sm font-medium transition-all ${
@@ -1310,7 +1458,10 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                     </div>
                     {manualSelectedCardNumbers.length > 0 && (
                       <p className="text-xs text-gray-500 mt-1">
-                        Selected: {manualSelectedCardNumbers.slice().sort((a, b) => a - b).join(', ')}
+                        Selected:{' '}
+                        {sortCardNumbersSelected(manualSelectedCardNumbers)
+                          .map((c) => (isNoCardSentinelValue(c) ? 'No Card (entire card type)' : c))
+                          .join(', ')}
                       </p>
                     )}
                   </div>
@@ -1592,6 +1743,20 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                       </button>
                     ))}
                   </div>
+                  {(ioDeviceData?.cards || []).length === 0 && (
+                    <div className="rounded-lg border border-amber-500/35 bg-amber-950/25 px-4 py-3 text-sm text-amber-100/95 space-y-2">
+                      <p>
+                        <strong className="text-amber-50">No cards or I/O devices</strong> were found in System Registry for this controller (including
+                        cabinets where no cards are populated).
+                      </p>
+                      <p>
+                        Open the <strong className="text-white">Manual Entry</strong> tab: pick a <strong className="text-white">card type</strong>, choose{' '}
+                        <strong className="text-white">No Card</strong> if the fault applies to that whole card category on this controller, or choose slot
+                        numbers <strong className="text-white">1–100</strong>, then click <strong className="text-white">Add cards</strong>. After that, use the
+                        tiles on the main screen to add ports, channels, and error types.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
               ) : flowStep === 'pick-card-device' && selectedCard ? (
@@ -1705,9 +1870,20 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                     type="button"
                     onClick={saveRegisterCardSlots}
                     disabled={!manualCardType || manualSelectedCardNumbers.length === 0}
+                    title={
+                      !manualCardType && manualSelectedCardNumbers.length > 0
+                        ? 'Choose a card type in the section above'
+                        : undefined
+                    }
                     className="btn btn-primary"
                   >
-                    Add cards
+                    {!manualCardType && manualSelectedCardNumbers.length > 0
+                      ? 'Select card type first'
+                      : manualCardType &&
+                          manualSelectedCardNumbers.length === 1 &&
+                          isNoCardSentinelValue(manualSelectedCardNumbers[0])
+                        ? 'Submit'
+                        : 'Add cards'}
                   </button>
                 ) : flowStep === 'pick-error' ? (
                   <button
@@ -1747,7 +1923,8 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
             <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
               <div>
                 <h3 className="text-lg font-semibold text-gray-100">
-                  Add I/O error — {cardTypeLabel(cardDetailContext.card_type)} · Card {cardDetailContext.card_number}
+                  Add I/O error — {cardTypeLabel(cardDetailContext.card_type)} ·{' '}
+                  {formatSlotCardLabel(cardDetailContext.card_number)}
                 </h3>
                 <p className="text-sm text-gray-400">{cardDetailContext.controller_name}</p>
               </div>
@@ -1756,7 +1933,14 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
               </button>
             </div>
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-              {cardDetailContext.card_type === 'hart' && (
+              {isNoCardSentinelValue(cardDetailContext.card_number) && (
+                <div className="rounded-lg border border-amber-500/45 bg-amber-950/30 px-4 py-3 text-sm text-amber-100/95">
+                  <strong>No Card</strong> — this controller has configuration for this card category but no numbered cards behind it. What you enter here
+                  applies to the <strong>whole card type</strong> on this controller (covers every slot that category represents), not a single hardware card.
+                  Choose error type and optional notes below; port/channel are not used here.
+                </div>
+              )}
+              {!isNoCardSentinelValue(cardDetailContext.card_number) && cardDetailContext.card_type === 'hart' && (
                 <div>
                   <label className={`form-label ${cardDetailErrors.channels ? 'text-red-400' : ''}`}>
                     Channels (1–60, select multiple) <span className="text-red-400">*</span>
@@ -1786,7 +1970,8 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                   {cardDetailErrors.channels && <p className="text-red-400 text-xs mt-1">{cardDetailErrors.channels}</p>}
                 </div>
               )}
-              {(cardDetailContext.card_type === 'devicenet' ||
+              {!isNoCardSentinelValue(cardDetailContext.card_number) &&
+                (cardDetailContext.card_type === 'devicenet' ||
                 cardDetailContext.card_type === 'fieldbus' ||
                 cardDetailContext.card_type === 'profibus' ||
                 cardDetailContext.card_type === 'asi_bus' ||
@@ -1845,7 +2030,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                   </div>
                 </>
               )}
-              {cardDetailContext.card_type === 'eioc' && (
+              {!isNoCardSentinelValue(cardDetailContext.card_number) && cardDetailContext.card_type === 'eioc' && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className={`form-label ${cardDetailErrors.pdt ? 'text-red-400' : ''}`}>
@@ -1881,7 +2066,9 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                   </div>
                 </div>
               )}
-              {selectedErrorType === 'no_card' && cardDetailContext.card_type !== 'hart' && (
+              {selectedErrorType === 'no_card' &&
+                !isNoCardSentinelValue(cardDetailContext.card_number) &&
+                cardDetailContext.card_type !== 'hart' && (
                 <div>
                   <label className="form-label">Channels (optional — indicate which channel slot is missing a card)</label>
                   <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto border border-gray-600 rounded-lg p-2 bg-gray-900/30">

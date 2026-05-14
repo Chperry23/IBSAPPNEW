@@ -227,7 +227,7 @@ router.post('/:sessionId/diagnostics', requireAuth, async (req, res) => {
     `).run([
       sessionId,
       diagnostic.controller_name,
-      diagnostic.card_number || 0,
+      diagnostic.card_number ?? 0,
       diagnostic.card_display || null,
       diagnostic.channel_number || null,
       diagnostic.error_type,
@@ -277,7 +277,7 @@ router.put('/:sessionId/diagnostics/:diagnosticId', requireAuth, async (req, res
       WHERE id = ? AND session_id = ?
     `).run([
       diagnostic.controller_name,
-      diagnostic.card_number || 0,
+      diagnostic.card_number ?? 0,
       diagnostic.card_display || null,
       diagnostic.channel_number || null,
       diagnostic.error_type,

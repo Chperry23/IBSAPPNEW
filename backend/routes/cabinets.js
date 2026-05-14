@@ -386,7 +386,7 @@ router.put('/:cabinetId', requireAuth, async (req, res) => {
 // Duplicate a cabinet (copies counts/inspection, clears controllers)
 router.post('/:cabinetId/duplicate', requireAuth, async (req, res) => {
   const cabinetId = req.params.cabinetId;
-  const { new_name } = req.body;
+  const { new_name, preserve_equipment_labels, copy_count } = req.body || {};
 
   try {
     const source = await db.prepare(`
@@ -403,14 +403,34 @@ router.post('/:cabinetId/duplicate', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Cannot duplicate cabinet in a completed session' });
     }
 
-    const newName = (new_name || '').trim() || `${source.cabinet_name} (Copy)`;
-    const newId = require('crypto').randomUUID();
+    const preserve = Boolean(preserve_equipment_labels);
+    let n = parseInt(copy_count, 10);
+    if (!Number.isFinite(n) || n < 1) n = 1;
+    if (n > 20) n = 20;
+
+    const userBaseTrim = String(new_name || '').trim();
+
+    /** Names: one copy uses user-provided name or `{source} (Copy)`; multiple uses `{stem} (Copy)`, `{stem} (Copy 2)`, ... */
+    const defaultStem = source.cabinet_name || 'Cabinet';
+    const stem = userBaseTrim
+      ? userBaseTrim.replace(/\s*\(Copy\)(\s*\d+)?\s*$/i, '').trim() || defaultStem
+      : defaultStem;
+    const names = [];
+    for (let i = 0; i < n; i += 1) {
+      if (n === 1) {
+        names.push(userBaseTrim || `${defaultStem} (Copy)`);
+      } else if (i === 0) {
+        names.push(`${stem} (Copy)`);
+      } else {
+        names.push(`${stem} (Copy ${i + 1})`);
+      }
+    }
 
     // Helper: generate N blank items of a given shape (preserves count, clears all values)
     const blankItems = (jsonStr, blankFn) => {
       try {
         const items = JSON.parse(jsonStr || '[]');
-        return JSON.stringify(items.map((_, i) => blankFn(i)));
+        return JSON.stringify(items.map((_, idx) => blankFn(idx)));
       } catch (_) { return '[]'; }
     };
 
@@ -421,7 +441,61 @@ router.post('/:cabinetId/duplicate', requireAuth, async (req, res) => {
     const blankPib = (i) => ({ id: Date.now() + i, pib_name: `Carrier/Baseplate ${i + 1}` });
     const blankNet = (i) => ({ id: Date.now() + i, equipment_type: '', model_number: '', port_count: '', condition: '', comments: '', serial: '', firmware: '' });
 
-    await db.prepare(`
+    const parseJsonArray = (jsonStr) => {
+      try {
+        const parsed = JSON.parse(jsonStr || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_) {
+        return [];
+      }
+    };
+
+    /** Keep custom labels/metadata; clear inspection readings only (matches session duplicate semantics). */
+    const cloneEquipWithClearedReadings = (items, mapper) =>
+      JSON.stringify(items.map(mapper));
+
+    let distributionPayload;
+    let diodesPayload;
+    let mcPayload;
+    let pibPayload;
+
+    if (preserve) {
+      const distArr = parseJsonArray(source.distribution_blocks);
+      distributionPayload = cloneEquipWithClearedReadings(distArr, (b) => ({
+        ...b,
+        dc_reading: '',
+        status: 'pass',
+      }));
+
+      const diodeArr = parseJsonArray(source.diodes);
+      diodesPayload = cloneEquipWithClearedReadings(diodeArr, (d) => ({
+        ...d,
+        dc_reading: '',
+        status: 'pass',
+      }));
+
+      const mcArr = parseJsonArray(source.media_converters);
+      mcPayload = cloneEquipWithClearedReadings(mcArr, (mc) => ({
+        ...mc,
+        dc_reading: '',
+        status: 'pass',
+      }));
+
+      const pibArr = parseJsonArray(source.power_injected_baseplates);
+      pibPayload = cloneEquipWithClearedReadings(pibArr, (pib) => ({
+        ...pib,
+        dc_reading: '',
+        status: 'pass',
+      }));
+    } else {
+      distributionPayload = blankItems(source.distribution_blocks, blankDb);
+      diodesPayload = blankItems(source.diodes, blankDiode);
+      mcPayload = blankItems(source.media_converters, blankMc);
+      pibPayload = blankItems(source.power_injected_baseplates, blankPib);
+    }
+
+    const crypto = require('crypto');
+    const insertSql = `
       INSERT INTO cabinets (
         id, pm_session_id, cabinet_name, cabinet_date, cabinet_type,
         power_supplies, distribution_blocks, diodes, media_converters,
@@ -431,32 +505,45 @@ router.post('/:cabinetId/duplicate', requireAuth, async (req, res) => {
         rack_has_ups, rack_has_hmi, rack_has_kvm, rack_has_monitor,
         status, synced, updated_at
       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
-    `).run([
-      newId,
-      source.pm_session_id,
-      newName,
-      source.cabinet_date,
-      source.cabinet_type || 'cabinet',
-      blankItems(source.power_supplies, blankPs),
-      blankItems(source.distribution_blocks, blankDb),
-      blankItems(source.diodes, blankDiode),
-      blankItems(source.media_converters, blankMc),
-      blankItems(source.power_injected_baseplates, blankPib),
-      blankItems(source.network_equipment, blankNet),
-      '[]',  // controllers not duplicated
-      '[]',  // workstations not duplicated
-      '{}',  // inspection starts fresh
-      null,  // comments start fresh
-      source.rack_has_ups || 0,
-      source.rack_has_hmi || 0,
-      source.rack_has_kvm || 0,
-      source.rack_has_monitor || 0,
-      'active',
-      0,
-    ]);
+    `;
 
-    const newCabinet = await db.prepare('SELECT * FROM cabinets WHERE id = ?').get(newId);
-    res.json({ success: true, message: 'Cabinet duplicated', cabinet: newCabinet });
+    const created = [];
+    for (let i = 0; i < n; i += 1) {
+      const newId = crypto.randomUUID();
+      const insertName = names[i];
+      await db.prepare(insertSql).run([
+        newId,
+        source.pm_session_id,
+        insertName,
+        source.cabinet_date,
+        source.cabinet_type || 'cabinet',
+        blankItems(source.power_supplies, blankPs),
+        distributionPayload,
+        diodesPayload,
+        mcPayload,
+        pibPayload,
+        blankItems(source.network_equipment, blankNet),
+        '[]',
+        '[]',
+        '{}',
+        null,
+        source.rack_has_ups || 0,
+        source.rack_has_hmi || 0,
+        source.rack_has_kvm || 0,
+        source.rack_has_monitor || 0,
+        'active',
+        0,
+      ]);
+      const row = await db.prepare('SELECT * FROM cabinets WHERE id = ?').get(newId);
+      if (row) created.push(row);
+    }
+
+    res.json({
+      success: true,
+      message: n === 1 ? 'Cabinet duplicated' : `Duplicated ${n} cabinets`,
+      cabinet: created[created.length - 1] || null,
+      cabinets: created,
+    });
   } catch (error) {
     console.error('Duplicate cabinet error:', error);
     res.status(500).json({ error: 'Database error' });

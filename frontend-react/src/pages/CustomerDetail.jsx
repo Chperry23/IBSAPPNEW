@@ -1670,7 +1670,9 @@ export default function CustomerDetail() {
                   <li>- Controller / CIOC assignments to cabinets</li>
                   <li>- Workstation assignments to racks</li>
                   <li>- Network switch assignments</li>
-                  <li>- Distribution blocks</li>
+                  <li>- Distribution blocks (names and metadata; readings cleared)</li>
+                  <li>- Diodes (custom names; readings cleared)</li>
+                  <li>- Media converters and carrier/baseplates (custom names; readings cleared)</li>
                   <li>- Location assignments</li>
                 </ul>
               </div>
@@ -1679,7 +1681,9 @@ export default function CustomerDetail() {
                 <p className="text-sm font-medium text-red-300 mb-2">What gets CLEARED:</p>
                 <ul className="text-sm text-red-200/80 space-y-1">
                   <li>- Power supply readings (reset to pass)</li>
+                  <li>- Distribution block DC readings / pass-fail status (reset)</li>
                   <li>- Diode readings (reset to pass)</li>
+                  <li>- Media converter and carrier/baseplate readings (reset to pass)</li>
                   <li>- Inspection pass/fail data (reset to pass)</li>
                   <li>- Node troubleshooting / maintenance checks</li>
                   <li>- I/O error diagnostics</li>

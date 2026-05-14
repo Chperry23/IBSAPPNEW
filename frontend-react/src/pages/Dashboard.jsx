@@ -33,7 +33,7 @@ export default function Dashboard() {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-2 border-[#2d2d44] border-t-blue-500"></div>
         </div>
       </Layout>
     );
@@ -94,9 +94,71 @@ export default function Dashboard() {
         <div className="card flex flex-col">
           <div className="card-header flex items-center justify-between">
             <h2 className="text-xl font-semibold text-gray-100">What's New</h2>
-            <span className="text-xs text-gray-400 font-mono">Apr 2026</span>
+            <span className="text-xs text-gray-400 font-mono">May 2026</span>
           </div>
           <div className="card-body overflow-y-auto max-h-[420px] space-y-4 pr-1">
+
+            {/* v2.6 entry */}
+            <div className="border-l-4 border-sky-500 pl-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-bold bg-sky-600 text-white px-2 py-0.5 rounded">v2.6 — May 7</span>
+              </div>
+              <ul className="text-sm text-gray-300 space-y-1.5">
+                <li className="flex items-start gap-2">
+                  <span className="text-green-400 mt-0.5 shrink-0">+</span>
+                  <span><strong className="text-gray-100">PM APP branding</strong> — App title is PM APP with a logo asset (<strong className="text-gray-200">public/logo.svg</strong> — replace with your own file). Login and shell headers updated.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-400 mt-0.5 shrink-0">+</span>
+                  <span><strong className="text-gray-100">Sidebar navigation</strong> — Main nav defaults to a left sidebar; open <strong className="text-gray-200">Profile</strong> to switch to classic <strong className="text-gray-200">top navigation</strong> (saved on this device).</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-400 mt-0.5 shrink-0">+</span>
+                  <span><strong className="text-gray-100">Profile & settings</strong> — New <strong className="text-gray-200">/profile</strong> page for account note and layout preference; top bar uses a compact profile icon so the menu stays clean.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-400 mt-0.5 shrink-0">~</span>
+                  <span><strong className="text-gray-100">Visual refresh</strong> — Dark navy palette and stronger buttons/cards for readability during long PM work.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-400 mt-0.5 shrink-0">+</span>
+                  <span><strong className="text-gray-100">Custom workstations</strong> — When adding a custom workstation, model is either <strong className="text-gray-200">DeltaV Workstation</strong> or <strong className="text-gray-200">Non DeltaV workstation</strong> (clear segmented choice).</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-400 mt-0.5 shrink-0">+</span>
+                  <span><strong className="text-gray-100">I/O errors — No Card</strong> — Register <strong className="text-gray-200">No Card</strong> per card type when the controller has config for that type but no numbered cards; copy and tiles explain it applies to the <strong className="text-gray-200">whole card type</strong> on that controller.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-400 mt-0.5 shrink-0">~</span>
+                  <span><strong className="text-gray-100">I/O errors UI</strong> — Expand/collapse uses a standard rotating chevron; <strong className="text-gray-200">Add Error</strong> opens on <strong className="text-gray-200">Manual Entry</strong> first with Detected Cards as the alternate tab.</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* v2.5 entry */}
+            <div className="border-l-4 border-emerald-500 pl-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-bold bg-emerald-600 text-white px-2 py-0.5 rounded">v2.5 — May 6</span>
+              </div>
+              <ul className="text-sm text-gray-300 space-y-1.5">
+                <li className="flex items-start gap-2">
+                  <span className="text-green-400 mt-0.5 shrink-0">+</span>
+                  <span><strong className="text-gray-100">I/O diagnostics — empty controllers</strong> — If System Registry has no I/O devices for a controller, Detected Cards no longer shows a blank step; you get guidance to use Manual Entry. Pick-card flow always opens for non-CIOC controllers.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-400 mt-0.5 shrink-0">+</span>
+                  <span><strong className="text-gray-100">No Card manual entry</strong> — Choose a card type, then No Card, then <strong className="text-gray-200">Submit</strong> (the button reads <strong className="text-gray-200">Select card type first</strong> until a type is chosen so it is obvious why Submit was disabled). Saving opens the I/O error form for that No Card slot right away.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-400 mt-0.5 shrink-0">~</span>
+                  <span><strong className="text-gray-100">No Card data consistency</strong> — Same “no physical card” slot is handled reliably whether the sentinel is stored as −1 or a string from the API; duplicate slot detection uses normalized card numbers.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-400 mt-0.5 shrink-0">~</span>
+                  <span><strong className="text-gray-100">System Registry import and customer alias</strong> — UserInfo from XML still updates company/address/contact fields when present, but <strong className="text-gray-100">customer name and alias</strong> stay as you set them in the customer profile (never overwritten by import).</span>
+                </li>
+              </ul>
+            </div>
 
             {/* v2.4 entry */}
             <div className="border-l-4 border-blue-500 pl-4">

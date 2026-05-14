@@ -35,6 +35,8 @@ export default function SessionDetailFull() {
   const [showDuplicateCabinetModal, setShowDuplicateCabinetModal] = useState(false);
   const [duplicatingCabinetId, setDuplicatingCabinetId] = useState(null);
   const [duplicateCabinetName, setDuplicateCabinetName] = useState('');
+  const [duplicatePreserveEquipmentLabels, setDuplicatePreserveEquipmentLabels] = useState(false);
+  const [duplicateCabinetCopyCount, setDuplicateCabinetCopyCount] = useState(1);
 
   useEffect(() => {
     loadSessionData();
@@ -333,22 +335,44 @@ export default function SessionDetailFull() {
   const openDuplicateCabinetModal = (cabinet) => {
     setDuplicatingCabinetId(cabinet.id);
     setDuplicateCabinetName(`${cabinet.cabinet_name} (Copy)`);
+    setDuplicatePreserveEquipmentLabels(false);
+    setDuplicateCabinetCopyCount(1);
     setShowDuplicateCabinetModal(true);
+  };
+
+  const closeDuplicateCabinetModal = () => {
+    setShowDuplicateCabinetModal(false);
+    setDuplicatingCabinetId(null);
+    setDuplicateCabinetName('');
+    setDuplicatePreserveEquipmentLabels(false);
+    setDuplicateCabinetCopyCount(1);
   };
 
   const handleDuplicateCabinet = async () => {
     if (!duplicatingCabinetId) return;
+    const rawCount = parseInt(String(duplicateCabinetCopyCount), 10);
+    let copyCount = Number.isFinite(rawCount) ? rawCount : 1;
+    if (copyCount < 1) copyCount = 1;
+    if (copyCount > 20) copyCount = 20;
     try {
       const result = await api.request(`/api/cabinets/${duplicatingCabinetId}/duplicate`, {
         method: 'POST',
-        body: JSON.stringify({ new_name: duplicateCabinetName }),
+        body: JSON.stringify({
+          new_name: duplicateCabinetName.trim(),
+          preserve_equipment_labels: duplicatePreserveEquipmentLabels,
+          copy_count: copyCount,
+        }),
       });
       if (result.success) {
-        setShowDuplicateCabinetModal(false);
-        setDuplicatingCabinetId(null);
-        setDuplicateCabinetName('');
+        closeDuplicateCabinetModal();
         loadSessionData();
-        showMessage('Cabinet duplicated successfully', 'success');
+        const created = Array.isArray(result.cabinets) ? result.cabinets.length : 1;
+        showMessage(
+          created > 1
+            ? `${created} cabinets duplicated successfully`
+            : 'Cabinet duplicated successfully',
+          'success'
+        );
       } else {
         showMessage(result.error || 'Error duplicating cabinet', 'error');
       }
@@ -356,6 +380,8 @@ export default function SessionDetailFull() {
       showMessage('Error duplicating cabinet', 'error');
     }
   };
+
+  const duplicateCabinetNeedsName = duplicateCabinetCopyCount === 1;
 
   const handleCompleteSession = async () => {
     setCompletionWarnings([]);
@@ -1167,7 +1193,7 @@ export default function SessionDetailFull() {
             <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
               <h3 className="text-lg font-semibold text-gray-100">⧉ Duplicate Cabinet</h3>
               <button
-                onClick={() => { setShowDuplicateCabinetModal(false); setDuplicatingCabinetId(null); setDuplicateCabinetName(''); }}
+                onClick={closeDuplicateCabinetModal}
                 className="text-gray-400 hover:text-gray-200 text-2xl"
               >
                 ×
@@ -1175,25 +1201,51 @@ export default function SessionDetailFull() {
             </div>
             <div className="px-6 py-4 space-y-4">
               <p className="text-gray-400 text-sm">
-                Copies power supplies, diodes, distribution blocks, switches, and inspection settings. Controllers are not duplicated.
+                Copies power supply counts, distribution/I/O-equipment counts, and rack flags. Switches/network JSON is cleared; controllers are not duplicated. Inspection starts fresh.
+              </p>
+              <p className="text-gray-400 text-sm">
+                By default labels on distribution blocks, diodes, media converters, and carrier/baseplates are reset — use “Keep custom names” to copy those labels (DC readings still cleared).
               </p>
               <div>
-                <label className="form-label">New Cabinet Name</label>
+                <label className="form-label">Base name ({duplicateCabinetCopyCount > 1 ? 'stem for numbered copies — may be blank' : 'new cabinet'})</label>
                 <input
                   type="text"
                   value={duplicateCabinetName}
                   onChange={(e) => setDuplicateCabinetName(e.target.value)}
                   className="form-input"
-                  placeholder="Enter name for the new cabinet"
-                  autoFocus
+                  placeholder={duplicateCabinetCopyCount > 1 ? 'Optional — uses original cabinet name' : 'Enter name for the new cabinet'}
+                  autoFocus={duplicateCabinetCopyCount <= 1}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleDuplicateCabinet(); }}
                 />
               </div>
+              <div>
+                <label className="form-label">Number of copies (1–20)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={duplicateCabinetCopyCount}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    setDuplicateCabinetCopyCount(Number.isFinite(v) ? Math.min(20, Math.max(1, v)) : 1);
+                  }}
+                  className="form-input max-w-[120px]"
+                />
+              </div>
+              <label className="flex items-start gap-3 cursor-pointer text-sm text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={duplicatePreserveEquipmentLabels}
+                  onChange={(e) => setDuplicatePreserveEquipmentLabels(e.target.checked)}
+                  className="mt-1 rounded border-gray-600"
+                />
+                <span>Keep custom names for distribution blocks, diodes, media converters, and carrier/baseplates</span>
+              </label>
             </div>
             <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
               <button
                 type="button"
-                onClick={() => { setShowDuplicateCabinetModal(false); setDuplicatingCabinetId(null); setDuplicateCabinetName(''); }}
+                onClick={closeDuplicateCabinetModal}
                 className="btn btn-secondary"
               >
                 Cancel
@@ -1201,9 +1253,9 @@ export default function SessionDetailFull() {
               <button
                 onClick={handleDuplicateCabinet}
                 className="btn btn-primary"
-                disabled={!duplicateCabinetName.trim()}
+                disabled={duplicateCabinetNeedsName && !duplicateCabinetName.trim()}
               >
-                ⧉ Duplicate
+                ⧉ Duplicate{duplicateCabinetCopyCount > 1 ? ` (${duplicateCabinetCopyCount})` : ''}
               </button>
             </div>
           </div>

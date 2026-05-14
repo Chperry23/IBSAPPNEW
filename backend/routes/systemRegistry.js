@@ -251,7 +251,9 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
         companyName, streetAddress, city, state, zip, country, contactPerson, contactPhone, contactEmail, dongleId
       });
       
-      // Build dynamic UPDATE that only sets non-null fields (won't overwrite manually entered data with nulls)
+      // Build dynamic UPDATE that only sets non-null fields (won't overwrite manually entered data with nulls).
+      // Intentionally never set from XML: customers.name, customers.alias, system_username/system_password,
+      // and other fields managed only in the customer profile UI — preserve user-entered aliases and identities.
       const updates = [];
       const values = [];
       

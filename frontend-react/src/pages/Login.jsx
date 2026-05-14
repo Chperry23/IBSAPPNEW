@@ -61,8 +61,11 @@ export default function Login() {
         <div className="bg-gray-800 rounded-lg shadow-2xl shadow-blue-500/20 p-8 border border-gray-700">
           {/* Header */}
           <div className="text-center mb-8">
+            <div className="flex justify-center mb-4">
+              <img src="/logo.svg" alt="" className="h-16 w-16 rounded-2xl shadow-lg shadow-blue-900/50" width={64} height={64} />
+            </div>
             <h1 className="text-4xl font-bold mb-2">
-              <span className="gradient-text">⚡ ECI Cabinet PM</span>
+              <span className="gradient-text">PM APP</span>
             </h1>
             <p className="text-gray-400">
               {isLogin ? 'Preventative Maintenance Documentation' : 'Create Your Account'}

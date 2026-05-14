@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import soundSystem from '../utils/sounds';
 
+/** Model values stored for custom workstations (Add Custom Workstation). */
+const CUSTOM_WORKSTATION_MODEL = {
+  DELTAV: 'Deltav Workstation',
+  NON_DELTAV: 'Non deltav workstation',
+};
+const CUSTOM_WORKSTATION_MODEL_LIST = Object.values(CUSTOM_WORKSTATION_MODEL);
+
 export default function NodeMaintenance({ sessionId, customerId, isCompleted }) {
   const [nodes, setNodes] = useState([]);
   const [maintenanceData, setMaintenanceData] = useState({});
@@ -13,7 +20,6 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
   const [showCustomComputer, setShowCustomComputer] = useState(false);
   const [showCustomSwitch, setShowCustomSwitch] = useState(false);
   const [customNode, setCustomNode] = useState({ node_name: '', node_type: '', model: '', serial: '' });
-  const [wsModelIsCustom, setWsModelIsCustom] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -280,6 +286,13 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
       return;
     }
 
+    if (workstationTypes.includes(nodeType)) {
+      if (!CUSTOM_WORKSTATION_MODEL_LIST.includes(customNode.model)) {
+        showMessage('Choose either Deltav Workstation or Non deltav workstation', 'error');
+        return;
+      }
+    }
+
     try {
       const response = await fetch(`/api/sessions/${sessionId}/custom-node`, {
         method: 'POST',
@@ -308,7 +321,6 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
         }
         
         setCustomNode({ node_name: '', node_type: '', model: '', serial: '' });
-        setWsModelIsCustom(false);
         setShowCustomController(false);
         setShowCustomComputer(false);
         setShowCustomSwitch(false);
@@ -379,10 +391,6 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
     'Host (Virtual)',
     'File Witness (Virtual)',
     'Non-DV Node',
-  ];
-
-  const workstationModels = [
-    'VE3008', 'VE3007', 'VE3006', 'VE2001', 'VE2002',
   ];
 
   const computers = nodes.filter((n) => workstationTypes.includes(n.node_type));
@@ -938,65 +946,79 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                 <div className="card-footer">
                   {!showCustomComputer ? (
                     <button
-                      onClick={() => setShowCustomComputer(true)}
+                      onClick={() => {
+                        setShowCustomComputer(true);
+                        setCustomNode({
+                          node_name: '',
+                          node_type: 'Local Operator',
+                          model: CUSTOM_WORKSTATION_MODEL.DELTAV,
+                          serial: '',
+                        });
+                      }}
                       className="btn btn-secondary btn-sm"
                     >
                       + Add Custom Workstation
                     </button>
                   ) : (
-                    <div className="bg-gray-700 p-4 rounded-lg">
-                      <h5 className="text-sm font-semibold text-gray-200 mb-3">Add Custom Workstation</h5>
+                    <div className="rounded-lg border border-[#3d3d5c] bg-[#252542] p-4 ring-1 ring-[#3d3d5c]/80">
+                      <h5 className="mb-3 text-sm font-semibold text-gray-100">Add Custom Workstation</h5>
                       <div className="grid grid-cols-2 gap-3">
                         <input
                           type="text"
                           placeholder="Workstation Name *"
                           value={customNode.node_name}
-                          onChange={(e) => setCustomNode({...customNode, node_name: e.target.value})}
+                          onChange={(e) => setCustomNode({ ...customNode, node_name: e.target.value })}
                           className="form-input text-sm"
                         />
                         <select
                           value={customNode.node_type || 'Local Operator'}
-                          onChange={(e) => setCustomNode({...customNode, node_type: e.target.value})}
+                          onChange={(e) => setCustomNode({ ...customNode, node_type: e.target.value })}
                           className="form-select text-sm"
                         >
                           {[
-                            'Local Operator', 'Local Application', 'Local Professional Plus', 'Local Pro',
-                            'VRTX Chassis (Virtual)', 'Host (Virtual)', 'File Witness (Virtual)', 'Non-DV Node',
+                            'Local Operator',
+                            'Local Application',
+                            'Local Professional Plus',
+                            'Local Pro',
+                            'VRTX Chassis (Virtual)',
+                            'Host (Virtual)',
+                            'File Witness (Virtual)',
+                            'Non-DV Node',
                           ].map((t) => (
-                            <option key={t} value={t}>{t}</option>
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
                           ))}
                         </select>
-                        <select
-                          value={wsModelIsCustom ? '__custom__' : (customNode.model || '')}
-                          onChange={(e) => {
-                            if (e.target.value === '__custom__') {
-                              setWsModelIsCustom(true);
-                              setCustomNode({...customNode, model: ''});
-                            } else {
-                              setWsModelIsCustom(false);
-                              setCustomNode({...customNode, model: e.target.value});
-                            }
-                          }}
-                          className="form-select text-sm"
-                        >
-                          <option value="">Select model...</option>
-                          {workstationModels.map((m) => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                          <option value="__custom__">Other (custom)...</option>
-                        </select>
-                        {wsModelIsCustom && (
-                          <input
-                            type="text"
-                            placeholder="Enter custom model..."
-                            value={customNode.model}
-                            onChange={(e) => setCustomNode({...customNode, model: e.target.value})}
-                            className="form-input text-sm"
-                            autoFocus
-                          />
-                        )}
+                        <div className="col-span-2">
+                          <p className="form-label mb-1.5 text-xs uppercase tracking-wide text-gray-400">Workstation model</p>
+                          <div className="flex gap-2 rounded-lg border border-[#3d3d5c] bg-[#1b1b2f] p-1">
+                            <button
+                              type="button"
+                              onClick={() => setCustomNode({ ...customNode, model: CUSTOM_WORKSTATION_MODEL.DELTAV })}
+                              className={`flex-1 rounded-md px-3 py-2.5 text-sm font-semibold transition-all ${
+                                customNode.model === CUSTOM_WORKSTATION_MODEL.DELTAV
+                                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/40 ring-2 ring-blue-400/50'
+                                  : 'text-gray-400 hover:bg-[#252542] hover:text-gray-100'
+                              }`}
+                            >
+                              Deltav Workstation
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setCustomNode({ ...customNode, model: CUSTOM_WORKSTATION_MODEL.NON_DELTAV })}
+                              className={`flex-1 rounded-md px-3 py-2.5 text-sm font-semibold transition-all ${
+                                customNode.model === CUSTOM_WORKSTATION_MODEL.NON_DELTAV
+                                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/40 ring-2 ring-blue-400/50'
+                                  : 'text-gray-400 hover:bg-[#252542] hover:text-gray-100'
+                              }`}
+                            >
+                              Non deltav workstation
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex gap-2 mt-3">
+                      <div className="mt-3 flex gap-2">
                         <button
                           onClick={() => addCustomNode(customNode.node_type || 'Local Operator')}
                           className="btn btn-success btn-sm"
@@ -1007,7 +1029,6 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                           onClick={() => {
                             setShowCustomComputer(false);
                             setCustomNode({ node_name: '', node_type: '', model: '', serial: '' });
-                            setWsModelIsCustom(false);
                           }}
                           className="btn btn-secondary btn-sm"
                         >
