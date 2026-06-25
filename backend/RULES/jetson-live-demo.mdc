@@ -1,0 +1,15 @@
+---
+description: Jetson live demo always runs on desktop with GUI preview
+alwaysApply: true
+---
+
+# Jetson live demo — desktop only
+
+`pss-live-demo` is **always** run on PSS-JETSON-01 from the **local desktop** with a monitor attached. The operator does **not** use SSH or headless mode for this script.
+
+When troubleshooting preview / OpenCV errors:
+
+- Do **not** suggest `LIVE_DEMO_HEADLESS=1` as a workaround.
+- Do **not** assume SSH or missing `DISPLAY` is the cause.
+- The usual issue is the **uv venv `opencv-python` wheel** (`GUI: NONE`). Fix GTK-capable OpenCV on the Jetson, or use system `python3-opencv` with GUI support.
+- `export DISPLAY=:0` is still valid if launching from an IDE terminal on the Jetson that lacks `DISPLAY`, but that is not the same as SSH/headless.

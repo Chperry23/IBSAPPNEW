@@ -1,8 +1,10 @@
 import { createContext, useCallback, useContext, useMemo, useState, useEffect } from 'react';
 
 const STORAGE_KEY = 'pm-app-settings';
+const SETTINGS_VERSION = 2;
 
 const defaultSettings = {
+  settingsVersion: SETTINGS_VERSION,
   /** @type {'sidebar' | 'top'} */
   navLayout: 'sidebar',
 };
@@ -12,10 +14,16 @@ function loadStored() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...defaultSettings };
     const parsed = JSON.parse(raw);
+    let navLayout = parsed.navLayout === 'top' ? 'top' : 'sidebar';
+    // Sidebar is the app default; reset one-time for settings saved before v2
+    if ((parsed.settingsVersion ?? 1) < SETTINGS_VERSION) {
+      navLayout = 'sidebar';
+    }
     return {
       ...defaultSettings,
       ...parsed,
-      navLayout: parsed.navLayout === 'top' ? 'top' : 'sidebar',
+      navLayout,
+      settingsVersion: SETTINGS_VERSION,
     };
   } catch {
     return { ...defaultSettings };

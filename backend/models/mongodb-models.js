@@ -44,6 +44,7 @@ const customerSchema = new mongoose.Schema({
   country: { type: String },
   dongle_id: { type: String },
   alias: { type: String },
+  registry_version: { type: Number, default: 0 },
   uuid: { type: String, index: true },
   synced: { type: Number, default: 0 },
   device_id: { type: String, index: true },
@@ -78,7 +79,9 @@ const sessionSchema = new mongoose.Schema({
   ii_location: { type: String },
   ii_performed_by: { type: String },
   ii_date_performed: { type: Date },
-  ii_customer_name: { type: String }
+  ii_customer_name: { type: String },
+  ii_prepared_for: { type: String },
+  ii_initials: { type: String }
 }, { 
   collection: 'sessions',
   versionKey: false
@@ -96,7 +99,6 @@ const cabinetSchema = new mongoose.Schema({
   cabinet_type: { type: String, default: 'cabinet' }, // 'cabinet' or 'rack'
   cabinet_location: { type: String }, // For backward compatibility
   location_id: { type: String }, // Reference to cabinet_locations
-  cabinet_date: { type: Date },
   status: { type: String, default: 'active' },
   power_supplies: { type: String }, // JSON string
   distribution_blocks: { type: String }, // JSON string
@@ -159,10 +161,12 @@ const sessionNodeMaintenanceSchema = new mongoose.Schema({
   _id: { type: Number, required: true }, // Maps to SQLite id (INTEGER PRIMARY KEY)
   session_id: { type: String, required: true },
   node_id: { type: Number, required: true },
+  node_name: { type: String },
+  node_type: { type: String },
   dv_checked: { type: Number },
   os_checked: { type: Number },
   macafee_checked: { type: Number },
-  free_time: { type: Number },
+  free_time: { type: String },
   redundancy_checked: { type: Number },
   cold_restart_checked: { type: Number },
   has_io_errors: { type: Number, default: 1 },
@@ -319,10 +323,10 @@ const sessionIIEquipmentSchema = new mongoose.Schema({
   _id: { type: Number, required: true }, // Maps to SQLite id (INTEGER PRIMARY KEY)
   session_id: { type: String, required: true },
   document_id: { type: String },
-  clamp_on_rms_ammeter: { type: String },
-  digit_dvm: { type: String },
-  fluke_1630_earth_ground: { type: String },
-  fluke_mt8200_micromapper: { type: String },
+  clamp_on_rms_ammeter: { type: Number },
+  digit_dvm: { type: Number },
+  fluke_1630_earth_ground: { type: Number },
+  fluke_mt8200_micromapper: { type: Number },
   notes: { type: String },
   uuid: { type: String },
   synced: { type: Number, default: 0 },
@@ -350,11 +354,14 @@ const sessionIIChecklistSchema = new mongoose.Schema({
   comments: { type: String },
   performed_by: { type: String },
   date_completed: { type: Date },
-  measurement_dc_ma: { type: Number },
-  measurement_voltage: { type: Number },
-  measurement_ohms: { type: Number },
-  measurement_ac_ma: { type: Number },
-  measurement_frequency: { type: Number },
+  recorded_value: { type: String },
+  enclosure_location: { type: String },
+  breaker_location: { type: String },
+  measurement_dc_ma: { type: String },
+  measurement_voltage: { type: String },
+  measurement_ohms: { type: String },
+  measurement_ac_ma: { type: String },
+  measurement_frequency: { type: String },
   uuid: { type: String },
   synced: { type: Number, default: 0 },
   device_id: { type: String },
@@ -369,6 +376,7 @@ const sessionIIChecklistSchema = new mongoose.Schema({
 sessionIIChecklistSchema.index({ updated_at: 1, deleted: 1 });
 sessionIIChecklistSchema.index({ uuid: 1 }, { unique: true, sparse: true });
 sessionIIChecklistSchema.index({ document_id: 1 });
+sessionIIChecklistSchema.index({ document_id: 1, section_name: 1, item_name: 1 });
 
 // I&I Equipment Used Schema
 const sessionIIEquipmentUsedSchema = new mongoose.Schema({
@@ -549,6 +557,17 @@ const sysCharmSchema = new mongoose.Schema({
   software_revision: { type: String },
   hardware_revision: { type: String },
   serial_number: { type: String },
+  fhx_dst: { type: String },
+  fhx_slot: { type: String },
+  fhx_channel: { type: String },
+  fhx_charm_definition: { type: String },
+  fhx_io_subsystem: { type: String },
+  fhx_charm_description: { type: String },
+  fhx_controller_assignment: { type: String },
+  fhx_redundant: { type: String },
+  fhx_channel_definition: { type: String },
+  fhx_channel_description: { type: String },
+  fhx_enabled: { type: String },
   uuid: { type: String },
   synced: { type: Number, default: 0 },
   device_id: { type: String },

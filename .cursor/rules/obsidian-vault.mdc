@@ -1,0 +1,27 @@
+---
+description: Obsidian vault boundaries for agent notes
+alwaysApply: true
+---
+
+# Obsidian vault (`notes/`)
+
+The vault root is **`notes/`** at the repo root (gitignored). Open it in Obsidian alongside this project.
+
+## Agent-only zone
+
+All AI-generated notes go under **`notes/agents/`** only:
+
+- Session logs: `notes/agents/sessions/`
+- Plans: `notes/agents/cursor-plans/`
+- Runbooks: `notes/agents/Cabinet PM/`
+
+## Do not touch without explicit ask
+
+- Human-maintained vault areas (if you use numbered folders like `00_Home/`, `99_Inbox/`, etc.)
+- Do not add wikilinks from the main vault into `agents/` (one-way: agents reference code, not vice versa in Obsidian)
+
+## Templates
+
+Copy from `docs/vault-starter/` when bootstrapping. Session note template: `docs/vault-starter/agents/97_Templates/agent_session.md`
+
+Setup guide: `docs/obsidian-vault.md`

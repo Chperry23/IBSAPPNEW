@@ -37,10 +37,27 @@ const SECTION_ORDER = [
   'List of Equipment Used'
 ];
 
+function recordedValueUnitForItem(itemName) {
+  const t = (itemName || '').toLowerCase();
+  if (t.includes('measure impedance') || (t.includes('impedance') && t.includes('current flow'))) return 'Ω';
+  if (t.includes('within specifications') && t.includes('24 vdc')) return 'VDC';
+  if (t.includes('ground to neutral') || (t.includes('within specifications') && t.includes('vac'))) return 'VAC';
+  return '';
+}
+
+function formatRecordedValueDisplay(item) {
+  const raw = (item.recorded_value || '').trim();
+  if (!raw) return '';
+  const unit = recordedValueUnitForItem(item.item_name);
+  const hasUnit = /Ω|ohm|vdc|vac/i.test(raw);
+  return hasUnit ? escHtml(raw) : `${escHtml(raw)}${unit ? ` ${escHtml(unit)}` : ''}`;
+}
+
 // Build the measurement/recorded-value cell for a checklist item
 function buildMeasurementCell(item) {
   const parts = [];
-  if (item.recorded_value) parts.push(`<strong>${escHtml(item.recorded_value)}</strong>`);
+  const recorded = formatRecordedValueDisplay(item);
+  if (recorded) parts.push(`<strong>${recorded}</strong>`);
   if (item.measurement_ohms)     parts.push(`${escHtml(String(item.measurement_ohms))} Ω`);
   if (item.measurement_ac_ma)    parts.push(`${escHtml(String(item.measurement_ac_ma))} AC mA`);
   if (item.measurement_voltage)  parts.push(`${escHtml(String(item.measurement_voltage))} V`);
@@ -187,10 +204,120 @@ const SHARED_STYLES = `
   .intro-text { text-align: justify; margin: 15px 0; }
 `;
 
+// Must mirror frontend IIDocumentDetail.jsx CHECKLIST_SECTIONS (same names / item text)
+const BLANK_II_CHECKLIST_SECTIONS = [
+  {
+    name: 'Good Engineering Practices',
+    items: [
+      'Ensure all power supplied to the enclosures is de-energized (the circuit breaker(s) open)',
+      'In the DeltaV enclosures, open all circuit breakers and fuse holders and check for no power',
+      'Are there any environmental concerns about the installation? (Water leaks, Moisture, Dust, Dirt, Temperature, etc.?)'
+    ]
+  },
+  {
+    name: 'Power and Grounding Connections',
+    items: [
+      'Are the connections performed per design, properly terminated, and labeled. Is the wire of proper size for distance?',
+      'Check the impedance and current flow for the enclosure grounding system (AC/CG Chassis Ground). A High Integrity Ground should measure 1 ohm or less to ground. 5Ω Max',
+      'Is the Dedicated Instrumentation Ground (DIG) or Local DCG connected to the lowest available dedicated connection to true earth?',
+      'Is the DIG connection to the true earth dedicated and not shared with any other ground?',
+      'Is the DIG ground cable insulated? Is it physically separated from high voltage or variable speed drive cables?',
+      'Are isolated receptacles used to power the Servers and PCs?'
+    ]
+  },
+  {
+    name: 'Enclosures',
+    items: [
+      'Is the enclosure free of any signs of environmental, shipping, or installation damage? Visually look over the DeltaV cabinet for loose wires, carrier separation, loose modules, and any damage that may have occurred during shipment and installation and correct any discrepancies found before proceeding',
+      'Are all cable entries in and out of the cabinets and enclosures sealed, if required?',
+      'Back planes plugged in tightly • All power supplies controllers, I/O modules screwed in securely (Do not over torque) • Input power wiring termination tight and labeled • Network cables locked in place',
+      'Are all enclosures properly positioned and mounted with groups of enclosures properly bolted together?',
+      'Are all Power and Ground connections solid and tightened? Is there good conduction in all connections (that is, no corrosion or hanging wire strands)?',
+      'Do the enclosure AC ground bus bar, the Instrument (DC) ground bus bar, and, if applicable, the Intrinsic Safety Ground have separately wired connections to the DIG using insulated wire of the proper size? Are all connections tight.',
+      'Calculate the DeltaV carrier power implementation. Verify that it does not exceed the recommendations.',
+      'Are network cables routed and installed according to the guidelines. Are the network cable shields terminated properly? Are the proper connector (shielded or unshielded) used and does the network installation follow the design?',
+      'Are colored boots used to distinguish primary and secondary DeltaV LAN cables?',
+      'Are all communication cables properly labeled at both ends?'
+    ]
+  },
+  {
+    name: 'AC Power System',
+    items: [
+      'Verify that all AC powered devices in the enclosure are switched off or disconnected',
+      'With AC power system disconnected, measure impedance of system from all line and neutral connections to ground (Impedance must be high)',
+      'If the impedance is in conformance, have a person approved by the customer switch on the AC power system. Record the person\'s name.',
+      'Check that primary AC voltage is within specifications (85 to 264 VAC / 47 to 63 Hz measured between line and neutral)',
+      'Check that primary AC ground to neutral voltage is within specification (0.00 V +/-1.00 VAC)',
+      'Check that secondary AC voltage is within specifications (85 to 264 VAC / 47 to 63 Hz Measured between Line and Neutral)',
+      'Check that secondary AC ground to neutral voltage is within specification (0.00 V +/-1.00 VAC)',
+      'If conforming, it is appropriate to switch ON or reconnect all AC powered devices. One at a time switch on each of the cabinet sub-breakers or fuse holders and check the equipment that they feed power up correctly.',
+      'Verify that all AC powered fans, cooling devices, lights, and so on are running and operational.',
+      'Verify if LED\'s of all AC powered devices indicate normal'
+    ]
+  },
+  {
+    name: 'DC Power System',
+    items: [
+      'Verify that all AC-powered devices in the enclosure are switched off or disconnected',
+      'With the DC power system disconnected, measure impedance of system from all line and neutral connections to ground (Impedance MUST be High)',
+      'Apply DC voltage to the distribution system',
+      'Check that primary 24 VDC is within specifications. (21.6 VDC to 26.4 VDC)',
+      'Check that secondary 24 VDC is within specifications. (21.6 VDC to 26.4 VDC)',
+      'Check that primary 12 VDC is within specifications. (11.4 VDC to 12.6 VDC)',
+      'Check that secondary 12 VDC is within specifications. (11.4 VDC to 12.6 VDC)',
+      'Verify that all DC powered fans, cooling devices, lights, and so on are running and operational.',
+      'Verify that LEDs of all DC powered devices indicate normal',
+      'Check at the destination end of each of the system power supply feeds i.e. the connectors on the System Power supplies, carrier F.B. Connectors , etc. for the proper voltage levels.'
+    ]
+  },
+  {
+    name: 'DeltaV Controllers',
+    items: [
+      'System power supply LEDs normal (Power-ON, Error-OFF)',
+      'Active controller\'s LEDs normal (Power - ON, Error - OFF if downloaded / Flash if un-configured, Active - ON, Standby - OFF, CN1 - Flash if communicating on the primary control network, CN2 - Flash if communicating on the secondary control network)',
+      'Standby controller\'s LEDs normal (Power - ON, Error - OFF if downloaded / Flash if un-configured, Active - OFF, Standby - ON, CN1 - Flash if communicating on the primary control network, CN2 - Flash if communicating on the secondary control network)',
+      'Controller accessible through standard diagnostics (accessible, primary & secondary communication without increasing errors)',
+      'All I/O cards accessible through standard diagnostics (accessible, no mismatches, no missing cards)',
+      'Are network cables routed and installed according to the guidelines in the document Site Preparation and Design for DeltaV Digital Automation Systems?',
+      'Are servers, stations, routers, and so on, cleaned up (software) and reinstalled according to station specific installation?',
+      'Using Diagnostics, are both Primary and Secondary communications good?',
+      'Placeholder created w/ cold restart enabled, can controller be commissioned?',
+      'Did the controller(s) Auto-Sense their I/O cards properly when commissioned?',
+      'Software Upgrade(flash) newly integrated controllers, RIO/CIOC, and I/O to same system revision installed if able.',
+      'Can the controller(s) be downloaded?',
+      'Are all controllers and I/O cards error free after being downloaded?',
+      'Using Diagnostics, are both Primary and Secondary communications with each of the relevant Server and PC nodes good?',
+      'Have the system diagnostics been performed and do the diagnostics readings result in expected values?',
+      'Are servers, stations, routers, and so on, cleaned up (software) and reinstalled according to station specific installation, placeholders created with alarm and events assigned?',
+      'Downloaded setup data to controllers, CIOC/RIO, and PP if needed, to update enumeration sets and node tables.'
+    ]
+  }
+];
+
+/** Same rows as a new unfilled checklist in Cabinet PM — for blank PDF template generation */
+function buildBlankIIChecklistItems() {
+  return BLANK_II_CHECKLIST_SECTIONS.flatMap((section) =>
+    section.items.map((item_name) => ({
+      section_name: section.name,
+      item_name,
+      answer: '',
+      comments: '',
+      performed_by: '',
+      date_completed: null,
+      measurement_ohms: null,
+      measurement_ac_ma: null,
+      measurement_voltage: null,
+      measurement_frequency: null,
+      recorded_value: null
+    }))
+  );
+}
+
 // ===========================================================================
 // generateIIPDF — single document PDF
 // ===========================================================================
-function generateIIPDF(document, session, checklistItems, equipmentUsed) {
+/** @param {object} options @param {boolean} [options.blankTemplate] Omit "Not specified" so header fields render empty */
+function generateIIPDF(document, session, checklistItems, equipmentUsed, options = {}) {
   const logoData = getBase64Logo();
   const currentDate = new Date().toLocaleDateString('en-US');
   const sections = groupAndSortChecklist(checklistItems);
@@ -198,7 +325,10 @@ function generateIIPDF(document, session, checklistItems, equipmentUsed) {
   const sessionInitials = session.ii_initials || '';
   const checklistHTML = sections.map((s, idx) => renderChecklistSection(s, idx === 0, sessionInitials)).join('');
   const equipHTML = renderEquipmentUsed(equipmentUsed);
-  const customerName = escHtml(session.ii_customer_name || session.customer_name || '');
+  const blankTemplate = options.blankTemplate === true;
+  const na = blankTemplate ? '' : 'Not specified';
+
+  const customerName = escHtml(session.ii_customer_name || session.customer_name || na || '');
 
   return `<!DOCTYPE html>
 <html>
@@ -221,18 +351,18 @@ function generateIIPDF(document, session, checklistItems, equipmentUsed) {
     <div>${logoData ? `<img src="data:image/png;base64,${logoData}" alt="Logo" class="logo">` : ''}</div>
     <div class="header-info">
       <h1>DeltaV Installation &amp; Integration Procedure</h1>
-      <div><strong>Document:</strong> ${escHtml(document.document_name)}</div>
+      <div><strong>Document:</strong> ${escHtml(document.document_name || na)}</div>
       <div><strong>Customer:</strong> ${customerName}</div>
-      <div><strong>Date:</strong> ${currentDate}</div>
+      <div><strong>Date:</strong> ${blankTemplate ? escHtml(document.header_date_placeholder || '') : currentDate}</div>
     </div>
   </div>
 
   <div class="document-info">
     <div class="info-row"><div class="info-label">Customer Name:</div><div class="info-value">${customerName}</div></div>
-    <div class="info-row"><div class="info-label">Location:</div><div class="info-value">${escHtml(document.location || session.ii_location || session.customer_location || 'Not specified')}</div></div>
-    <div class="info-row"><div class="info-label">DeltaV System ID:</div><div class="info-value">${escHtml(document.deltav_system_id || session.deltav_system_id || 'Not specified')}</div></div>
-    <div class="info-row"><div class="info-label">Performed By:</div><div class="info-value">${escHtml(session.ii_performed_by || session.ii_initials || 'Not specified')}</div></div>
-    <div class="info-row"><div class="info-label">Date Performed:</div><div class="info-value">${escHtml(document.date_performed || session.ii_date_performed || 'Not specified')}</div></div>
+    <div class="info-row"><div class="info-label">Location:</div><div class="info-value">${escHtml(document.location || session.ii_location || session.customer_location || na)}</div></div>
+    <div class="info-row"><div class="info-label">DeltaV System ID:</div><div class="info-value">${escHtml(document.deltav_system_id || session.deltav_system_id || na)}</div></div>
+    <div class="info-row"><div class="info-label">Performed By:</div><div class="info-value">${escHtml(session.ii_performed_by || session.ii_initials || na)}</div></div>
+    <div class="info-row"><div class="info-label">Date Performed:</div><div class="info-value">${escHtml(document.date_performed || session.ii_date_performed || na)}</div></div>
   </div>
 
   <div style="margin-top:20px;">
@@ -242,7 +372,7 @@ function generateIIPDF(document, session, checklistItems, equipmentUsed) {
 
   <div class="footer">
     <p>Equipment &amp; Controls, Inc. Confidential</p>
-    <p>Generated on ${new Date().toLocaleString()}</p>
+    <p>${blankTemplate ? '&nbsp;' : `Generated on ${new Date().toLocaleString()}`}</p>
   </div>
 </body>
 </html>`;
@@ -462,4 +592,4 @@ async function generateCombinedIIPDF(session, documents) {
 </html>`;
 }
 
-module.exports = { generateIIPDF, generateCombinedIIPDF };
+module.exports = { generateIIPDF, generateCombinedIIPDF, buildBlankIIChecklistItems };

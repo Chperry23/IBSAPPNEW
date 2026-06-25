@@ -19,6 +19,7 @@ const pmNotesRoutes = require('./routes/pmNotes');
 const iiDocumentsRoutes = require('./routes/iiDocuments');
 const systemRegistryRoutes = require('./routes/systemRegistry');
 const systemRegistrySyncRoutes = require('./routes/systemRegistrySync');
+const customerImportBundleRoutes = require('./routes/customerImportBundle');
 const locationRoutes = require('./routes/locations');
 const sharepointRoutes = require('./routes/sharepoint');
 const customErrorTypesRoutes = require('./routes/customErrorTypes');
@@ -76,6 +77,7 @@ function createApp(options = {}) {
   }
 
   app.use('/', authRoutes);
+  app.use('/api/customers', customerImportBundleRoutes);
   app.use('/api/customers', customerRoutes);
   app.use('/api/sessions', sessionRoutes);
   app.use('/api/cabinets', cabinetRoutes);

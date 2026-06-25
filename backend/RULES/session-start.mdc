@@ -1,0 +1,20 @@
+---
+description: Session start — read vault context before working
+alwaysApply: true
+---
+
+# Session start
+
+Before substantive work in this repo, read:
+
+1. `../../notes/agents/README.md` — agent folder rules and PSS status
+2. `../../notes/agents/cursor-plans/INDEX.md` — current truth (hardware, inference, git)
+
+## Current truth (override stale plan rows)
+
+- Hardware: **PSS-JETSON-01**, L4T **R36.4.7**, JetPack **6.2**
+- Inference: PSS TRT on **localhost:9001** (`./scripts/inference_server.sh` or `deploy/docker-compose.yml`)
+- Phone demo: HTTPS **:8000**; inference stays on **:9001**
+- Git: **`main`** = tagged releases; **`develop`** = active work; branch `feature/*` / `fix/*` / `chore/*` from `develop`
+- Tests: `uv run pytest` — unit tests for coordinate math, focus/crop, CHARM OCR (`tests/`)
+- E2E validation: run live demo and inspect detections (camera + inference not covered by unit tests)

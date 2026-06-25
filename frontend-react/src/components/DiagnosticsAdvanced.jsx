@@ -211,7 +211,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
 
       const controllerNamesFromDiag = [...new Set(diagData.map((d) => d.controller_name).filter(Boolean))];
 
-      const nodesResponse = await fetch(`/api/customers/${customerId}/nodes${isCompleted ? `?sessionId=${sessionId}` : ''}`);
+      const nodesResponse = await fetch(`/api/customers/${customerId}/nodes?sessionId=${sessionId}`);
 
       let nodesData = [];
       if (nodesResponse.ok) {
@@ -280,6 +280,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
   // ─── Open the smart Add Error modal ───
   const openAddErrorModal = async (node) => {
     setCurrentNode(node);
+    setIoDeviceData(null);
     setSelectedDevices([]);
     setSelectedCard(null);
     setDeviceSearch('');
@@ -291,17 +292,22 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
     setManualPort(null);
     setManualPdt('');
     setManualLdt('');
+    setCiocPool([]);
+    setCiocCheckedKeys([]);
     setShowAddErrorModal(true);
     setIoLoading(true);
     try {
+      const nt = encodeURIComponent(node.node_type || '');
       const data = await api.request(
-        `/api/sessions/${sessionId}/diagnostics/io-devices/${encodeURIComponent(node.node_name)}?customerId=${customerId}`
+        `/api/sessions/${sessionId}/diagnostics/io-devices/${encodeURIComponent(node.node_name)}?customerId=${customerId}&nodeType=${nt}`
       );
-      setIoDeviceData(data);
-      setAddErrorTab('manual');
+      const treatCioc = !!(data.isCioc || (node.node_type || '').toUpperCase() === 'CIOC');
+      setIoDeviceData({ ...data, isCioc: treatCioc });
+      // CIOC charm modal lives on the Detected path; Manual tab hides for CIOCs but footer still keys off tab.
+      setAddErrorTab(treatCioc ? 'detected' : 'manual');
       // Non-CIOC: always start Detected flow on pick-card (may be empty — see empty state in UI).
       // Leaving flow on pick-device made the Detected tab render nothing for controllers with no sys_reg I/O.
-      if (data.isCioc) {
+      if (treatCioc) {
         setFlowStep('pick-device');
       } else {
         setFlowStep('pick-card');
@@ -309,7 +315,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
     } catch (err) {
       console.error('Error loading IO devices:', err);
       setIoDeviceData(null);
-      setAddErrorTab('manual');
+      setAddErrorTab((node.node_type || '').toUpperCase() === 'CIOC' ? 'detected' : 'manual');
     } finally {
       setIoLoading(false);
     }
@@ -350,7 +356,8 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
     setErrorDescription('');
     setCiocPool([]);
     setCiocCheckedKeys([]);
-    setFlowStep(ioDeviceData?.isCioc ? 'pick-device' : 'pick-card');
+    const isCiocNode = !!(ioDeviceData?.isCioc || currentNode?.node_type === 'CIOC');
+    setFlowStep(isCiocNode ? 'pick-device' : 'pick-card');
   };
 
   // ─── Toggle device selection ───
@@ -759,6 +766,11 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
     );
   };
 
+  const treatAsCioc = !!(
+    ioDeviceData?.isCioc ||
+    (currentNode && (currentNode.node_type || '').toUpperCase() === 'CIOC')
+  );
+
   // CIOC: build a complete 96-slot grid (8 Carrier/Baseplates × 12 charms).
   // Sysreg cards are sorted numerically and assigned sequential slots 1-96.
   // Slots not in sysreg are shown as selectable placeholders.
@@ -766,12 +778,12 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
   const CIOC_TOTAL_SLOTS = 96; // 8 baseplates × 12
 
   const ciocDeviceList = (() => {
-    if (!ioDeviceData?.isCioc) return [];
+    if (!treatAsCioc) return [];
 
     // Build a lookup map from sysreg card name → card object so we can enrich
     // fixed slots by name without distorting the baseplate layout.
     const sysregByName = {};
-    (ioDeviceData.cards || []).forEach(c => {
+    (ioDeviceData?.cards || []).forEach(c => {
       if (c.card != null) sysregByName[String(c.card).trim().toUpperCase()] = c;
     });
 
@@ -831,7 +843,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
         diagnostics
           .filter((d) => d.controller_name === currentNode.node_name)
           .map((d) =>
-            ioDeviceData?.isCioc
+            treatAsCioc
               ? `cioc-slot-${d.card_number ?? ''}`
               : `${(d.card_display || (d.card_number ?? '')).toString().trim()}-${(d.device_name ?? 'N/A').toString()}-${(d.channel_number != null ? d.channel_number : 'N/A').toString()}`
           )
@@ -1334,7 +1346,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
             </div>
 
             {/* Tabs: Manual Entry (default) | Detected Cards — hidden for CIOCs (always show full charm grid) */}
-            {!ioDeviceData?.isCioc && (
+            {!treatAsCioc && (
               <div className="flex border-b border-gray-700 flex-shrink-0">
                 <button
                   type="button"
@@ -1564,7 +1576,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                   </div>
                 </div>
 
-              ) : flowStep === 'pick-device' && ioDeviceData?.isCioc ? (
+              ) : flowStep === 'pick-device' && treatAsCioc ? (
                 /* ─── CIOC: two-stage charm picker ───
                    Stage 1 — baseplate + charm buttons build the pool (ciocPool)
                    Stage 2 — selection area checkboxes pick which pool items get the error (ciocCheckedKeys)
@@ -1853,7 +1865,7 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                     type="button"
                     onClick={() => {
                       if (selectedDevices.length > 0) {
-                        setFlowStep(ioDeviceData?.isCioc ? 'pick-device' : 'pick-card-device');
+                        setFlowStep(treatAsCioc ? 'pick-device' : 'pick-card-device');
                       }
                     }}
                     className="btn btn-secondary"
@@ -1898,17 +1910,17 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                   <button
                     type="button"
                     onClick={() => {
-                      if (ioDeviceData?.isCioc) {
+                      if (treatAsCioc) {
                         // For CIOC: sync selectedDevices from checked pool items
                         const checkedSet = new Set(ciocCheckedKeys);
                         setSelectedDevices(ciocPool.filter(d => checkedSet.has(deviceKey(d))));
                       }
                       setFlowStep('pick-error');
                     }}
-                    disabled={ioDeviceData?.isCioc ? ciocCheckedKeys.length === 0 : selectedDevices.length === 0}
+                    disabled={treatAsCioc ? ciocCheckedKeys.length === 0 : selectedDevices.length === 0}
                     className="btn btn-primary"
                   >
-                    Next: Select Error ({ioDeviceData?.isCioc ? ciocCheckedKeys.length : selectedDevices.length})
+                    Next: Select Error ({treatAsCioc ? ciocCheckedKeys.length : selectedDevices.length})
                   </button>
                 ) : null}
               </div>

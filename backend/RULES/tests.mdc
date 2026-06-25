@@ -1,0 +1,25 @@
+---
+description: Unit test scope and conventions for tests/
+globs: "tests/**/*.py"
+alwaysApply: false
+---
+
+# Unit tests
+
+Run with `uv run pytest` (dev dependency group; no Jetson hardware or inference server needed).
+
+## Scope (`tests/`)
+
+- **Coordinate math** — letterbox, overlay, visualization coords (`test_visualize_coords.py`)
+- **Focus/crop logic** — box hit-test, padding, crop→frame mapping, submodel routing (`test_focus_crop.py`)
+- **CHARM OCR matching** — fuzzy name matching (`test_charm_ocr.py`)
+
+## When editing tested code
+
+- Update or add tests for coordinate math, focus/crop, or CHARM matching changes
+- Run `uv run pytest` before finishing
+- Do not add tests that require camera, TRT, or network unless the user asks
+
+## Out of scope for unit tests
+
+Validate camera + inference end-to-end via `pss-live-demo` or `pss-phone-demo`.

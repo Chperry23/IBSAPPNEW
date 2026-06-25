@@ -1,0 +1,30 @@
+---
+description: Git workflow, SemVer, and changelog conventions
+alwaysApply: true
+---
+
+# Git and versioning
+
+- Work on **`develop`**; branch `feature/*`, `fix/*`, or `chore/*` from there
+- **`main`** receives tagged releases only (`vX.Y.Z` annotated tags on merge)
+- SemVer in `package.json`; bump via `npm run version:patch|minor|major`
+- `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/) — `[Unreleased]` on `develop`
+- Conventional Commits: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `sync:`
+
+Full workflow: `docs/git-workflow-and-versioning.md`
+
+## Commits and pushes
+
+- Only commit when the user explicitly asks
+- Never force-push to `main`/`master`
+- Never skip hooks unless the user requests it
+- Never commit `.env`, `*.db`, `sharepoint-config.json`, or secrets
+- Ask before any `git push` or branch operations beyond local commits
+
+## Release checklist
+
+1. Merge `develop` → `main`
+2. `npm run version:patch` (or minor/major) on `main`
+3. `git tag -a vX.Y.Z -m "vX.Y.Z"`
+4. Push `main` and tags: `git push origin main --tags`
+5. Build tablet package: `npm run build`

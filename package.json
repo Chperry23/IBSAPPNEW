@@ -22,11 +22,22 @@
     "clean:charms:mongo": "node clean-empty-charms.js --mongo",
     "clean:charms:mongo:dry": "node clean-empty-charms.js --mongo --dry-run",
     "build:info": "node generate-build-info.js",
+    "version:patch": "node scripts/release-version.js patch",
+    "version:minor": "node scripts/release-version.js minor",
+    "version:major": "node scripts/release-version.js major",
     "build:exe": "node build-exe.js",
     "build:full": "node create-full-package.js",
-    "deploy": "npm run build:frontend && npm run build:exe && npm run build:full"
+    "deploy": "npm run build:frontend && npm run build:exe && npm run build:full",
+    "merge-import-bundle": "node scripts/merge-cabinet-import-bundle.js",
+    "pdf:blank-ii": "node backend/scripts/generate-ii-blank-pdf.js",
+    "sync-server": "node sync-server/server.js",
+    "sync:verify-mongo": "node scripts/verify-mongo-replica-set.js",
+    "sync:uuid-backfill": "node backend/config/migrations/uuid-backfill.js",
+    "sync:test-api": "node scripts/test-sync-api-cutover.js",
+    "sync:deploy-phase3": "powershell -ExecutionPolicy Bypass -File scripts/deploy-sync-phase3.ps1"
   },
   "dependencies": {
+    "adm-zip": "^0.5.17",
     "archiver": "^6.0.1",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.2",
@@ -35,9 +46,11 @@
     "express-session": "^1.17.3",
     "mongodb": "^6.18.0",
     "mongoose": "^8.19.0",
+    "multer": "^1.4.5-lts.1",
     "puppeteer": "^21.5.2",
     "sqlite3": "^5.1.6",
     "uuid": "^9.0.0",
+    "xlsx": "^0.18.5",
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
@@ -55,7 +68,20 @@
       "node_modules/node-addon-api/**/*",
       "node_modules/detect-libc/**/*",
       "node_modules/nopt/**/*",
-      "node_modules/semver/**/*"
+      "node_modules/semver/**/*",
+      "node_modules/adm-zip/**/*",
+      "node_modules/multer/**/*",
+      "node_modules/busboy/**/*",
+      "node_modules/streamsearch/**/*",
+      "node_modules/concat-stream/**/*",
+      "node_modules/buffer-from/**/*",
+      "node_modules/readable-stream/**/*",
+      "node_modules/xlsx/**/*",
+      "node_modules/codepage/**/*",
+      "node_modules/cfb/**/*",
+      "node_modules/adler-32/**/*",
+      "node_modules/crc-32/**/*",
+      "node_modules/ssf/**/*"
     ],
     "scripts": [
       "backend/**/*.js",

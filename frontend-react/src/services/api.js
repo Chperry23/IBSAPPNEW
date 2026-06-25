@@ -111,6 +111,27 @@ class ApiService {
     });
   }
 
+  /**
+   * ZIP: cabinet-pm-customer-import-bundle/v1 (registration/SystemRegistration.xml + fhx/AllExtracts.xlsx, optional manifest.json).
+   * Field name must be "bundle" — do not send JSON Content-Type (browser sets multipart boundary).
+   */
+  async uploadCustomerImportBundle(customerId, file) {
+    const form = new FormData();
+    form.append('bundle', file);
+    try {
+      const response = await fetch(`${API_BASE}/api/customers/${customerId}/import-bundle`, {
+        method: 'POST',
+        credentials: 'include',
+        body: form,
+      });
+      const data = await response.json().catch(() => ({}));
+      return { ...data, _httpStatus: response.status, _ok: response.ok };
+    } catch (error) {
+      console.error('API Error:', error);
+      throw error;
+    }
+  }
+
   // Sessions
   async getSessions() {
     return this.request('/api/sessions/all');

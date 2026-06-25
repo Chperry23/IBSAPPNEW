@@ -1,0 +1,29 @@
+---
+description: What to do freely vs what needs explicit user approval
+alwaysApply: true
+---
+
+# Autonomy boundaries
+
+## Proceed without asking
+
+- Edits to backend/frontend source, docs, tests, and scripts under `scripts/`
+- Local git commits when the user explicitly asks for a commit
+- Reading config and env **examples** for context
+- Running read-only audit scripts (`audit-unsynced-by-table.js`, etc.)
+
+## Ask before
+
+- Modifying `.env`, `sharepoint-config.json`, or production Mongo URIs
+- Editing or copying `data/*.db` (user/tablet databases)
+- Deploying sync-server to master or pushing field tablet builds
+- `git push`, branch creation, tags, or release operations
+- `reset-sync-state` or scripts that mark all rows unsynced
+- Creating or bulk-editing Obsidian notes outside `notes/agents/`
+
+## Hard limits
+
+- Never push directly to `main` without release workflow
+- Never commit secrets, credentials, or tablet database files
+- Never force-push `main`/`master`
+- Only create git commits when the user explicitly requests

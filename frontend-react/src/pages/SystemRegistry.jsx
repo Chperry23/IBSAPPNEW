@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
+import ManualRegistryAddForm from '../components/ManualRegistryAddForm';
 import api from '../services/api';
 import soundSystem from '../utils/sounds';
 
@@ -11,7 +12,11 @@ export default function SystemRegistry() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
   const [activeTab, setActiveTab] = useState('workstations');
+  const [fhxSubKind, setFhxSubKind] = useState('modules');
   const [summary, setSummary] = useState(null);
+  const [fhxRows, setFhxRows] = useState([]);
+  const [fhxLoading, setFhxLoading] = useState(false);
+  const initialTabPicked = useRef(false);
   
   // Data states
   const [workstations, setWorkstations] = useState([]);
@@ -22,10 +27,63 @@ export default function SystemRegistry() {
   const [charms, setCharms] = useState([]);
   const [amsSystem, setAmsSystem] = useState(null);
   const [currentCIOCIndex, setCurrentCIOCIndex] = useState(0);
+  const [addFormCategory, setAddFormCategory] = useState(null);
 
   useEffect(() => {
     loadData();
   }, [customerId]);
+
+  useEffect(() => {
+    if (activeTab !== 'fhxfmodules') return;
+    let cancelled = false;
+    (async () => {
+      setFhxLoading(true);
+      try {
+        const data = await api.request(
+          `/api/customers/${customerId}/system-registry/fhx-modules/${fhxSubKind}`
+        );
+        if (!cancelled) setFhxRows(Array.isArray(data) ? data : []);
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setFhxRows([]);
+      } finally {
+        if (!cancelled) setFhxLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, customerId, fhxSubKind]);
+
+  useEffect(() => {
+    initialTabPicked.current = false;
+  }, [customerId]);
+
+  useEffect(() => {
+    if (!summary || initialTabPicked.current) return;
+    const topo =
+      (summary.workstations || 0) +
+      (summary.controllers || 0) +
+      (summary.smartSwitches || 0);
+    const fhxTot = summary.fhxModuleTotal || 0;
+    initialTabPicked.current = true;
+    if (topo === 0 && fhxTot > 0) {
+      setActiveTab('fhxfmodules');
+      return;
+    }
+    if (
+      topo === 0 &&
+      fhxTot === 0 &&
+      ((summary.ioDevices || 0) > 0 || (summary.charms || 0) > 0)
+    ) {
+      setActiveTab('iodevices');
+      if ((summary.ioDevices || 0) > 0) {
+        loadIODevices();
+      } else if ((summary.charms || 0) > 0) {
+        loadCharms();
+      }
+    }
+  }, [summary]);
 
   // Keyboard navigation for CIOC pagination
   useEffect(() => {
@@ -163,6 +221,9 @@ export default function SystemRegistry() {
     if (tab === 'charms') {
       setCurrentCIOCIndex(0);
     }
+    if (tab === 'fhxfmodules') {
+      setFhxSubKind('modules');
+    }
     
     if (tab === 'workstations' && workstations.length === 0) {
       await loadWorkstations();
@@ -266,6 +327,53 @@ export default function SystemRegistry() {
     setTimeout(() => setMessage(null), 5000);
   };
 
+  const refreshSummary = async () => {
+    const summaryData = await api.request(`/api/customers/${customerId}/system-registry/summary`);
+    setSummary(summaryData);
+  };
+
+  const reloadActiveTab = async () => {
+    if (activeTab === 'workstations') await loadWorkstations();
+    else if (activeTab === 'controllers') await loadControllers();
+    else if (activeTab === 'switches') await loadSwitches();
+    else if (activeTab === 'charmsiocards') await loadCharmsIOCards();
+    else if (activeTab === 'iodevices') await loadIODevices();
+    else if (activeTab === 'charms') await loadCharms();
+    else if (activeTab === 'amssystem') await loadAMSSystem();
+  };
+
+  const onManualNodeAdded = async () => {
+    soundSystem.playSuccess();
+    showMessage('Node added — it will appear in PM sessions after sync', 'success');
+    setAddFormCategory(null);
+    await refreshSummary();
+    await reloadActiveTab();
+  };
+
+  const handleDeleteRegistryNode = async (category, rowId, displayName) => {
+    if (!confirm(`Remove "${displayName}" from this customer?`)) return;
+    try {
+      await api.request(`/api/customers/${customerId}/system-registry/nodes/${category}/${rowId}`, {
+        method: 'DELETE',
+      });
+      soundSystem.playSuccess();
+      showMessage('Removed', 'success');
+      await refreshSummary();
+      await reloadActiveTab();
+    } catch (err) {
+      soundSystem.playError();
+      showMessage(err.message || 'Failed to remove', 'error');
+    }
+  };
+
+  const manualAddCategories = new Set(['workstations', 'controllers', 'switches', 'charmsiocards']);
+  const addCategoryKey = {
+    workstations: 'workstation',
+    controllers: 'controller',
+    switches: 'switch',
+    charmsiocards: 'cioc',
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -276,14 +384,78 @@ export default function SystemRegistry() {
     );
   }
 
-  const hasData = summary && (
-    summary.workstations > 0 || 
-    summary.controllers > 0 || 
-    summary.smartSwitches > 0 ||
-    summary.ioDevices > 0 ||
-    summary.charmsIOCards > 0 ||
-    summary.charms > 0
-  );
+  const fh = summary?.fhxModules;
+  const fhxTotal =
+    summary?.fhxModuleTotal ??
+    (fh ? fh.modules + fh.pid + fh.ai + fh.ao + fh.di + fh.do : 0);
+
+  const topoFromRegistrationXml =
+    summary &&
+    (summary.workstations > 0 ||
+      summary.controllers > 0 ||
+      summary.smartSwitches > 0 ||
+      summary.charmsIOCards > 0 ||
+      summary.amsSystems > 0);
+
+  const hasSysRegistry =
+    summary &&
+    (summary.workstations > 0 ||
+      summary.controllers > 0 ||
+      summary.smartSwitches > 0 ||
+      summary.ioDevices > 0 ||
+      summary.charmsIOCards > 0 ||
+      summary.charms > 0 ||
+      summary.amsSystems > 0);
+
+  const hasFhxExtracts = fhxTotal > 0;
+
+  const hasData = !!(summary && (hasSysRegistry || hasFhxExtracts));
+  const hasTopologyTabs = true;
+
+  const fhxSubKinds = [
+    { key: 'modules', label: 'MODULE inventory', count: fh?.modules ?? 0 },
+    { key: 'pid', label: 'PID', count: fh?.pid ?? 0 },
+    { key: 'ai', label: 'AI', count: fh?.ai ?? 0 },
+    { key: 'ao', label: 'AO', count: fh?.ao ?? 0 },
+    { key: 'di', label: 'DI', count: fh?.di ?? 0 },
+    { key: 'do', label: 'DO', count: fh?.do ?? 0 },
+  ];
+
+  function renderDynamicFhxTable(rows) {
+    const omit = new Set(['id', 'customer_id', 'imported_at']);
+    if (!rows || rows.length === 0) {
+      return (
+        <div className="text-center py-12 text-gray-400 px-6">No rows in this extract for this customer.</div>
+      );
+    }
+    const keys = Object.keys(rows[0]).filter((k) => !omit.has(k));
+    return (
+      <div className="max-h-[60vh] overflow-auto border-t border-gray-700">
+        <table className="table-dark table-fixed w-full">
+          <thead className="sticky top-0 z-10 bg-gray-800 shadow">
+            <tr>
+              {keys.map((k) => (
+                <th key={k} className="whitespace-nowrap px-3 py-2 text-xs capitalize">
+                  {k.replace(/_/g, ' ')}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                {keys.map((k) => (
+                  <td key={k} className="align-top px-3 py-1.5 text-xs text-gray-300 break-all">
+                    {row[k] == null || row[k] === '' ? '—' : String(row[k])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
 
   return (
     <Layout>
@@ -304,25 +476,50 @@ export default function SystemRegistry() {
       <div className="flex justify-between items-start mb-8 animate-fadeIn">
         <div>
           <h1 className="text-4xl font-bold gradient-text mb-2">📋 Nodes</h1>
-          {customer && <p className="text-gray-400 text-lg">{customer.name} (Imported from System Registry XML)</p>}
+          {customer && (
+            <p className="text-gray-400 text-lg">
+              <span className="text-gray-200">{customer.name}</span>{' '}
+              <span className="text-gray-500">
+                {topoFromRegistrationXml
+                  ? 'Registration topology from XML. '
+                  : 'Add workstations (including virtual), controllers, switches, and CIOCs manually when SMS/XML is incomplete. '}
+                {hasFhxExtracts
+                  ? 'FHX workbook: AI/AO/DI/DO/PID/MODULES under “FHX control modules”.'
+                  : ''}
+              </span>
+            </p>
+          )}
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
+          {manualAddCategories.has(activeTab) && (
+            <button
+              type="button"
+              onClick={() =>
+                setAddFormCategory(
+                  addFormCategory === addCategoryKey[activeTab] ? null : addCategoryKey[activeTab]
+                )
+              }
+              className="btn btn-primary"
+            >
+              {addFormCategory === addCategoryKey[activeTab] ? 'Cancel' : '➕ Add manually'}
+            </button>
+          )}
+          {topoFromRegistrationXml && (
+            <button
+              onClick={handleRebuildCharmsTable}
+              className="btn btn-warning"
+              title="Fix duplicate charm name issues"
+            >
+              🔧 Fix Charms Table
+            </button>
+          )}
           {hasData && (
-            <>
-              <button
-                onClick={handleRebuildCharmsTable}
-                className="btn btn-warning"
-                title="Fix duplicate charm name issues"
-              >
-                🔧 Fix Charms Table
-              </button>
-              <button
-                onClick={handleDeleteAll}
-                className="btn btn-danger"
-              >
-                🗑️ Delete All Data
-              </button>
-            </>
+            <button
+              onClick={handleDeleteAll}
+              className="btn btn-danger"
+            >
+              🗑️ Delete All Data
+            </button>
           )}
           <button
             onClick={() => navigate(`/customer/${customerId}`)}
@@ -350,7 +547,8 @@ export default function SystemRegistry() {
 
       {/* Summary Stats */}
       {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-4">
           <div className="stats-card">
             <div className="text-3xl font-bold text-purple-400">{summary.workstations}</div>
             <div className="text-sm text-gray-400">Workstations</div>
@@ -380,23 +578,51 @@ export default function SystemRegistry() {
             <div className="text-sm text-gray-400">AMS Systems</div>
           </div>
         </div>
+          {hasFhxExtracts && fh && (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8 border-t border-gray-700/80 pt-6">
+              <div className="stats-card border-violet-500/20">
+                <div className="text-3xl font-bold text-violet-300">{fh.modules}</div>
+                <div className="text-sm text-gray-400">MODULE inventory</div>
+              </div>
+              <div className="stats-card border-violet-500/20">
+                <div className="text-3xl font-bold text-violet-300">{fh.pid}</div>
+                <div className="text-sm text-gray-400">PID</div>
+              </div>
+              <div className="stats-card border-violet-500/20">
+                <div className="text-3xl font-bold text-violet-300">{fh.ai}</div>
+                <div className="text-sm text-gray-400">AI</div>
+              </div>
+              <div className="stats-card border-violet-500/20">
+                <div className="text-3xl font-bold text-violet-300">{fh.ao}</div>
+                <div className="text-sm text-gray-400">AO</div>
+              </div>
+              <div className="stats-card border-violet-500/20">
+                <div className="text-3xl font-bold text-violet-300">{fh.di}</div>
+                <div className="text-sm text-gray-400">DI</div>
+              </div>
+              <div className="stats-card border-violet-500/20">
+                <div className="text-3xl font-bold text-violet-300">{fh.do}</div>
+                <div className="text-sm text-gray-400">DO</div>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
-      {!hasData ? (
-        <div className="card">
-          <div className="card-body text-center py-12">
-            <div className="text-6xl mb-4">📋</div>
-            <p className="text-gray-400 mb-4">No nodes imported yet</p>
-            <p className="text-gray-500 text-sm mb-6">Import nodes via System Registry XML from the customer profile page</p>
-            <button
-              onClick={() => navigate(`/customer/${customerId}`)}
-              className="btn btn-primary"
-            >
-              📋 Import Nodes
-            </button>
+      {!hasData && (
+        <div className="card mb-6 border-amber-500/30 bg-amber-950/20">
+          <div className="card-body py-4 text-sm text-amber-100/90">
+            <strong className="text-amber-200">No System Registry XML yet?</strong> Add workstations, controllers, and other nodes manually below
+            (useful for virtual stations SMS omits). You can still{' '}
+            <button type="button" className="text-blue-300 underline" onClick={() => navigate(`/customer/${customerId}`)}>
+              import XML
+            </button>{' '}
+            from the customer page when available.
           </div>
         </div>
-      ) : (
+      )}
+
+      {hasTopologyTabs && (
         <div className="card">
           <div className="card-header">
             <div className="flex gap-4 border-b border-gray-700">
@@ -408,7 +634,7 @@ export default function SystemRegistry() {
                     : 'text-gray-400 hover:text-gray-200'
                 }`}
               >
-                Workstations ({summary.workstations})
+                Workstations ({summary?.workstations ?? workstations.length})
               </button>
               <button
                 onClick={() => handleTabChange('controllers')}
@@ -418,7 +644,7 @@ export default function SystemRegistry() {
                     : 'text-gray-400 hover:text-gray-200'
                 }`}
               >
-                Controllers ({summary.controllers})
+                Controllers ({summary?.controllers ?? controllers.length})
               </button>
               <button
                 onClick={() => handleTabChange('switches')}
@@ -428,7 +654,7 @@ export default function SystemRegistry() {
                     : 'text-gray-400 hover:text-gray-200'
                 }`}
               >
-                Smart Switches ({summary.smartSwitches})
+                Smart Switches ({summary?.smartSwitches ?? switches.length})
               </button>
               <button
                 onClick={() => handleTabChange('iodevices')}
@@ -448,7 +674,7 @@ export default function SystemRegistry() {
                     : 'text-gray-400 hover:text-gray-200'
                 }`}
               >
-                Charms I/O Cards ({summary.charmsIOCards})
+                Charms I/O Cards ({summary?.charmsIOCards ?? charmsIOCards.length})
               </button>
               <button
                 onClick={() => handleTabChange('charms')}
@@ -470,10 +696,32 @@ export default function SystemRegistry() {
               >
                 AMS System ({summary.amsSystems})
               </button>
+              {hasFhxExtracts && (
+                <button
+                  onClick={() => handleTabChange('fhxfmodules')}
+                  className={`pb-2 px-4 font-medium transition-colors whitespace-nowrap ${
+                    activeTab === 'fhxfmodules'
+                      ? 'text-violet-300 border-b-2 border-violet-400'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  FHX ctrl modules ({fhxTotal})
+                </button>
+              )}
             </div>
           </div>
           
           <div className="overflow-x-auto">
+            {addFormCategory && addCategoryKey[activeTab] === addFormCategory && (
+              <div className="p-4 border-b border-gray-700">
+                <ManualRegistryAddForm
+                  category={addFormCategory}
+                  customerId={customerId}
+                  onAdded={onManualNodeAdded}
+                  onCancel={() => setAddFormCategory(null)}
+                />
+              </div>
+            )}
             {/* Workstations Table */}
             {activeTab === 'workstations' && (
               <table className="table-dark">
@@ -486,13 +734,14 @@ export default function SystemRegistry() {
                     <th>Software Rev</th>
                     <th>Memory</th>
                     <th>Redundant</th>
+                    <th className="w-24">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {workstations.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="text-center py-12 text-gray-400">
-                        No workstations found
+                      <td colSpan="8" className="text-center py-12 text-gray-400">
+                        No workstations yet — use Add manually for virtual or missing stations
                       </td>
                     </tr>
                   ) : (
@@ -508,6 +757,15 @@ export default function SystemRegistry() {
                           <span className={`badge ${ws.redundant === 'Yes' ? 'badge-red' : 'badge-green'}`}>
                             {ws.redundant || 'No'}
                           </span>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="text-red-400 hover:text-red-300 text-xs"
+                            onClick={() => handleDeleteRegistryNode('workstation', ws.id, ws.name)}
+                          >
+                            Remove
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -528,13 +786,14 @@ export default function SystemRegistry() {
                     <th>Serial Number</th>
                     <th>Free Memory</th>
                     <th>Redundant</th>
+                    <th className="w-24">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {controllers.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="text-center py-12 text-gray-400">
-                        No controllers found
+                      <td colSpan="8" className="text-center py-12 text-gray-400">
+                        No controllers yet — use Add manually
                       </td>
                     </tr>
                   ) : (
@@ -555,6 +814,15 @@ export default function SystemRegistry() {
                             {ctrl.redundant || 'No'}
                           </span>
                         </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="text-red-400 hover:text-red-300 text-xs"
+                            onClick={() => handleDeleteRegistryNode('controller', ctrl.id, ctrl.name)}
+                          >
+                            Remove
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -572,13 +840,14 @@ export default function SystemRegistry() {
                     <th>Software Rev</th>
                     <th>Hardware Rev</th>
                     <th>Serial Number</th>
+                    <th className="w-24">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {switches.length === 0 ? (
                     <tr>
-                      <td colSpan="5" className="text-center py-12 text-gray-400">
-                        No smart switches found
+                      <td colSpan="6" className="text-center py-12 text-gray-400">
+                        No smart switches yet — use Add manually
                       </td>
                     </tr>
                   ) : (
@@ -589,6 +858,15 @@ export default function SystemRegistry() {
                         <td>{sw.software_revision || 'N/A'}</td>
                         <td>{sw.hardware_revision || 'N/A'}</td>
                         <td className="font-mono text-xs">{sw.serial_number || 'N/A'}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="text-red-400 hover:text-red-300 text-xs"
+                            onClick={() => handleDeleteRegistryNode('switch', sw.id, sw.name)}
+                          >
+                            Remove
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -607,24 +885,28 @@ export default function SystemRegistry() {
                     <th>Card</th>
                     <th>Device Name (DST)</th>
                     <th>Channel</th>
+                    <th>FHX description</th>
+                    <th>FHX enabled</th>
                   </tr>
                 </thead>
                 <tbody>
                   {ioDevices.length === 0 ? (
                     <tr>
-                      <td colSpan="6" className="text-center py-12 text-gray-400">
+                      <td colSpan="8" className="text-center py-12 text-gray-400">
                         No I/O devices found
                       </td>
                     </tr>
                   ) : (
                     ioDevices.map((dev, idx) => (
-                      <tr key={idx}>
-                        <td>{dev.bus_type || 'N/A'}</td>
-                        <td><span className="badge badge-blue text-xs">{dev.device_type || 'N/A'}</span></td>
-                        <td className="font-medium text-gray-200">{dev.node || 'N/A'}</td>
-                        <td>{dev.card || 'N/A'}</td>
-                        <td className="font-mono text-sm">{dev.device_name || 'N/A'}</td>
-                        <td>{dev.channel || 'N/A'}</td>
+                      <tr key={dev.id ?? idx}>
+                        <td>{dev.bus_type || '—'}</td>
+                        <td><span className="badge badge-blue text-xs">{dev.device_type || '—'}</span></td>
+                        <td className="font-medium text-gray-200">{dev.node || '—'}</td>
+                        <td>{dev.card || '—'}</td>
+                        <td className="font-mono text-sm">{dev.device_name || '—'}</td>
+                        <td>{dev.channel || '—'}</td>
+                        <td className="text-xs text-gray-400 max-w-xs">{dev.fhx_description || '—'}</td>
+                        <td className="text-xs">{dev.fhx_enabled || '—'}</td>
                       </tr>
                     ))
                   )}
@@ -644,13 +926,14 @@ export default function SystemRegistry() {
                     <th>Serial Number</th>
                     <th>Redundant</th>
                     <th>Partner Model</th>
+                    <th className="w-24">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {charmsIOCards.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="text-center py-12 text-gray-400">
-                        No Charms I/O cards found
+                      <td colSpan="8" className="text-center py-12 text-gray-400">
+                        No Charms I/O cards yet — use Add manually
                       </td>
                     </tr>
                   ) : (
@@ -667,6 +950,15 @@ export default function SystemRegistry() {
                           </span>
                         </td>
                         <td>{card.partner_model || 'N/A'}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="text-red-400 hover:text-red-300 text-xs"
+                            onClick={() => handleDeleteRegistryNode('cioc', card.id, card.name)}
+                          >
+                            Remove
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -685,6 +977,12 @@ export default function SystemRegistry() {
                   <>
                     {/* Group charms by their parent CIOC */}
                     {(() => {
+                      const showFhxCharmColumns = charms.some(
+                        (c) =>
+                          (c.fhx_charm_definition != null && String(c.fhx_charm_definition).trim() !== '') ||
+                          (c.fhx_dst != null && String(c.fhx_dst).trim() !== '') ||
+                          (c.fhx_io_subsystem != null && String(c.fhx_io_subsystem).trim() !== '')
+                      );
                       // Group charms by charms_io_card_name
                       const grouped = {};
                       charms.forEach(charm => {
@@ -746,24 +1044,62 @@ export default function SystemRegistry() {
                             <div className="overflow-x-auto">
                               <table className="table-dark">
                                 <thead>
-                                  <tr>
-                                    <th>Name</th>
-                                    <th>Model</th>
-                                    <th>Software Rev</th>
-                                    <th>Hardware Rev</th>
-                                    <th>Serial Number</th>
-                                  </tr>
+                                  {showFhxCharmColumns ? (
+                                    <tr>
+                                      <th>DST</th>
+                                      <th>Card slot</th>
+                                      <th>Channel</th>
+                                      <th>Charm definition</th>
+                                      <th>Charm description</th>
+                                      <th>I/O subsystem</th>
+                                      <th>Controller</th>
+                                      <th>Redundant</th>
+                                      <th>Channel definition</th>
+                                      <th>Channel description</th>
+                                      <th>Enabled</th>
+                                    </tr>
+                                  ) : (
+                                    <tr>
+                                      <th>Name</th>
+                                      <th>Model</th>
+                                      <th>Software Rev</th>
+                                      <th>Hardware Rev</th>
+                                      <th>Serial Number</th>
+                                    </tr>
+                                  )}
                                 </thead>
                                 <tbody>
-                                  {ciocCharms.map((charm) => (
-                                    <tr key={charm.id}>
-                                      <td className="font-medium text-gray-200">{charm.name}</td>
-                                      <td>{charm.model || 'N/A'}</td>
-                                      <td>{charm.software_revision || 'N/A'}</td>
-                                      <td>{charm.hardware_revision || 'N/A'}</td>
-                                      <td className="font-mono text-xs">{charm.serial_number || 'N/A'}</td>
-                                    </tr>
-                                  ))}
+                                  {ciocCharms.map((charm) =>
+                                    showFhxCharmColumns ? (
+                                      <tr key={charm.id}>
+                                        <td className="font-mono text-xs text-gray-200">
+                                          {charm.fhx_dst || charm.name || '—'}
+                                        </td>
+                                        <td className="text-xs">{charm.fhx_slot || '—'}</td>
+                                        <td className="text-xs">{charm.fhx_channel || '—'}</td>
+                                        <td className="text-xs">{charm.fhx_charm_definition || charm.model || '—'}</td>
+                                        <td className="text-xs text-gray-400 max-w-[12rem]">
+                                          {charm.fhx_charm_description || '—'}
+                                        </td>
+                                        <td className="text-xs">{charm.fhx_io_subsystem || '—'}</td>
+                                        <td className="text-xs">{charm.fhx_controller_assignment || '—'}</td>
+                                        <td className="text-xs">{charm.fhx_redundant || '—'}</td>
+                                        <td className="text-xs">{charm.fhx_channel_definition || '—'}</td>
+                                        <td className="text-xs text-gray-400 max-w-[12rem]">
+                                          {charm.fhx_channel_description || '—'}
+                                        </td>
+                                        <td className="text-xs">{charm.fhx_enabled || '—'}</td>
+                                      </tr>
+                                    ) : (
+                                      <tr key={charm.id}>
+                                        <td className="font-medium text-gray-200">{charm.name}</td>
+                                        <td>{charm.model || 'N/A'}</td>
+                                        <td>{charm.software_revision || 'N/A'}</td>
+                                        <td>{charm.hardware_revision || 'N/A'}</td>
+                                        <td className="font-mono text-xs">{charm.serial_number || 'N/A'}</td>
+                                      </tr>
+                                    )
+                                  )}
                                 </tbody>
                               </table>
                             </div>
@@ -841,6 +1177,36 @@ export default function SystemRegistry() {
                       </div>
                     </div>
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* FHX workbook-derived control modules */}
+            {activeTab === 'fhxfmodules' && hasFhxExtracts && (
+              <div className="space-y-0">
+                <div className="flex flex-wrap gap-2 px-4 py-3 bg-gray-800/80 border-b border-gray-700">
+                  {fhxSubKinds.map((x) => (
+                    <button
+                      key={x.key}
+                      type="button"
+                      onClick={() => setFhxSubKind(x.key)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                        fhxSubKind === x.key
+                          ? 'bg-violet-900/50 border-violet-500 text-violet-100'
+                          : 'bg-gray-700/60 border-transparent text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      {x.label}{' '}
+                      <span className="opacity-75">({x.count})</span>
+                    </button>
+                  ))}
+                </div>
+                {fhxLoading ? (
+                  <div className="flex justify-center py-16">
+                    <div className="spinner h-10 w-10" />
+                  </div>
+                ) : (
+                  renderDynamicFhxTable(fhxRows)
                 )}
               </div>
             )}

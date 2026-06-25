@@ -10,6 +10,7 @@ export default function Sync() {
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [syncMode, setSyncMode] = useState(null);
 
   // Admin auth state — verified for this session only (cleared on page refresh)
   const [adminVerified, setAdminVerified] = useState(false);
@@ -24,9 +25,13 @@ export default function Sync() {
   }, []);
 
   const loadAllData = async () => {
-    // Load device info immediately (no MongoDB needed)
     loadDeviceInfo();
-    // Ensure MongoDB is connected before fetching status (which queries cloud counts)
+    try {
+      const modeRes = await api.request('/api/sync/v2/mode');
+      setSyncMode(modeRes.mode || 'legacy-mongo');
+    } catch (_) {
+      setSyncMode('legacy-mongo');
+    }
     await testConnection();
     await refreshStatus();
   };
@@ -157,6 +162,36 @@ export default function Sync() {
     }
   };
 
+  /** One-shot fast path for brand-new installs (no customers/sessions/cabinets yet). */
+  const bootstrapDownloadFromCloud = async () => {
+    if (!(await ensureConnected())) return;
+    const ok = window.confirm(
+      'First-time fast download copies the entire cloud snapshot with minimal local checks.\n\n' +
+        'Use this only on a fresh install before you create any customer, PM session, or cabinet.\n\n' +
+        'If you already have local data, use Download instead.'
+    );
+    if (!ok) return;
+    setSyncing(true);
+    showMessage('First-time cloud download (fast path)...', 'info');
+    try {
+      const result = await api.request('/api/sync/enhanced-merge/pull-bootstrap', { method: 'POST' });
+      if (result.success) {
+        soundSystem.playSuccess();
+        showMessage(`✅ First-time download: ${result.totalPulled ?? 0} records (${result.totalMs ?? '?'} ms)`, 'success');
+        refreshStatus();
+      } else {
+        soundSystem.playError();
+        showMessage(`❌ ${result.error || 'First-time download failed'}`, 'error');
+        refreshStatus();
+      }
+    } catch (error) {
+      soundSystem.playError();
+      showMessage('First-time download failed!', 'error');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   /** Download from cloud and remove local records that no longer exist on cloud (match counts). */
   const downloadAndMatchCloud = async () => {
     if (!confirm('This will make this device match the cloud: local-only records not on the cloud will be removed. Continue?')) {
@@ -189,7 +224,10 @@ export default function Sync() {
   const uploadToCloud = async () => {
     if (!(await ensureConnected())) return;
     setSyncing(true);
-    showMessage('Uploading your changes to cloud...', 'info');
+    const uploadLabel = syncMode === 'sync-api'
+      ? 'Uploading via sync API (chunked)...'
+      : 'Uploading your changes to cloud...';
+    showMessage(uploadLabel, 'info');
     try {
       const result = await api.request('/api/sync/enhanced-merge/push', { method: 'POST' });
       if (result.success) {
@@ -267,7 +305,7 @@ export default function Sync() {
       {/* Full-screen sync loading modal – blocks page until sync finishes */}
       {syncing && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          className="modal-backdrop modal-backdrop-priority"
           aria-modal="true"
           aria-busy="true"
           aria-label="Sync in progress"
@@ -329,8 +367,15 @@ export default function Sync() {
                     {connectionStatus.success ? 'Connected' : 'Not Connected'}
                   </div>
                   <div className="text-xs text-gray-500 mt-1">
-                    mongodb://172.16.10.124:27017/cabinet_pm_db
+                    {syncMode === 'sync-api'
+                      ? (connectionStatus.syncApiUrl || 'Sync API (port 3090)')
+                      : 'mongodb://172.16.10.124:27017/cabinet_pm_db'}
                   </div>
+                  {syncMode && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      Mode: {syncMode === 'sync-api' ? 'HTTP sync API' : 'Direct Mongo (legacy)'}
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
@@ -394,6 +439,20 @@ export default function Sync() {
                 <div className="text-3xl mb-1">⬆️</div>
                 <div className="text-lg font-semibold">Upload</div>
                 <div className="text-xs opacity-75 mt-1">Send your changes</div>
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-amber-600/35 bg-amber-950/20 px-4 py-3 mt-4">
+              <p className="text-sm text-amber-100/95 mb-2">
+                New install with an empty database? Use a faster one-time full snapshot from the cloud instead of incremental download.
+              </p>
+              <button
+                type="button"
+                onClick={bootstrapDownloadFromCloud}
+                disabled={syncing}
+                className="btn btn-secondary text-sm px-4 py-2 disabled:opacity-50"
+              >
+                First-time fast download
               </button>
             </div>
           </div>
@@ -498,6 +557,7 @@ export default function Sync() {
                         session_node_maintenance: 'Node Maintenance',
                         cabinet_locations: 'Cabinet Locations',
                         session_pm_notes: 'PM Notes',
+                        session_diagnostics: 'Session Diagnostics',
                         session_ii_documents: 'I&I Documents',
                         session_ii_equipment: 'I&I Equipment',
                         session_ii_checklist: 'I&I Checklist',

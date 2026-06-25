@@ -1,6 +1,7 @@
 const db = require('./database');
 const bcrypt = require('bcryptjs');
 const { migrateSessionNodeMaintenanceHasIoErrors } = require('./migrate-has-io-errors');
+const { backfillTableUuids } = require('../utils/ensure-row-uuid');
 
 // Initialize SQLite database tables (sqlite3 async)
 function initializeDatabase() {
@@ -38,6 +39,22 @@ function initializeDatabase() {
                 }
               }
             );
+          }
+        });
+      }
+
+      function dropColumnIfExists(tableName, columnName) {
+        db.all(`PRAGMA table_info(${tableName})`, (err, columns) => {
+          if (err || !columns) return;
+          const columnExists = columns.some((col) => col.name === columnName);
+          if (columnExists) {
+            db.run(`ALTER TABLE ${tableName} DROP COLUMN ${columnName}`, (dropErr) => {
+              if (dropErr) {
+                console.error(`❌ Error dropping column ${columnName} from ${tableName}:`, dropErr);
+              } else {
+                console.log(`✅ Dropped ${columnName} column from ${tableName}`);
+              }
+            });
           }
         });
       }
@@ -164,7 +181,6 @@ function initializeDatabase() {
         pm_session_id TEXT NOT NULL,
         cabinet_name TEXT NOT NULL,
         cabinet_location TEXT,
-        cabinet_date DATE,
         status TEXT DEFAULT 'active',
         power_supplies TEXT DEFAULT '[]',
         distribution_blocks TEXT DEFAULT '[]',
@@ -752,6 +768,28 @@ function initializeDatabase() {
         }
       );
 
+      // Change journal for new sync protocol (replaces synced-flag-only tracking)
+      db.run(
+        `CREATE TABLE IF NOT EXISTS change_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        table_name TEXT NOT NULL,
+        row_uuid TEXT NOT NULL,
+        operation TEXT NOT NULL DEFAULT 'upsert',
+        payload_json TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        synced_at DATETIME
+      )`,
+        (err) => {
+          if (err) {
+            console.error('❌ Error creating change_log table:', err);
+          } else {
+            console.log('✅ Created (or found) change_log table');
+          }
+        }
+      );
+      db.run(`CREATE INDEX IF NOT EXISTS idx_change_log_pending ON change_log(synced_at) WHERE synced_at IS NULL`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_change_log_uuid ON change_log(row_uuid)`);
+
       // ============================================================
       // CRITICAL: Add sync columns to ALL tables (for existing databases)
       // ============================================================
@@ -783,6 +821,7 @@ function initializeDatabase() {
       addColumnIfNotExists('customers', 'zip', 'TEXT');
       addColumnIfNotExists('customers', 'country', 'TEXT');
       addColumnIfNotExists('customers', 'dongle_id', 'TEXT');
+      addColumnIfNotExists('customers', 'registry_version', 'INTEGER DEFAULT 0');
 
       // Sessions table
       addColumnIfNotExists('sessions', 'uuid', 'TEXT');
@@ -797,6 +836,7 @@ function initializeDatabase() {
       addColumnIfNotExists('cabinets', 'deleted', 'INTEGER DEFAULT 0');
       addColumnIfNotExists('cabinets', 'media_converters', "TEXT DEFAULT '[]'");
       addColumnIfNotExists('cabinets', 'power_injected_baseplates', "TEXT DEFAULT '[]'");
+      dropColumnIfExists('cabinets', 'cabinet_date');
 
       // Nodes table
       addColumnIfNotExists('nodes', 'uuid', 'TEXT');
@@ -809,6 +849,8 @@ function initializeDatabase() {
       addColumnIfNotExists('session_node_maintenance', 'synced', 'INTEGER DEFAULT 0');
       addColumnIfNotExists('session_node_maintenance', 'device_id', 'TEXT');
       addColumnIfNotExists('session_node_maintenance', 'deleted', 'INTEGER DEFAULT 0');
+      addColumnIfNotExists('session_node_maintenance', 'node_name', 'TEXT');
+      addColumnIfNotExists('session_node_maintenance', 'node_type', 'TEXT');
 
       // Session node tracker table
       addColumnIfNotExists('session_node_tracker', 'uuid', 'TEXT');
@@ -1203,6 +1245,10 @@ function initializeDatabase() {
         }
       );
       addColumnIfNotExists('customer_notes', 'created_by', 'TEXT');
+      addColumnIfNotExists('customer_metric_history', 'uuid', 'TEXT');
+      addColumnIfNotExists('customer_metric_history', 'device_id', 'TEXT');
+      addColumnIfNotExists('customer_metric_history', 'updated_at', 'DATETIME');
+
       addColumnIfNotExists('customer_notes', 'uuid', 'TEXT');
       addColumnIfNotExists('customer_notes', 'synced', 'INTEGER DEFAULT 0');
       addColumnIfNotExists('customer_notes', 'device_id', 'TEXT');
@@ -1211,6 +1257,146 @@ function initializeDatabase() {
       addColumnIfNotExists('customer_notes', 'source', 'TEXT DEFAULT \'app\'');
       // sp_item_id: SharePoint list item ID for update/dedup
       addColumnIfNotExists('customer_notes', 'sp_item_id', 'INTEGER');
+
+      // FHX / DeltaV extracts (Cabinet PM bundle import — path A)
+      addColumnIfNotExists('sys_io_devices', 'fhx_description', 'TEXT');
+      addColumnIfNotExists('sys_io_devices', 'fhx_enabled', 'TEXT');
+      addColumnIfNotExists('sys_charms', 'fhx_dst', 'TEXT');
+      addColumnIfNotExists('sys_charms', 'fhx_slot', 'TEXT');
+      addColumnIfNotExists('sys_charms', 'fhx_channel', 'TEXT');
+      addColumnIfNotExists('sys_charms', 'fhx_charm_definition', 'TEXT');
+      addColumnIfNotExists('sys_charms', 'fhx_io_subsystem', 'TEXT');
+      addColumnIfNotExists('sys_charms', 'fhx_charm_description', 'TEXT');
+      addColumnIfNotExists('sys_charms', 'fhx_controller_assignment', 'TEXT');
+      addColumnIfNotExists('sys_charms', 'fhx_redundant', 'TEXT');
+      addColumnIfNotExists('sys_charms', 'fhx_channel_definition', 'TEXT');
+      addColumnIfNotExists('sys_charms', 'fhx_channel_description', 'TEXT');
+      addColumnIfNotExists('sys_charms', 'fhx_enabled', 'TEXT');
+
+      const dvFhxStatements = [
+        `CREATE TABLE IF NOT EXISTS dv_modules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id INTEGER NOT NULL,
+          module TEXT,
+          area TEXT,
+          description TEXT,
+          assigned_controller TEXT,
+          primary_control_display TEXT,
+          faceplace_display TEXT,
+          detail TEXT,
+          type TEXT,
+          module_type TEXT,
+          imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (customer_id) REFERENCES customers(id)
+        )`,
+        `CREATE TABLE IF NOT EXISTS dv_pid_modules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id INTEGER NOT NULL,
+          tag_name TEXT,
+          module_name TEXT,
+          description TEXT,
+          area TEXT,
+          control_mode TEXT,
+          proportional_gain TEXT,
+          integral_time TEXT,
+          derivative_time TEXT,
+          set_point TEXT,
+          output_high TEXT,
+          output_low TEXT,
+          eng_units TEXT,
+          imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (customer_id) REFERENCES customers(id)
+        )`,
+        `CREATE TABLE IF NOT EXISTS dv_ai_modules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id INTEGER NOT NULL,
+          tag_name TEXT,
+          module_name TEXT,
+          description TEXT,
+          area TEXT,
+          eng_units TEXT,
+          range_high TEXT,
+          range_low TEXT,
+          alarm_high_high TEXT,
+          alarm_high TEXT,
+          alarm_low TEXT,
+          alarm_low_low TEXT,
+          deadband TEXT,
+          filter_type TEXT,
+          filter_time_constant TEXT,
+          imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (customer_id) REFERENCES customers(id)
+        )`,
+        `CREATE TABLE IF NOT EXISTS dv_ao_modules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id INTEGER NOT NULL,
+          tag_name TEXT,
+          module_name TEXT,
+          description TEXT,
+          area TEXT,
+          eng_units TEXT,
+          range_high TEXT,
+          range_low TEXT,
+          alarm_high_high TEXT,
+          alarm_high TEXT,
+          alarm_low TEXT,
+          alarm_low_low TEXT,
+          deadband TEXT,
+          filter_type TEXT,
+          filter_time_constant TEXT,
+          imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (customer_id) REFERENCES customers(id)
+        )`,
+        `CREATE TABLE IF NOT EXISTS dv_di_modules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id INTEGER NOT NULL,
+          tag_name TEXT,
+          module_name TEXT,
+          description TEXT,
+          area TEXT,
+          state0_text TEXT,
+          state1_text TEXT,
+          alarm_on_state TEXT,
+          alarm_priority TEXT,
+          imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (customer_id) REFERENCES customers(id)
+        )`,
+        `CREATE TABLE IF NOT EXISTS dv_do_modules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id INTEGER NOT NULL,
+          tag_name TEXT,
+          module_name TEXT,
+          description TEXT,
+          area TEXT,
+          state0_text TEXT,
+          state1_text TEXT,
+          alarm_on_state TEXT,
+          alarm_priority TEXT,
+          imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (customer_id) REFERENCES customers(id)
+        )`,
+        `CREATE TABLE IF NOT EXISTS dv_fhx_import_meta (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id INTEGER NOT NULL,
+          imported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          bundle_schema TEXT,
+          workbook_path_note TEXT,
+          simple_io_rows INTEGER,
+          charms_rows INTEGER,
+          modules_rows INTEGER,
+          pid_rows INTEGER,
+          ai_rows INTEGER,
+          ao_rows INTEGER,
+          di_rows INTEGER,
+          do_rows INTEGER,
+          FOREIGN KEY (customer_id) REFERENCES customers(id)
+        )`,
+      ];
+      dvFhxStatements.forEach((sql) => {
+        db.run(sql, (err) => {
+          if (err) console.error('❌ Error creating DV/FHX table:', err.message);
+        });
+      });
 
       // Fix NULL ids in sys_charms_io_cards and sys_charms.
       // The TEXT column migration (for MongoDB ObjectId support) removed AUTOINCREMENT,
@@ -1268,13 +1454,70 @@ function initializeDatabase() {
 
       console.log('✅ Database tables initialized successfully');
 
-      migrateSessionNodeMaintenanceHasIoErrors()
+      installChangeLogTriggers()
+        .then(() => migrateSessionNodeMaintenanceHasIoErrors())
+        .then(() => backfillMissingSyncUuids())
         .then(() => createDefaultUser())
         .then(() => {
           console.log('✅ Database ready for tablet deployment');
           resolve(true);
         })
         .catch(reject);
+    });
+  });
+}
+
+/** Assign UUIDs to legacy rows that were saved before sync columns were wired up */
+async function backfillMissingSyncUuids() {
+  const maint = await backfillTableUuids(db, 'session_node_maintenance');
+  const diag = await backfillTableUuids(db, 'session_diagnostics');
+  const total = maint + diag;
+  if (total > 0) {
+    console.log(
+      `🔑 Backfilled ${total} missing UUID(s) (session_node_maintenance: ${maint}, session_diagnostics: ${diag})`
+    );
+  }
+}
+
+/** SQLite triggers for change_log — must run after all synced tables exist */
+function installChangeLogTriggers() {
+  const changeLogTables = [
+    'users', 'customers', 'sessions', 'cabinets', 'nodes', 'session_node_maintenance',
+    'cabinet_locations', 'session_pm_notes', 'session_diagnostics', 'session_ii_documents',
+    'session_ii_equipment', 'session_ii_checklist', 'session_ii_equipment_used',
+    'sys_workstations', 'sys_smart_switches', 'sys_io_devices', 'sys_controllers',
+    'sys_charms_io_cards', 'sys_charms', 'sys_ams_systems', 'customer_metric_history', 'customer_notes',
+  ];
+
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      for (const tbl of changeLogTables) {
+        db.run(`DROP TRIGGER IF EXISTS trg_${tbl}_change_log_ins`);
+        db.run(`DROP TRIGGER IF EXISTS trg_${tbl}_change_log_upd`);
+        db.run(
+          `CREATE TRIGGER IF NOT EXISTS trg_${tbl}_change_log_ins AFTER INSERT ON ${tbl}
+           WHEN NEW.uuid IS NOT NULL AND TRIM(NEW.uuid) != ''
+           BEGIN
+             INSERT INTO change_log (table_name, row_uuid, operation, created_at)
+             VALUES ('${tbl}', NEW.uuid, 'upsert', CURRENT_TIMESTAMP);
+           END`
+        );
+        db.run(
+          `CREATE TRIGGER IF NOT EXISTS trg_${tbl}_change_log_upd AFTER UPDATE ON ${tbl}
+           WHEN NEW.uuid IS NOT NULL AND TRIM(NEW.uuid) != '' AND (NEW.synced = 0 OR NEW.deleted = 1)
+           BEGIN
+             INSERT INTO change_log (table_name, row_uuid, operation, created_at)
+             VALUES ('${tbl}', NEW.uuid, CASE WHEN NEW.deleted = 1 THEN 'delete' ELSE 'upsert' END, CURRENT_TIMESTAMP);
+           END`
+        );
+      }
+      db.run('SELECT 1', (err) => {
+        if (err) reject(err);
+        else {
+          console.log('✅ change_log triggers installed');
+          resolve();
+        }
+      });
     });
   });
 }

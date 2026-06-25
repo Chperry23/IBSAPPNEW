@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
+const { syncFieldsForInsert, afterSyncableWrite } = require('../utils/sync-write-helper');
 
 // Get all customers
 router.get('/', requireAuth, async (req, res) => {
@@ -100,14 +101,22 @@ router.post('/', requireAuth, async (req, res) => {
   const { name, location, contact_info, alias } = req.body;
   
   try {
-    const result = await db.prepare('INSERT INTO customers (name, location, contact_info, alias) VALUES (?, ?, ?, ?)').run([name, location, contact_info || null, alias || null]);
+    const { uuid } = syncFieldsForInsert('customers');
+    const result = await db.prepare(
+      'INSERT INTO customers (name, location, contact_info, alias, uuid, synced) VALUES (?, ?, ?, ?, ?, 0)'
+    ).run([name, location, contact_info || null, alias || null, uuid]);
+    
+    const customerId = result.lastInsertRowid;
+    await afterSyncableWrite(db, 'customers', customerId);
     
     const customer = {
-      id: result.lastInsertRowid,
+      id: customerId,
       name,
       location,
       contact_info,
       alias: alias || null,
+      uuid,
+      synced: 0,
       created_at: new Date().toISOString()
     };
     

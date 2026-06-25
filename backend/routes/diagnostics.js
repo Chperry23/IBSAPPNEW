@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
 const { isSessionCompleted } = require('../utils/session');
+const { afterSyncableWrite } = require('../utils/sync-write-helper');
 
 // Debug: check if diagnostics exist for a session (count + sample, no auth for easy check)
 router.get('/:sessionId/diagnostics/debug', async (req, res) => {
@@ -39,6 +40,9 @@ router.get('/:sessionId/diagnostics/io-devices/:controllerName', requireAuth, as
   }
   
   try {
+    const nodeTypeHint = (req.query.nodeType || '').toString().trim().toUpperCase();
+    const nameLooksCioc = (controllerName || '').toUpperCase().includes('CIOC');
+
     // Determine if this is a CIOC or a regular controller
     const cioc = await db.prepare(
       'SELECT id, name, model FROM sys_charms_io_cards WHERE customer_id = ? AND name = ?'
@@ -50,7 +54,15 @@ router.get('/:sessionId/diagnostics/io-devices/:controllerName', requireAuth, as
     
     // Also treat as CIOC if the model indicates a CIOC2 imported into sys_controllers
     const controllerModel = (controller?.model || '').toLowerCase();
-    const isCioc = !!cioc || (!!controller && (controllerModel.includes('cioc') || controllerModel.includes('charm io card')));
+    const controllerNameLower = (controller?.name || controllerName || '').toLowerCase();
+    const isCioc =
+      nodeTypeHint === 'CIOC' ||
+      nameLooksCioc ||
+      !!cioc ||
+      (!!controller &&
+        (controllerModel.includes('cioc') ||
+          controllerModel.includes('charm io card') ||
+          controllerNameLower.includes('cioc')));
     
     let ioDevices = [];
     
@@ -241,6 +253,8 @@ router.post('/:sessionId/diagnostics', requireAuth, async (req, res) => {
       diagnostic.ldt || null,
       uuid
     ]);
+
+    await afterSyncableWrite(db, 'session_diagnostics', result.lastInsertRowid);
     
     res.json({ 
       success: true, 
@@ -296,6 +310,8 @@ router.put('/:sessionId/diagnostics/:diagnosticId', requireAuth, async (req, res
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Diagnostic not found' });
     }
+
+    await afterSyncableWrite(db, 'session_diagnostics', parseInt(diagnosticId, 10));
     
     res.json({ success: true, message: 'Diagnostic updated successfully' });
   } catch (error) {

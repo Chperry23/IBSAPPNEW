@@ -57,7 +57,7 @@ export default function CabinetInspectionFull() {
   
   // Premade network equipment models (will be merged with custom models)
   const defaultNetworkEquipmentModels = [
-    { type: 'Switch', models: ['Cisco 2960', 'Cisco 3750', 'Cisco 3850', 'HP 2530', 'HP 2920', 'Aruba 2530', 'Aruba 2930F'] },
+    { type: 'Switch', models: ['FP20', 'FP40', 'FP50', 'RM100', 'RM200', 'SRM100', 'SRM200', '6019', 'MD-20', 'HIRSCHMANN'] },
     { type: 'Router', models: ['Cisco ISR 4000', 'Cisco ASR 1000', 'Juniper MX'] },
     { type: 'Firewall', models: ['Cisco ASA 5500', 'Palo Alto PA-220', 'Fortinet FortiGate'] },
     { type: 'Wireless Controller', models: ['Cisco WLC 3504', 'Cisco WLC 5520', 'Aruba 7005'] },
@@ -78,7 +78,6 @@ export default function CabinetInspectionFull() {
   // Form state - all cabinet data
   const [formData, setFormData] = useState({
     cabinet_name: '',
-    cabinet_date: '',
     location_id: '',
     cabinet_type: 'cabinet',
     
@@ -191,7 +190,10 @@ export default function CabinetInspectionFull() {
       const parsedData = {
         ...cabinetData,
         cabinet_type: cabinetData.cabinet_type || 'cabinet',
-        power_supplies: ensureArray(cabinetData.power_supplies, []),
+        power_supplies: ensureArray(cabinetData.power_supplies, []).map((ps) => ({
+          ...ps,
+          psu_dead: ps.psu_dead === true,
+        })),
         distribution_blocks: ensureArray(cabinetData.distribution_blocks, []),
         diodes: ensureArray(cabinetData.diodes, []),
         media_converters: ensureArray(cabinetData.media_converters, []),
@@ -391,6 +393,7 @@ export default function CabinetInspectionFull() {
           dc_reading: '',
           // Status
           status: '',
+          psu_dead: false,
           comments: '',
         },
       ],
@@ -1002,64 +1005,51 @@ export default function CabinetInspectionFull() {
     }
   };
 
-  // Helper function to check if voltage is in spec
-  const checkVoltageInSpec = (value, min, max) => {
-    const numValue = parseFloat(value);
-    if (isNaN(numValue) || !value) return null; // No value entered
-    return numValue >= min && numValue <= max;
-  };
-
-  // Auto-calculate pass/fail status for power supplies
-  const autoCalculateStatus = (ps) => {
-    const voltageType = ps.voltage_type || '12VDC';
-    
-    // Define voltage specs — must match VOLTAGE_RANGES in backend/utils/risk-assessment.js
-    const specs = {
-      '12VDC': { ac_min: 100, ac_max: 130, dc_min: 11.4, dc_max: 12.6, neutral_min: 0, neutral_max: 1000 },
-      '24VDC': { ac_min: 100, ac_max: 130, dc_min: 22.8, dc_max: 25.2, neutral_min: 0, neutral_max: 1000 },
-      '48VDC': { ac_min: 100, ac_max: 130, dc_min: 45.6, dc_max: 50.4, neutral_min: 0, neutral_max: 1000 },
-      '120VAC': { ac_min: 100, ac_max: 130, neutral_min: 0, neutral_max: 1000 },
-    };
-
-    const spec = specs[voltageType] || specs['12VDC'];
-    
-    // Check each measurement
-    const checks = [
-      checkVoltageInSpec(ps.line_neutral, spec.ac_min, spec.ac_max),
-      checkVoltageInSpec(ps.line_ground, spec.ac_min, spec.ac_max),
-      checkVoltageInSpec(ps.neutral_ground, spec.neutral_min, spec.neutral_max),
-    ];
-
-    // Add DC check if applicable
-    if (spec.dc_min && spec.dc_max) {
-      checks.push(checkVoltageInSpec(ps.dc_reading, spec.dc_min, spec.dc_max));
+  // Derive pass/fail from entered voltage readings (same rules as distribution blocks).
+  const derivePowerSupplyStatusFromReadings = (ps) => {
+    const vt = ps.voltage_type || '24VDC';
+    const results = [];
+    if (ps.line_neutral !== '' && ps.line_neutral != null) {
+      results.push(validateVoltage(ps.line_neutral, 'line_neutral'));
     }
-
-    // If any measurement exists and is out of spec, it's a FAIL
-    const hasFailure = checks.some(check => check === false);
-    // If all measurements are in spec (and at least one exists), it's a PASS
-    const allPass = checks.filter(check => check !== null).length > 0 && checks.every(check => check === null || check === true);
-
-    if (hasFailure) return 'fail';
-    if (allPass) return 'pass';
-    return ''; // No measurements yet
+    if (ps.line_ground !== '' && ps.line_ground != null) {
+      results.push(validateVoltage(ps.line_ground, 'line_ground'));
+    }
+    if (ps.neutral_ground !== '' && ps.neutral_ground != null) {
+      results.push(validateVoltage(ps.neutral_ground, 'neutral_ground'));
+    }
+    if (ps.dc_reading !== '' && ps.dc_reading != null) {
+      results.push(validateVoltage(ps.dc_reading, 'dc_reading', vt));
+    }
+    if (results.length === 0) return '';
+    if (results.some((r) => r && !r.valid)) return 'fail';
+    if (results.every((r) => r && r.valid)) return 'pass';
+    return '';
   };
 
-  // Handler to update power supply voltage and auto-calculate status
+  const handlePowerSupplyPsuDeadChange = async (index, checked) => {
+    const updated = [...formData.power_supplies];
+    updated[index] = {
+      ...updated[index],
+      psu_dead: checked,
+    };
+    const newFormData = { ...formData, power_supplies: updated };
+    setFormData(newFormData);
+    await autoSaveCabinet(newFormData);
+  };
+
+  // Handler to update power supply voltage readings — auto pass/fail from spec (independent of PSU dead)
   const handlePowerSupplyVoltageChange = async (index, field, value) => {
     const updated = [...formData.power_supplies];
     updated[index][field] = value;
-    
-    // Auto-calculate status based on all voltage readings
-    const autoStatus = autoCalculateStatus(updated[index]);
-    if (autoStatus) {
-      updated[index].status = autoStatus;
+
+    if (updated[index].status !== 'na') {
+      updated[index].status = derivePowerSupplyStatusFromReadings(updated[index]);
     }
     
     const newFormData = { ...formData, power_supplies: updated };
     setFormData(newFormData);
     
-    // Auto-save after a short delay
     if (autoSaveTimeoutRef.current) {
       clearTimeout(autoSaveTimeoutRef.current);
     }
@@ -1068,33 +1058,15 @@ export default function CabinetInspectionFull() {
     }, 500);
   };
 
-  // Auto-calculate status for all power supplies when data loads
-  useEffect(() => {
-    if (formData.power_supplies && formData.power_supplies.length > 0) {
-      let needsUpdate = false;
-      const updated = formData.power_supplies.map(ps => {
-        const autoStatus = autoCalculateStatus(ps);
-        if (autoStatus && ps.status !== autoStatus) {
-          needsUpdate = true;
-          return { ...ps, status: autoStatus };
-        }
-        return ps;
-      });
-      
-      if (needsUpdate) {
-        console.log('🔄 Auto-updating power supply statuses');
-        setFormData({ ...formData, power_supplies: updated });
-      }
-    }
-  }, [cabinet]); // Run when cabinet data changes
-
   // Calculate section status
   const getSectionStatus = (section) => {
     switch (section) {
       case 'power_supplies': {
         const count = formData.power_supplies.length;
         if (count === 0) return { text: 'Empty', class: 'empty', errors: 0 };
-        const failCount = formData.power_supplies.filter(ps => ps.status === 'fail').length;
+        const failCount = formData.power_supplies.filter(
+          (ps) => ps.status === 'fail' || ps.psu_dead
+        ).length;
         return {
           text: `${count} Supplies`,
           class: failCount > 0 ? 'error' : 'complete',
@@ -1274,9 +1246,6 @@ export default function CabinetInspectionFull() {
           <h1 className="text-4xl font-bold gradient-text mb-2">
             {isRack ? '🖥️' : '🗄️'} {formData.cabinet_name || (isRack ? 'Rack Inspection' : 'Cabinet Inspection')}
           </h1>
-          {formData.cabinet_date && (
-            <p className="text-gray-400">{new Date(formData.cabinet_date).toLocaleDateString()}</p>
-          )}
           {session?.status === 'completed' && (
             <span className="badge badge-green mt-2">✅ Session Completed (Read-Only)</span>
           )}
@@ -1375,17 +1344,6 @@ export default function CabinetInspectionFull() {
                     type="text"
                     value={formData.cabinet_name}
                     onChange={(e) => updateFormData('cabinet_name', e.target.value)}
-                    className="form-input"
-                    required
-                    readOnly={isViewOnly}
-                  />
-                </div>
-                <div>
-                  <label className="form-label">Date *</label>
-                  <input
-                    type="date"
-                    value={formData.cabinet_date}
-                    onChange={(e) => updateFormData('cabinet_date', e.target.value)}
                     className="form-input"
                     required
                     readOnly={isViewOnly}
@@ -1619,7 +1577,12 @@ export default function CabinetInspectionFull() {
                             onChange={(e) => {
                               const updated = [...formData.power_supplies];
                               updated[index].voltage_type = e.target.value;
-                              setFormData({ ...formData, power_supplies: updated });
+                              if (updated[index].status !== 'na') {
+                                updated[index].status = derivePowerSupplyStatusFromReadings(updated[index]);
+                              }
+                              const newFormData = { ...formData, power_supplies: updated };
+                              setFormData(newFormData);
+                              autoSaveCabinet(newFormData);
                             }}
                             className="form-select"
                             disabled={isViewOnly}
@@ -1757,12 +1720,16 @@ export default function CabinetInspectionFull() {
                             <label className="form-label">Status</label>
                             <select
                               value={ps.status || ''}
-                              onChange={(e) => {
+                              onChange={async (e) => {
+                                const status = e.target.value;
                                 const updated = [...formData.power_supplies];
-                                updated[index].status = e.target.value;
-                                setFormData({ ...formData, power_supplies: updated });
+                                updated[index] = { ...updated[index], status };
+                                const newFormData = { ...formData, power_supplies: updated };
+                                setFormData(newFormData);
+                                await autoSaveCabinet(newFormData);
                               }}
                               className="form-select"
+                              disabled={isViewOnly}
                             >
                               <option value="">Select...</option>
                               <option value="pass">✅ PASS</option>
@@ -1780,10 +1747,26 @@ export default function CabinetInspectionFull() {
                                 updated[index].comments = e.target.value;
                                 setFormData({ ...formData, power_supplies: updated });
                               }}
+                              readOnly={isViewOnly}
                               className="form-input"
                               placeholder="Additional notes..."
                             />
                           </div>
+                        </div>
+                        <div className="mt-3">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(ps.psu_dead)}
+                              onChange={(e) => handlePowerSupplyPsuDeadChange(index, e.target.checked)}
+                              disabled={isViewOnly}
+                              className="form-checkbox"
+                            />
+                            <span className="text-gray-200 text-sm">PSU Dead / Failed</span>
+                          </label>
+                          <p className="text-xs text-gray-500 mt-1 ml-6">
+                            Hardware failure only — separate from measurement FAIL (e.g. neutral-to-ground out of spec sets Status to FAIL automatically).
+                          </p>
                         </div>
                       </div>
                     </div>

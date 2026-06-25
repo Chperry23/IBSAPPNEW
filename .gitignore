@@ -47,6 +47,13 @@ Thumbs.db
 *.swp
 *.swo
 
+# Obsidian vault (local notes — starter templates live in docs/vault-starter/)
+notes/
+.obsidian/
+
+# Cursor (rules ARE committed; local cursor state is not)
+.cursor/plans/
+
 # Temporary files
 *.tmp
 *.temp

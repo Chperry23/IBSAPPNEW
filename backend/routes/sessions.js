@@ -9,11 +9,52 @@ const { generateMaintenanceReportPage } = require('../services/pdf/maintenanceRe
 const { generateDiagnosticsSummary, generateControllerBreakdown } = require('../services/pdf/diagnosticsReport');
 const { generateRiskAssessment } = require('../utils/risk-assessment');
 const { getDefaultPerformanceType } = require('../utils/controllerType');
+const { dedupeNodesForReport } = require('../utils/session-node-list');
+const { syncFieldsForInsert, softDeleteSyncRow } = require('../utils/sync-write-helper');
 
 // Helper function to check if session is completed
 async function isSessionCompleted(sessionId) {
   const session = await db.prepare('SELECT status FROM sessions WHERE id = ?').get([sessionId]);
   return session && session.status === 'completed';
+}
+
+const ID_CONTROLLER = 2000000;
+const ID_SWITCH = 3000000;
+const ID_CIOC = 4000000;
+
+async function getRegistryControllerCount(customerId) {
+  if (!customerId) return 0;
+  try {
+    const ctrlTotal = await db.prepare('SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ?').get([customerId]);
+    const ciocTotal = await db.prepare('SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ?').get([customerId]);
+    return (ctrlTotal?.count ?? 0) + (ciocTotal?.count ?? 0);
+  } catch (_) {
+    return 0;
+  }
+}
+
+/** Controllers/CIOCs/CSLS in session maintenance — better PM scope than customer registry alone */
+async function getSessionMaintenanceControllerCount(sessionId) {
+  try {
+    const row = await db.prepare(`
+      SELECT COUNT(DISTINCT node_id) as count FROM session_node_maintenance
+      WHERE session_id = ? AND COALESCE(deleted, 0) != 1
+        AND (
+          (node_id >= ? AND node_id < ?)
+          OR (node_id >= ? AND node_id < ?)
+          OR LOWER(COALESCE(node_type, '')) IN ('controller', 'cioc', 'csls')
+        )
+    `).get([sessionId, ID_CONTROLLER, ID_SWITCH, ID_CIOC, ID_CIOC + 1000000]);
+    return row?.count ?? 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+async function resolveControllerAssignmentTotal(sessionId, customerId, assignedCount) {
+  const registryTotal = await getRegistryControllerCount(customerId);
+  const maintenanceTotal = await getSessionMaintenanceControllerCount(sessionId);
+  return Math.max(registryTotal, maintenanceTotal, assignedCount);
 }
 
 // NEW: Efficient endpoint to get ALL sessions with customer info in one call
@@ -224,34 +265,27 @@ router.get('/:sessionId', requireAuth, async (req, res) => {
         assignedFromJson += ctrls.filter(c => c.node_id).length;
         // Also count CIOCs if stored in controllers array
       }
-      // Total = what the customer had at the time (use current count as approximation)
-      if (customerId) {
-        try {
-          const ctrlTotal = await db.prepare(`SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ?`).get([customerId]);
-          const ciocTotal = await db.prepare(`SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ?`).get([customerId]);
-          controllerAssignmentStats.total = (ctrlTotal?.count ?? 0) + (ciocTotal?.count ?? 0);
-        } catch (e) { /* ignore */ }
-      }
       controllerAssignmentStats.assigned = assignedFromJson;
+      controllerAssignmentStats.total = await resolveControllerAssignmentTotal(
+        sessionId,
+        customerId,
+        assignedFromJson
+      );
     } else {
       // For ACTIVE sessions: union of live sys_* assigned_cabinet_id AND cabinet JSON blobs
-      if (customerId) {
-        try {
-          const ctrlTotal = await db.prepare(`SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ?`).get([customerId]);
-          const ciocTotal = await db.prepare(`SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ?`).get([customerId]);
-          controllerAssignmentStats.total = (ctrlTotal?.count ?? 0) + (ciocTotal?.count ?? 0);
-        } catch (e) { console.error('Error counting controllers:', e); }
-
-        // Count unique node_ids assigned in cabinet JSON blobs (covers unsaved in-memory assignments)
-        const assignedNodeIds = new Set();
-        for (const cab of cabinets) {
-          const ctrls = cab.controllers || [];
-          for (const c of ctrls) {
-            if (c.node_id) assignedNodeIds.add(String(c.node_id));
-          }
+      const assignedNodeIds = new Set();
+      for (const cab of cabinets) {
+        const ctrls = cab.controllers || [];
+        for (const c of ctrls) {
+          if (c.node_id) assignedNodeIds.add(String(c.node_id));
         }
-        controllerAssignmentStats.assigned = assignedNodeIds.size;
       }
+      controllerAssignmentStats.assigned = assignedNodeIds.size;
+      controllerAssignmentStats.total = await resolveControllerAssignmentTotal(
+        sessionId,
+        customerId,
+        assignedNodeIds.size
+      );
     }
 
     const result = {
@@ -366,17 +400,18 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
     let nodeMaintenanceData = [];
     if (session.customer_id) {
       const maintenanceRows = await db.prepare(`
-        SELECT node_id, dv_checked, os_checked, macafee_checked, free_time, redundancy_checked, cold_restart_checked, has_io_errors, hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked, notes, completed
-        FROM session_node_maintenance WHERE session_id = ?
+        SELECT node_id, node_name, node_type, is_custom_node,
+               dv_checked, os_checked, macafee_checked, free_time, redundancy_checked, cold_restart_checked, has_io_errors, hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked, notes, completed
+        FROM session_node_maintenance WHERE session_id = ? AND COALESCE(deleted, 0) != 1
       `).all([sessionId]);
       const nodes = [];
-      const ws = await db.prepare(`SELECT id, name as node_name, type as node_type, model, dell_service_tag_number as serial FROM sys_workstations WHERE customer_id = ?`).all([session.customer_id]);
+      const ws = await db.prepare(`SELECT id, name as node_name, type as node_type, model, dell_service_tag_number as serial FROM sys_workstations WHERE customer_id = ? AND (deleted IS NULL OR deleted = 0)`).all([session.customer_id]);
       ws.forEach((n) => { n.id = ID_WORKSTATION + n.id; });
-      const ctrl = await db.prepare(`SELECT id, name as node_name, 'Controller' as node_type, model, serial_number as serial, redundant, partner_serial_number FROM sys_controllers WHERE customer_id = ?`).all([session.customer_id]);
+      const ctrl = await db.prepare(`SELECT id, name as node_name, 'Controller' as node_type, model, serial_number as serial, redundant, partner_serial_number FROM sys_controllers WHERE customer_id = ? AND (deleted IS NULL OR deleted = 0)`).all([session.customer_id]);
       ctrl.forEach((n) => { n.id = ID_CONTROLLER + n.id; });
-      const sw = await db.prepare(`SELECT id, name as node_name, 'Smart Network Devices' as node_type, model, serial_number as serial, software_revision as firmware FROM sys_smart_switches WHERE customer_id = ?`).all([session.customer_id]);
+      const sw = await db.prepare(`SELECT id, name as node_name, 'Smart Network Devices' as node_type, model, serial_number as serial, software_revision as firmware FROM sys_smart_switches WHERE customer_id = ? AND (deleted IS NULL OR deleted = 0)`).all([session.customer_id]);
       sw.forEach((n) => { n.id = ID_SWITCH + n.id; });
-      const cioc = await db.prepare(`SELECT id, name as node_name, CASE WHEN LOWER(name) LIKE '%csls%' OR LOWER(name) LIKE '%charms logic solver%' OR LOWER(name) LIKE '%smart logic solver%' OR LOWER(model) LIKE '%csls%' OR LOWER(model) LIKE '%logic solver%' THEN 'CSLS' ELSE 'CIOC' END as node_type, model, serial_number as serial FROM sys_charms_io_cards WHERE customer_id = ?`).all([session.customer_id]);
+      const cioc = await db.prepare(`SELECT id, name as node_name, CASE WHEN LOWER(name) LIKE '%csls%' OR LOWER(name) LIKE '%charms logic solver%' OR LOWER(name) LIKE '%smart logic solver%' OR LOWER(model) LIKE '%csls%' OR LOWER(model) LIKE '%logic solver%' THEN 'CSLS' ELSE 'CIOC' END as node_type, model, serial_number as serial FROM sys_charms_io_cards WHERE customer_id = ? AND (deleted IS NULL OR deleted = 0)`).all([session.customer_id]);
       cioc.forEach((n) => { n.id = ID_CIOC + n.id; });
       nodes.push(...ws, ...ctrl, ...sw, ...cioc);
       // Include custom nodes from legacy nodes table (keep original id)
@@ -384,15 +419,32 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
         SELECT n.id, n.node_name, n.node_type, n.model, n.serial
         FROM nodes n
         INNER JOIN session_node_maintenance m ON m.node_id = n.id
-        WHERE m.session_id = ? AND m.is_custom_node = 1
+        WHERE m.session_id = ? AND m.is_custom_node = 1 AND COALESCE(m.deleted, 0) != 1
       `).all([sessionId]);
       const existingIds = new Set(nodes.map(n => String(n.id)));
       for (const cn of customNodes) {
-        if (!existingIds.has(String(cn.id))) nodes.push(cn);
+        if (!existingIds.has(String(cn.id))) {
+          nodes.push(cn);
+          existingIds.add(String(cn.id));
+        }
       }
+      // Maintenance rows for custom/non-registry nodes (name stored on maintenance row)
+      for (const m of maintenanceRows) {
+        if (existingIds.has(String(m.node_id))) continue;
+        if (!m.is_custom_node && !m.node_name) continue;
+        nodes.push({
+          id: m.node_id,
+          node_name: m.node_name || `Node ${m.node_id}`,
+          node_type: m.node_type || 'Unknown',
+          model: null,
+          serial: null,
+        });
+        existingIds.add(String(m.node_id));
+      }
+      const reportNodes = dedupeNodesForReport(nodes);
       const maintByNode = {};
       maintenanceRows.forEach(m => { maintByNode[m.node_id] = m; });
-      nodeMaintenanceData = nodes.map(n => {
+      nodeMaintenanceData = reportNodes.map(n => {
         const storedType = maintByNode[n.id]?.performance_type || null;
         const storedValue = maintByNode[n.id]?.performance_value ?? null;
         // Infer performance_type when missing or when value 1-5 was wrongly stored as free_time (perf index scale)
@@ -404,6 +456,7 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
         return {
           ...n,
           serial: n.serial ?? null,
+          is_custom_node: Boolean(maintByNode[n.id]?.is_custom_node),
           dv_checked: Boolean(maintByNode[n.id]?.dv_checked),
           os_checked: Boolean(maintByNode[n.id]?.os_checked),
           macafee_checked: Boolean(maintByNode[n.id]?.macafee_checked),
@@ -913,9 +966,10 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
         const diagCount = await db.prepare(
           'SELECT COUNT(*) as c FROM session_diagnostics WHERE session_id = ? AND (deleted IS NULL OR deleted = 0)'
         ).get([sessionId]);
+        const metricUuid = syncFieldsForInsert('customer_metric_history').uuid;
         await db.prepare(`
-          INSERT INTO customer_metric_history (customer_id, session_id, session_name, recorded_at, error_count, risk_score, risk_level, total_components, failed_components, cabinet_count, domain_scores, coverage_completed, coverage_total, synced)
-          VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+          INSERT INTO customer_metric_history (customer_id, session_id, session_name, recorded_at, error_count, risk_score, risk_level, total_components, failed_components, cabinet_count, domain_scores, coverage_completed, coverage_total, uuid, synced)
+          VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         `).run([
           session.customer_id,
           sessionId,
@@ -929,6 +983,7 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
           riskResult.domainScores ? JSON.stringify(riskResult.domainScores) : null,
           riskResult.coverageCompleted ?? 0,
           riskResult.coverageTotal ?? 0,
+          metricUuid,
         ]);
       } catch (histErr) {
         console.error('Error saving customer metric history:', histErr);
@@ -984,13 +1039,18 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
     console.log('📋 New Session Name:', session_name);
     console.log('📋 New Session ID:', newSessionId);
     
-    // Create new session
-    await db.prepare('INSERT INTO sessions (id, customer_id, user_id, session_name, status) VALUES (?, ?, ?, ?, ?)').run([
-      newSessionId, 
-      sourceSession.customer_id, 
-      req.session.userId, 
-      session_name, 
-      'active'
+    const newSessionUuid = uuidv4();
+    
+    // Create new session (uuid + synced=0 required for cloud push)
+    await db.prepare(
+      'INSERT INTO sessions (id, customer_id, user_id, session_name, status, uuid, synced) VALUES (?, ?, ?, ?, ?, ?, 0)'
+    ).run([
+      newSessionId,
+      sourceSession.customer_id,
+      req.session.userId,
+      session_name,
+      'active',
+      newSessionUuid,
     ]);
     
     console.log('✅ New session created');
@@ -1134,16 +1194,15 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
       // Create new cabinet - include cabinet_type, workstations, media converters, carrier/baseplates
       await db.prepare(`
         INSERT INTO cabinets (
-          id, pm_session_id, cabinet_name, cabinet_date, cabinet_type, status,
+          id, pm_session_id, cabinet_name, cabinet_type, status,
           power_supplies, distribution_blocks, diodes, media_converters, power_injected_baseplates,
           network_equipment,
-          inspection_data, controllers, workstations, location_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          inspection_data, controllers, workstations, location_id, uuid, synced, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `).run([
         newCabinetId,
         newSessionId,
         sourceCabinet.cabinet_name,
-        sourceCabinet.cabinet_date,
         sourceCabinet.cabinet_type || 'cabinet', // Keep cabinet type
         'active', // Reset status to active
         JSON.stringify(powerSupplies),
@@ -1155,7 +1214,8 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
         inspectionData, // Reset inspection data
         sourceCabinet.controllers, // Keep controller assignments
         sourceCabinet.workstations || '[]', // Keep workstation assignments
-        sourceCabinet.location_id ? (locationIdMap[sourceCabinet.location_id] || sourceCabinet.location_id) : null // Remap to new location ID
+        sourceCabinet.location_id ? (locationIdMap[sourceCabinet.location_id] || sourceCabinet.location_id) : null, // Remap to new location ID
+        newCabinetId,
       ]);
       
       console.log('✅ Cabinet created in database');
@@ -1272,19 +1332,19 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
     const newCabinetIds = newCabinets.map(c => c.id);
     let controllerAssignmentStats = { assigned: 0, total: 0 };
     const custId = newSession.customer_id;
-    if (custId) {
+    if (custId && newCabinetIds.length > 0) {
       try {
-        const ctrlTotal = await db.prepare('SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ?').get([custId]);
-        const ciocTotal = await db.prepare('SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ?').get([custId]);
-        controllerAssignmentStats.total = (ctrlTotal?.count ?? 0) + (ciocTotal?.count ?? 0);
-        if (newCabinetIds.length > 0) {
-          const placeholders = newCabinetIds.map(() => '?').join(',');
-          const ctrlAssigned = await db.prepare(`SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ? AND assigned_cabinet_id IN (${placeholders})`).get([custId, ...newCabinetIds]);
-          const ciocAssigned = await db.prepare(`SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ? AND assigned_cabinet_id IN (${placeholders})`).get([custId, ...newCabinetIds]);
-          controllerAssignmentStats.assigned = (ctrlAssigned?.count ?? 0) + (ciocAssigned?.count ?? 0);
-        }
+        const placeholders = newCabinetIds.map(() => '?').join(',');
+        const ctrlAssigned = await db.prepare(`SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ? AND assigned_cabinet_id IN (${placeholders})`).get([custId, ...newCabinetIds]);
+        const ciocAssigned = await db.prepare(`SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ? AND assigned_cabinet_id IN (${placeholders})`).get([custId, ...newCabinetIds]);
+        controllerAssignmentStats.assigned = (ctrlAssigned?.count ?? 0) + (ciocAssigned?.count ?? 0);
       } catch (e) { /* ignore */ }
     }
+    controllerAssignmentStats.total = await resolveControllerAssignmentTotal(
+      newSessionId,
+      custId,
+      controllerAssignmentStats.assigned
+    );
     
     console.log('✅ DUPLICATE SESSION COMPLETED');
     console.log('📋 New session data:', newSession);
@@ -1320,11 +1380,11 @@ router.post('/:sessionId/custom-node', requireAuth, async (req, res) => {
       nodeId = existingNode.id;
       console.log('Node already exists, using existing node ID:', nodeId);
     } else {
-      // Create the node in the nodes table
+      const { uuid: nodeUuid } = syncFieldsForInsert('nodes');
       const result = await db.prepare(`
-        INSERT INTO nodes (customer_id, node_name, node_type, model, serial, description)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run([customer_id, node_name, node_type, model || '', serial || '', 'Custom node added during PM']);
+        INSERT INTO nodes (customer_id, node_name, node_type, model, serial, description, uuid, synced)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+      `).run([customer_id, node_name, node_type, model || '', serial || '', 'Custom node added during PM', nodeUuid]);
       
       nodeId = result.lastInsertRowid;
       console.log('Created new node with ID:', nodeId);
@@ -1338,9 +1398,9 @@ router.post('/:sessionId/custom-node', requireAuth, async (req, res) => {
     if (!existingMaintenance) {
       // Create a maintenance entry for this node and session
       await db.prepare(`
-        INSERT INTO session_node_maintenance (session_id, node_id, is_custom_node)
-        VALUES (?, ?, 1)
-      `).run([sessionId, nodeId]);
+        INSERT INTO session_node_maintenance (session_id, node_id, is_custom_node, uuid, synced)
+        VALUES (?, ?, 1, ?, 0)
+      `).run([sessionId, nodeId, uuidv4()]);
       console.log('Created maintenance entry for node:', nodeId);
     } else {
       console.log('Maintenance entry already exists');
@@ -1359,42 +1419,92 @@ router.post('/:sessionId/custom-node', requireAuth, async (req, res) => {
   }
 });
 
+// Remove a node from this PM session (registry or custom). Soft-deletes maintenance row.
+router.delete('/:sessionId/session-node/:nodeId', requireAuth, async (req, res) => {
+  const { sessionId, nodeId } = req.params;
+  const nid = parseInt(nodeId, 10);
+  if (Number.isNaN(nid)) {
+    return res.status(400).json({ error: 'Invalid node id' });
+  }
+
+  try {
+    if (await isSessionCompleted(sessionId)) {
+      return res.status(403).json({ error: 'Cannot modify nodes — PM session is completed' });
+    }
+
+    const existing = await db.prepare(`
+      SELECT * FROM session_node_maintenance WHERE session_id = ? AND node_id = ?
+    `).get([sessionId, nid]);
+
+    if (existing) {
+      await db.prepare(`
+        UPDATE session_node_maintenance
+        SET deleted = 1, synced = 0, updated_at = CURRENT_TIMESTAMP
+        WHERE session_id = ? AND node_id = ?
+      `).run([sessionId, nid]);
+    } else {
+      await db.prepare(`
+        INSERT INTO session_node_maintenance (session_id, node_id, deleted, uuid, synced)
+        VALUES (?, ?, 1, ?, 0)
+      `).run([sessionId, nid, uuidv4()]);
+    }
+
+    if (existing?.is_custom_node) {
+      const others = await db.prepare(`
+        SELECT COUNT(*) as count FROM session_node_maintenance
+        WHERE node_id = ? AND session_id != ? AND COALESCE(deleted, 0) != 1
+      `).get([nid, sessionId]);
+      if ((others?.count ?? 0) === 0) {
+        await softDeleteSyncRow(db, 'nodes', nid);
+      }
+    }
+
+    res.json({ success: true, message: 'Node removed from session' });
+  } catch (error) {
+    console.error('Remove session node error:', error);
+    res.status(500).json({ error: 'Failed to remove node from session' });
+  }
+});
+
 // Delete custom node from session
 router.delete('/:sessionId/custom-node/:nodeId', requireAuth, async (req, res) => {
   const { sessionId, nodeId } = req.params;
-  
+  const nid = parseInt(nodeId, 10);
+  if (Number.isNaN(nid)) {
+    return res.status(400).json({ error: 'Invalid node id' });
+  }
+
   try {
-    // Check if this is a custom node
     const maintenance = await db.prepare(`
-      SELECT is_custom_node FROM session_node_maintenance 
-      WHERE session_id = ? AND node_id = ?
-    `).get([sessionId, nodeId]);
-    
+      SELECT is_custom_node FROM session_node_maintenance
+      WHERE session_id = ? AND node_id = ? AND COALESCE(deleted, 0) != 1
+    `).get([sessionId, nid]);
+
     if (!maintenance) {
       return res.status(404).json({ error: 'Node not found in this session' });
     }
-    
     if (!maintenance.is_custom_node) {
-      return res.status(400).json({ error: 'Can only delete custom nodes' });
+      return res.status(400).json({ error: 'Use session-node removal for registry equipment' });
     }
-    
-    // Delete the maintenance entry
+
+    if (await isSessionCompleted(sessionId)) {
+      return res.status(403).json({ error: 'Cannot modify nodes — PM session is completed' });
+    }
+
     await db.prepare(`
-      DELETE FROM session_node_maintenance WHERE session_id = ? AND node_id = ?
-    `).run([sessionId, nodeId]);
-    
-    // Check if this node is used in any other sessions
-    const otherSessions = await db.prepare(`
-      SELECT COUNT(*) as count FROM session_node_maintenance WHERE node_id = ?
-    `).get([nodeId]);
-    
-    // If not used elsewhere, delete the node itself
-    if (otherSessions.count === 0) {
-      await db.prepare(`
-        DELETE FROM nodes WHERE id = ?
-      `).run([nodeId]);
+      UPDATE session_node_maintenance
+      SET deleted = 1, synced = 0, updated_at = CURRENT_TIMESTAMP
+      WHERE session_id = ? AND node_id = ?
+    `).run([sessionId, nid]);
+
+    const others = await db.prepare(`
+      SELECT COUNT(*) as count FROM session_node_maintenance
+      WHERE node_id = ? AND session_id != ? AND COALESCE(deleted, 0) != 1
+    `).get([nid, sessionId]);
+    if ((others?.count ?? 0) === 0) {
+      await softDeleteSyncRow(db, 'nodes', nid);
     }
-    
+
     res.json({ success: true, message: 'Custom node removed' });
   } catch (error) {
     console.error('Error deleting custom node:', error);

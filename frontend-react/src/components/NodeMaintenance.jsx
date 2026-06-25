@@ -8,6 +8,84 @@ const CUSTOM_WORKSTATION_MODEL = {
 };
 const CUSTOM_WORKSTATION_MODEL_LIST = Object.values(CUSTOM_WORKSTATION_MODEL);
 
+const ID_WORKSTATION = 1000000;
+const ID_CONTROLLER = 2000000;
+
+const WORKSTATION_TYPES = [
+  'Local Operator',
+  'Local Application',
+  'Local Professional Plus',
+  'Local Pro',
+  'Local ProfessionalPlus',
+  'Professional Plus',
+  'Application Station',
+  'Local Safety',
+  'VRTX Chassis (Virtual)',
+  'Host (Virtual)',
+  'File Witness (Virtual)',
+  'Non-DV Node',
+  'Workstation',
+];
+
+function normalizeSessionNodeTypes(nodes) {
+  return nodes.map((node) => {
+    const id = Number(node.id);
+    if (!Number.isFinite(id) || id < ID_WORKSTATION || id >= ID_CONTROLLER) {
+      if (node.node_category === 'workstation' && !node.node_type) {
+        const model = String(node.model || '').toLowerCase();
+        return {
+          ...node,
+          node_type: model.includes('non deltav') || model.includes('non-deltav') || model.includes('non dv')
+            ? 'Non-DV Node'
+            : 'Workstation',
+        };
+      }
+      return node;
+    }
+
+    const type = String(node.node_type || '').trim();
+    const model = String(node.model || '').toLowerCase();
+    if (!type) {
+      return {
+        ...node,
+        node_type: model.includes('non deltav') || model.includes('non-deltav') || model.includes('non dv')
+          ? 'Non-DV Node'
+          : 'Workstation',
+      };
+    }
+    if (
+      type.toLowerCase().includes('non-dv') ||
+      model.includes('non deltav') ||
+      model.includes('non-deltav')
+    ) {
+      return { ...node, node_type: 'Non-DV Node' };
+    }
+    return node;
+  });
+}
+
+function isControllerNode(n) {
+  return (
+    ['Controller', 'CIOC', 'CSLS', 'DeltaV EIOC', 'SIS'].includes(n.node_type) ||
+    (n.node_name || '').toLowerCase().includes('csls') ||
+    (n.node_name || '').toLowerCase().includes('charms logic solver') ||
+    (n.node_name || '').toLowerCase().includes('smart logic solver') ||
+    (n.model || '').toLowerCase().includes('csls') ||
+    (n.model || '').toLowerCase().includes('logic solver')
+  );
+}
+
+function isWorkstationNode(n) {
+  if (isControllerNode(n)) return false;
+  if (n.node_type === 'Smart Network Devices') return false;
+  if (WORKSTATION_TYPES.includes(n.node_type)) return true;
+  if (n.node_category === 'workstation' || n.node_category === 'legacy') return true;
+  const id = Number(n.id);
+  if (Number.isFinite(id) && id >= ID_WORKSTATION && id < ID_CONTROLLER) return true;
+  const model = String(n.model || '').toLowerCase();
+  return model.includes('non deltav') || model.includes('non-deltav') || model.includes('non dv') || model.includes('workstation');
+}
+
 export default function NodeMaintenance({ sessionId, customerId, isCompleted }) {
   const [nodes, setNodes] = useState([]);
   const [maintenanceData, setMaintenanceData] = useState({});
@@ -27,18 +105,21 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
 
   const loadData = async () => {
     try {
+      let maintenanceMap = {};
       // Load maintenance data first (we need it to show rows for old PMs with no snapshot)
       const maintenanceResponse = await fetch(`/api/sessions/${sessionId}/node-maintenance`);
       if (maintenanceResponse.ok) {
         const data = await maintenanceResponse.json();
         if (typeof data === 'object' && !Array.isArray(data)) {
-          setMaintenanceData(data);
+          maintenanceMap = Object.fromEntries(
+            Object.entries(data).map(([key, value]) => [String(key), value])
+          );
+          setMaintenanceData(maintenanceMap);
         } else if (Array.isArray(data)) {
-          const mapped = {};
           data.forEach((item) => {
-            mapped[item.node_id] = item;
+            maintenanceMap[String(item.node_id)] = item;
           });
-          setMaintenanceData(mapped);
+          setMaintenanceData(maintenanceMap);
         } else {
           setMaintenanceData({});
         }
@@ -51,15 +132,22 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
         const nodesData = await nodesResponse.json();
         nodesArray = Array.isArray(nodesData) ? nodesData : [];
       }
-      // For completed sessions with empty snapshot (e.g. old PMs), use current customer nodes so line-by-line maintenance still shows
-      if (isCompleted && nodesArray.length === 0) {
-        const fallbackResponse = await fetch(`/api/customers/${customerId}/nodes`);
-        if (fallbackResponse.ok) {
-          const fallbackData = await fallbackResponse.json();
-          nodesArray = Array.isArray(fallbackData) ? fallbackData : [];
+      let filtered = nodesArray.filter((n) => !n.node_name?.endsWith('-partner'));
+      filtered = normalizeSessionNodeTypes(filtered);
+      filtered = filtered.map((n) => {
+        const m = maintenanceMap[String(n.id)] ?? maintenanceMap[n.id];
+        if (
+          m?.node_name &&
+          (!n.node_name || String(n.node_name).startsWith('Node '))
+        ) {
+          return {
+            ...n,
+            node_name: m.node_name,
+            node_type: m.node_type || n.node_type,
+          };
         }
-      }
-      const filtered = nodesArray.filter((n) => !n.node_name?.endsWith('-partner'));
+        return n;
+      });
       setNodes(filtered);
     } catch (error) {
       console.error('Error loading:', error);
@@ -106,6 +194,23 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
   };
 
   const saveTimeoutRef = useRef(null);
+
+  /** Attach display names so synced tablets can show controllers without full registry. */
+  const enrichMaintenancePayload = (dataToSave) => {
+    const nodeById = new Map(nodes.map((n) => [String(n.id), n]));
+    const out = {};
+    for (const [key, val] of Object.entries(dataToSave || {})) {
+      const node = nodeById.get(String(key));
+      out[key] = {
+        ...val,
+        ...(node?.node_name
+          ? { node_name: node.node_name, node_type: node.node_type || 'Controller' }
+          : {}),
+      };
+    }
+    return out;
+  };
+
   const performSave = async (dataToSave) => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(async () => {
@@ -116,7 +221,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify(dataToSave),
+          body: JSON.stringify(enrichMaintenancePayload(dataToSave)),
         });
         if (response.ok) {
           // saved
@@ -147,6 +252,9 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
     
     // Update all filtered controllers
     for (const controller of filteredControllers) {
+      if (field === 'redundancy_checked' && getControllerType(controller).supportsRedundancy === false) {
+        continue;
+      }
       if (!updatedData[controller.id]) {
         updatedData[controller.id] = {};
       }
@@ -168,7 +276,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(updatedData), // Send ALL maintenance data
+        body: JSON.stringify(enrichMaintenancePayload(updatedData)),
       });
       
       if (response.ok) {
@@ -215,7 +323,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(updatedData), // Send ALL maintenance data
+        body: JSON.stringify(enrichMaintenancePayload(updatedData)),
       });
       
       if (response.ok) {
@@ -239,11 +347,21 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
     const nodeType = (node.node_type || '').toLowerCase();
     const nodeName = (node.node_name || '').toLowerCase();
 
+    const isRio = model.includes('ve4021') ||
+      model.includes('zone 2 remote') ||
+      model.includes('remote i/o') ||
+      model.includes('remote io') ||
+      nodeType.includes('zone 2 remote') ||
+      nodeType.includes('remote i/o');
+    if (isRio) {
+      return { displayType: node.model || 'RIU', perfType: 'free_time', min: 1, max: 100, supportsRedundancy: false };
+    }
+
     // Free Time first pass: MD Plus and plain MD controllers → Free Time
     // (MD is DeltaV's primary controller but runs at 100% free-time scale)
     if (nodeType.startsWith('md') || model.startsWith('md') ||
         nodeType.includes('md plus') || model.includes('md plus')) {
-      return { displayType: node.model || node.node_type, perfType: 'free_time', min: 1, max: 100 };
+      return { displayType: node.model || node.node_type, perfType: 'free_time', min: 1, max: 100, supportsRedundancy: true };
     }
 
     // Perf Index controllers: S-Series, CSLS, SIS, PK, EIOC, MQ, CIOC 2
@@ -260,7 +378,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
         model.includes('csls') || model.includes('logic solver') ||
         model.includes('sis') || model.includes('pk controller') ||
         model.includes('cioc 2') || model.includes('cioc2')) {
-      return { displayType: node.model || node.node_type, perfType: 'perf_index', min: 1, max: 5 };
+      return { displayType: node.model || node.node_type, perfType: 'perf_index', min: 1, max: 5, supportsRedundancy: true };
     }
 
     // Free Time controllers: VE*, MX*, SD Plus, generic CIOC (Charm I/O Card)
@@ -268,16 +386,51 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
         nodeType.includes('sd plus') || nodeType.includes('cioc') ||
         model.includes('mx') || model.includes('ve') ||
         model.includes('sd plus') || model.includes('cioc')) {
-      return { displayType: node.model || node.node_type, perfType: 'free_time', min: 1, max: 100 };
+      return { displayType: node.model || node.node_type, perfType: 'free_time', min: 1, max: 100, supportsRedundancy: true };
     }
 
     // Custom/unknown nodes default to free_time
-    return { displayType: node.model || node.node_type, perfType: 'free_time', min: 1, max: 100 };
+    return { displayType: node.model || node.node_type, perfType: 'free_time', min: 1, max: 100, supportsRedundancy: true };
   };
 
   const getPerfConfig = (perfType) => {
     if (perfType === 'perf_index') return { label: 'Perf Index', min: 1, max: 5 };
     return { label: 'Free Time', min: 1, max: 100 };
+  };
+
+  const getMaintenanceForNode = (nodeId) =>
+    maintenanceData[nodeId] ?? maintenanceData[String(nodeId)] ?? {};
+
+  const removeSessionNode = async (nodeId) => {
+    if (!confirm('Remove this equipment from the PM session?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/sessions/${sessionId}/session-node/${nodeId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        setNodes((prev) => prev.filter((n) => String(n.id) !== String(nodeId)));
+        setMaintenanceData((prev) => {
+          const updated = { ...prev };
+          delete updated[nodeId];
+          delete updated[String(nodeId)];
+          return updated;
+        });
+
+        soundSystem.playSuccess();
+        showMessage('Equipment removed from session', 'success');
+      } else {
+        const errorData = await response.json();
+        showMessage(errorData.error || 'Failed to remove equipment', 'error');
+      }
+    } catch (error) {
+      console.error('Error removing session node:', error);
+      showMessage('Error removing equipment', 'error');
+    }
   };
 
   const addCustomNode = async (nodeType) => {
@@ -286,7 +439,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
       return;
     }
 
-    if (workstationTypes.includes(nodeType)) {
+    if (WORKSTATION_TYPES.includes(nodeType)) {
       if (!CUSTOM_WORKSTATION_MODEL_LIST.includes(customNode.model)) {
         showMessage('Choose either Deltav Workstation or Non deltav workstation', 'error');
         return;
@@ -336,65 +489,9 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
     }
   };
 
-  const deleteCustomNode = async (nodeId) => {
-    if (!confirm('Are you sure you want to remove this custom node?')) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/sessions/${sessionId}/custom-node/${nodeId}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        // Remove from nodes list
-        setNodes(nodes.filter(n => n.id !== nodeId));
-        
-        // Remove from maintenance data
-        const updatedMaintenance = { ...maintenanceData };
-        delete updatedMaintenance[nodeId];
-        setMaintenanceData(updatedMaintenance);
-        
-        soundSystem.playSuccess();
-        showMessage('Custom node removed successfully!', 'success');
-      } else {
-        const errorData = await response.json();
-        showMessage(errorData.error || 'Failed to delete custom node', 'error');
-      }
-    } catch (error) {
-      console.error('Error deleting custom node:', error);
-      showMessage('Error deleting custom node', 'error');
-    }
-  };
-
   // Separate equipment types
-  const controllers = nodes.filter((n) =>
-    ['Controller', 'CIOC', 'CSLS', 'DeltaV EIOC', 'SIS'].includes(n.node_type) ||
-    (n.node_name || '').toLowerCase().includes('csls') ||
-    (n.node_name || '').toLowerCase().includes('charms logic solver') ||
-    (n.node_name || '').toLowerCase().includes('smart logic solver') ||
-    (n.model || '').toLowerCase().includes('csls') ||
-    (n.model || '').toLowerCase().includes('logic solver')
-  );
-  
-  const workstationTypes = [
-    'Local Operator',
-    'Local Application',
-    'Local Professional Plus',
-    'Local Pro',
-    'Local ProfessionalPlus',
-    'Professional Plus',
-    'Application Station',
-    'Local Safety',
-    'VRTX Chassis (Virtual)',
-    'Host (Virtual)',
-    'File Witness (Virtual)',
-    'Non-DV Node',
-  ];
-
-  const computers = nodes.filter((n) => workstationTypes.includes(n.node_type));
-  
+  const controllers = nodes.filter(isControllerNode);
+  const computers = nodes.filter(isWorkstationNode);
   const switches = nodes.filter((n) => n.node_type === 'Smart Network Devices');
 
   const filteredControllers = controllers.filter((c) =>
@@ -523,7 +620,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                   </thead>
                   <tbody className="divide-y divide-gray-700">
                     {filteredControllers.map((controller) => {
-                      const maint = maintenanceData[controller.id] || {};
+                      const maint = getMaintenanceForNode(controller.id);
                       const typeInfo = getControllerType(controller);
                       const isDone = maint.completed;
                       
@@ -561,7 +658,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                                     type="number"
                                     min={cfg.min}
                                     max={cfg.max}
-                                    value={maint.performance_value ?? ''}
+                                    value={maint.performance_value ?? maint.free_time ?? ''}
                                     onChange={(e) => {
                                       const val = parseInt(e.target.value);
                                       const updated = { ...maintenanceData };
@@ -601,19 +698,23 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                             />
                           </td>
                           <td className="px-3 py-2 text-center">
-                            <input
-                              type="checkbox"
-                              checked={maint.redundancy_checked || false}
-                              onChange={(e) => {
-                                const updated = { ...maintenanceData };
-                                if (!updated[controller.id]) updated[controller.id] = {};
-                                updated[controller.id].redundancy_checked = e.target.checked;
-                                setMaintenanceData(updated);
-                                autoSave(controller.id, 'redundancy_checked', e.target.checked);
-                              }}
-                              disabled={isCompleted}
-                              className="w-4 h-4"
-                            />
+                            {typeInfo.supportsRedundancy === false ? (
+                              <span className="text-xs text-gray-500" title="RIO — not redundant-capable">N/A</span>
+                            ) : (
+                              <input
+                                type="checkbox"
+                                checked={maint.redundancy_checked || false}
+                                onChange={(e) => {
+                                  const updated = { ...maintenanceData };
+                                  if (!updated[controller.id]) updated[controller.id] = {};
+                                  updated[controller.id].redundancy_checked = e.target.checked;
+                                  setMaintenanceData(updated);
+                                  autoSave(controller.id, 'redundancy_checked', e.target.checked);
+                                }}
+                                disabled={isCompleted}
+                                className="w-4 h-4"
+                              />
+                            )}
                           </td>
                           <td className="px-3 py-2 text-center">
                             <input
@@ -686,15 +787,13 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                           </td>
                           {!isCompleted && (
                             <td className="px-3 py-2 text-center">
-                              {maint.is_custom_node && (
-                                <button
-                                  onClick={() => deleteCustomNode(controller.id)}
-                                  className="text-red-400 hover:text-red-300 text-xs"
-                                  title="Delete custom node"
-                                >
-                                  🗑️
-                                </button>
-                              )}
+                              <button
+                                onClick={() => removeSessionNode(controller.id)}
+                                className="text-red-400 hover:text-red-300 text-xs"
+                                title="Remove from session"
+                              >
+                                🗑️
+                              </button>
                             </td>
                           )}
                         </tr>
@@ -823,7 +922,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                   </thead>
                   <tbody className="divide-y divide-gray-700">
                     {filteredComputers.map((computer) => {
-                      const maint = maintenanceData[computer.id] || {};
+                      const maint = getMaintenanceForNode(computer.id);
                       const isDone = maint.completed;
                       
                       return (
@@ -925,15 +1024,13 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                           </td>
                           {!isCompleted && (
                             <td className="px-3 py-2 text-center">
-                              {maint.is_custom_node && (
-                                <button
-                                  onClick={() => deleteCustomNode(computer.id)}
-                                  className="text-red-400 hover:text-red-300 text-xs"
-                                  title="Delete custom node"
-                                >
-                                  🗑️
-                                </button>
-                              )}
+                              <button
+                                onClick={() => removeSessionNode(computer.id)}
+                                className="text-red-400 hover:text-red-300 text-xs"
+                                title="Remove from session"
+                              >
+                                🗑️
+                              </button>
                             </td>
                           )}
                         </tr>
@@ -1099,7 +1196,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                   </thead>
                   <tbody className="divide-y divide-gray-700">
                     {filteredSwitches.map((switchNode) => {
-                      const maint = maintenanceData[switchNode.id] || {};
+                      const maint = getMaintenanceForNode(switchNode.id);
                       const isDone = maint.completed;
                       
                       return (
@@ -1158,15 +1255,13 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                           </td>
                           {!isCompleted && (
                             <td className="px-3 py-2 text-center">
-                              {maint.is_custom_node && (
-                                <button
-                                  onClick={() => deleteCustomNode(switchNode.id)}
-                                  className="text-red-400 hover:text-red-300 text-xs"
-                                  title="Delete custom node"
-                                >
-                                  🗑️
-                                </button>
-                              )}
+                              <button
+                                onClick={() => removeSessionNode(switchNode.id)}
+                                className="text-red-400 hover:text-red-300 text-xs"
+                                title="Remove from session"
+                              >
+                                🗑️
+                              </button>
                             </td>
                           )}
                         </tr>

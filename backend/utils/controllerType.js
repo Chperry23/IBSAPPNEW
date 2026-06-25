@@ -1,10 +1,46 @@
 // Helper function to get enhanced controller type with model mappings
+function isRioController(node) {
+  if (!node) return false;
+  const model = (node.model || '').toLowerCase();
+  const nodeType = (node.node_type || '').toLowerCase();
+  return model.includes('ve4021') ||
+    model.includes('zone 2 remote') ||
+    model.includes('remote i/o') ||
+    model.includes('remote io') ||
+    nodeType.includes('zone 2 remote') ||
+    nodeType.includes('remote i/o') ||
+    nodeType.includes('remote io');
+}
+
+/** RIO / RIU hardware cannot be made redundant — skip redundancy PM checks and scoring. */
+function controllerSupportsRedundancyCheck(node) {
+  return !isRioController(node);
+}
+
+/** True only when registry shows a real redundant pair (not XML placeholders like "Not available"). */
+function isRedundantController(node) {
+  if (!node) return false;
+  const partner = String(node.partner_serial_number || '').trim().toLowerCase();
+  const placeholderPartners = new Set([
+    '', 'not available', 'n/a', 'na', 'none', 'unknown', 'false', 'undefined',
+  ]);
+  const hasPartner = partner && !placeholderPartners.has(partner);
+
+  const r = String(node.redundant || '').trim().toLowerCase();
+  const isRedundantFlag = r === 'yes' || r === 'true' || r === '1';
+
+  return isRedundantFlag || hasPartner;
+}
+
 function getEnhancedControllerType(controller) {
   const model = (controller.model || '').toLowerCase();
   const nodeType = (controller.node_type || '').toLowerCase();
   const nodeName = (controller.node_name || '').toLowerCase();
   
   // Specific model mappings
+  if (isRioController(controller)) {
+    return 'RIU';
+  }
   if (model.includes('ve4021')) {
     return 'RIU';
   }
@@ -47,6 +83,7 @@ function getControllerType(node) {
     const nodeType = (node.node_type || '').toLowerCase();
     const nodeName = (node.node_name || '').toLowerCase();
     
+    if (isRioController(node)) return 'RIU';
     if (model.includes('ve4021')) return 'RIU';
     if (model.includes('se4101')) return 'EIOC';
     
@@ -106,4 +143,11 @@ function getDefaultPerformanceType(node) {
   return null;
 }
 
-module.exports = { getEnhancedControllerType, getControllerType, getDefaultPerformanceType };
+module.exports = {
+  getEnhancedControllerType,
+  getControllerType,
+  getDefaultPerformanceType,
+  isRioController,
+  controllerSupportsRedundancyCheck,
+  isRedundantController,
+};

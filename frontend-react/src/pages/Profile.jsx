@@ -16,31 +16,11 @@ export default function Profile() {
       <div className="mx-auto max-w-3xl space-y-6">
         <section className="card">
           <div className="card-header">
-            <h2 className="text-xl font-semibold text-gray-100">Account</h2>
-          </div>
-          <div className="card-body space-y-4">
-            <div>
-              <p className="form-label mb-1">Username</p>
-              <p className="rounded-lg border border-[#3d3d5c] bg-[#161624] px-4 py-3 text-gray-100">
-                {user?.username ?? '—'}
-              </p>
-            </div>
-            <p className="text-sm text-gray-500">
-              Password changes and additional profile fields can be added here when your organization enables them.
-            </p>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => logout()}>
-              Sign out
-            </button>
-          </div>
-        </section>
-
-        <section className="card">
-          <div className="card-header">
             <h2 className="text-xl font-semibold text-gray-100">Navigation</h2>
           </div>
           <div className="card-body space-y-4">
             <p className="text-sm text-gray-400">
-              Choose how the main menu is shown. Your choice is saved on this device.
+              Choose how the main menu is shown. Side navigation is the default and is saved on this device.
             </p>
             <p className="form-label mb-2 text-xs uppercase tracking-wide text-gray-500">Layout</p>
             <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
@@ -55,7 +35,7 @@ export default function Profile() {
               >
                 Side navigation
                 <span className="mt-1 block text-xs font-normal text-gray-500">
-                  Vertical menu on the left (recommended)
+                  Vertical menu on the left (default)
                 </span>
               </button>
               <button
@@ -73,6 +53,26 @@ export default function Profile() {
                 </span>
               </button>
             </div>
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="card-header">
+            <h2 className="text-xl font-semibold text-gray-100">Account</h2>
+          </div>
+          <div className="card-body space-y-4">
+            <div>
+              <p className="form-label mb-1">Username</p>
+              <p className="rounded-lg border border-[#3d3d5c] bg-[#161624] px-4 py-3 text-gray-100">
+                {user?.username ?? '—'}
+              </p>
+            </div>
+            <p className="text-sm text-gray-500">
+              Password changes and additional profile fields can be added here when your organization enables them.
+            </p>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => logout()}>
+              Sign out
+            </button>
           </div>
         </section>
       </div>

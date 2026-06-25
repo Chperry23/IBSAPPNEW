@@ -1,0 +1,21 @@
+---
+description: Session start — read vault context before working
+alwaysApply: true
+---
+
+# Session start
+
+Before substantive work in this repo, read:
+
+1. `notes/agents/README.md` — agent folder rules and current status
+2. `notes/agents/cursor-plans/INDEX.md` — active plans and current truth
+
+If `notes/` is empty, seed from `docs/vault-starter/agents/` (see `docs/obsidian-vault.md`).
+
+## Current truth (update INDEX when this changes)
+
+- App version: see `package.json` and `build-info.json`
+- Local DB: SQLite WAL at `data/cabinet_pm_tablet.db`
+- Sync: HTTP sync-server → MongoDB; legacy direct-Mongo fallback if `SYNC_API_URL` unset
+- Tablet build: `npm run build` → `dist/CabinetPM.exe`
+- Git: `main` = releases; `develop` = active work

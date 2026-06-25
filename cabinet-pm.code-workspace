@@ -1,0 +1,18 @@
+{
+  "folders": [
+    {
+      "name": "Cabinet PM",
+      "path": "."
+    },
+    {
+      "name": "Notes (Obsidian)",
+      "path": "notes"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/dist": true
+    }
+  }
+}

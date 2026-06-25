@@ -8,6 +8,7 @@ const { findChrome, getPuppeteer } = require('../utils/chrome');
 const { generatePDFHtml } = require('../services/pdf/cabinetReport');
 
 const logger = new Logger('Cabinets');
+const { syncFieldsForInsert, softDeleteSyncRow } = require('../utils/sync-write-helper');
 
 // Helper function to check if session is completed
 async function isSessionCompleted(sessionId) {
@@ -23,7 +24,6 @@ router.post('/', requireAuth, async (req, res) => {
   const { 
     pm_session_id, 
     cabinet_name, 
-    cabinet_date,
     cabinet_type = 'cabinet',
     power_supplies = [],
     distribution_blocks = [],
@@ -42,11 +42,6 @@ router.post('/', requireAuth, async (req, res) => {
   if (!cabinet_name || !cabinet_name.trim()) {
     logger.error('Missing cabinet_name');
     return res.status(400).json({ success: false, error: 'Cabinet location is required' });
-  }
-  
-  if (!cabinet_date) {
-    logger.error('Missing cabinet_date');
-    return res.status(400).json({ success: false, error: 'Cabinet date is required' });
   }
   
   const cabinetId = uuidv4();
@@ -88,24 +83,23 @@ router.post('/', requireAuth, async (req, res) => {
     
     logger.debug('Inserting cabinet into database', { 
       cabinet_name, 
-      cabinet_date,
       location_id: location_id || 'none'
     });
     
     const insertSQL = location_id 
-      ? `INSERT INTO cabinets (id, pm_session_id, cabinet_name, cabinet_date, cabinet_type, status, 
-                           power_supplies, distribution_blocks, diodes, network_equipment, inspection_data, location_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
-      : `INSERT INTO cabinets (id, pm_session_id, cabinet_name, cabinet_date, cabinet_type, status, 
-                           power_supplies, distribution_blocks, diodes, network_equipment, inspection_data, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`;
+      ? `INSERT INTO cabinets (id, pm_session_id, cabinet_name, cabinet_type, status, 
+                           power_supplies, distribution_blocks, diodes, network_equipment, inspection_data, location_id, uuid, synced, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+      : `INSERT INTO cabinets (id, pm_session_id, cabinet_name, cabinet_type, status, 
+                           power_supplies, distribution_blocks, diodes, network_equipment, inspection_data, uuid, synced, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`;
     
+    const cabinetUuid = syncFieldsForInsert('cabinets', { id: cabinetId }).uuid;
     const params = location_id 
       ? [
           cabinetId,
           pm_session_id,
           cabinet_name.trim(),
-          cabinet_date,
           cabinet_type || 'cabinet',
           'active',
           JSON.stringify(power_supplies || []),
@@ -113,20 +107,21 @@ router.post('/', requireAuth, async (req, res) => {
           JSON.stringify(diodes || []),
           JSON.stringify(network_equipment || []),
           JSON.stringify(defaultInspection),
-          location_id
+          location_id,
+          cabinetUuid,
         ]
       : [
           cabinetId,
           pm_session_id,
           cabinet_name.trim(),
-          cabinet_date,
           cabinet_type || 'cabinet',
           'active',
           JSON.stringify(power_supplies || []),
           JSON.stringify(distribution_blocks || []),
           JSON.stringify(diodes || []),
           JSON.stringify(network_equipment || []),
-          JSON.stringify(defaultInspection)
+          JSON.stringify(defaultInspection),
+          cabinetUuid,
         ];
     
     await db.prepare(insertSQL).run(params);
@@ -137,7 +132,6 @@ router.post('/', requireAuth, async (req, res) => {
       id: cabinetId,
       pm_session_id,
       cabinet_name: cabinet_name.trim(),
-      cabinet_date,
       cabinet_type: cabinet_type || 'cabinet',
       status: 'active',
       created_at: new Date().toISOString(),
@@ -283,7 +277,7 @@ router.post('/:cabinetId/pdf', requireAuth, async (req, res) => {
       rack_has_monitor: Boolean(row.rack_has_monitor),
     };
     const sessionInfo = await db.prepare(`
-      SELECT s.id, s.session_name, s.status, c.name as customer_name
+      SELECT s.id, s.session_name, s.status, s.created_at, s.completed_at, c.name as customer_name
       FROM sessions s
       LEFT JOIN customers c ON s.customer_id = c.id
       WHERE s.id = ?
@@ -341,7 +335,7 @@ router.put('/:cabinetId', requireAuth, async (req, res) => {
     
     const result = await db.prepare(`
       UPDATE cabinets SET 
-        cabinet_name = ?, cabinet_date = ?, status = ?,
+        cabinet_name = ?, status = ?,
         power_supplies = ?, distribution_blocks = ?, diodes = ?,
         media_converters = ?, power_injected_baseplates = ?,
         network_equipment = ?, controllers = ?, workstations = ?, inspection_data = ?,
@@ -351,7 +345,6 @@ router.put('/:cabinetId', requireAuth, async (req, res) => {
       WHERE id = ?
     `).run([
       updateData.cabinet_name,
-      updateData.cabinet_date,
       updateData.status || 'active',
       JSON.stringify(updateData.power_supplies || []),
       JSON.stringify(updateData.distribution_blocks || []),
@@ -434,7 +427,7 @@ router.post('/:cabinetId/duplicate', requireAuth, async (req, res) => {
       } catch (_) { return '[]'; }
     };
 
-    const blankPs = (i) => ({ id: Date.now() + i, voltage_type: '24VDC', line_neutral: '', line_ground: '', neutral_ground: '', dc_reading: '', status: '', comments: '' });
+    const blankPs = (i) => ({ id: Date.now() + i, voltage_type: '24VDC', line_neutral: '', line_ground: '', neutral_ground: '', dc_reading: '', status: '', psu_dead: false, comments: '' });
     const blankDb = (i) => ({ id: Date.now() + i, type: '', condition: '', comments: '', voltage_type: '24VDC', dc_reading: '' });
     const blankDiode = (i) => ({ id: Date.now() + i, diode_name: `Diode ${i + 1}`, voltage_type: '24VDC', dc_reading: '' });
     const blankMc = (i) => ({ id: Date.now() + i, mc_name: `MC ${i + 1}`, voltage_type: '24VDC', dc_reading: '' });
@@ -497,13 +490,13 @@ router.post('/:cabinetId/duplicate', requireAuth, async (req, res) => {
     const crypto = require('crypto');
     const insertSql = `
       INSERT INTO cabinets (
-        id, pm_session_id, cabinet_name, cabinet_date, cabinet_type,
+        id, pm_session_id, cabinet_name, cabinet_type,
         power_supplies, distribution_blocks, diodes, media_converters,
         power_injected_baseplates, network_equipment,
         controllers, workstations,
         inspection_data, comments,
         rack_has_ups, rack_has_hmi, rack_has_kvm, rack_has_monitor,
-        status, synced, updated_at
+        status, uuid, synced, updated_at
       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
     `;
 
@@ -515,7 +508,6 @@ router.post('/:cabinetId/duplicate', requireAuth, async (req, res) => {
         newId,
         source.pm_session_id,
         insertName,
-        source.cabinet_date,
         source.cabinet_type || 'cabinet',
         blankItems(source.power_supplies, blankPs),
         distributionPayload,
@@ -532,6 +524,7 @@ router.post('/:cabinetId/duplicate', requireAuth, async (req, res) => {
         source.rack_has_kvm || 0,
         source.rack_has_monitor || 0,
         'active',
+        newId,
         0,
       ]);
       const row = await db.prepare('SELECT * FROM cabinets WHERE id = ?').get(newId);
@@ -665,10 +658,10 @@ router.delete('/:cabinetId', requireAuth, async (req, res) => {
       await db.prepare('UPDATE nodes SET assigned_cabinet_id = NULL, assigned_at = NULL WHERE assigned_cabinet_id = ?').run([cabinetId]);
     } catch (e) { /* ignore */ }
     
-    // Delete the cabinet
-    const result = await db.prepare('DELETE FROM cabinets WHERE id = ?').run([cabinetId]);
+    // Soft-delete cabinet (tombstone for cloud sync)
+    const deleted = await softDeleteSyncRow(db, 'cabinets', cabinetId);
     
-    if (result.changes === 0) {
+    if (!deleted) {
       return res.status(404).json({ error: 'Cabinet not found' });
     }
     
@@ -738,17 +731,18 @@ router.post('/bulk-import', requireAuth, async (req, res) => {
       `).get([session_id, cabinet.cabinet_name.trim()]);
       
       if (!existing) {
+        const newCabinetId = uuidv4();
         await db.prepare(`
           INSERT INTO cabinets (
-            id, pm_session_id, cabinet_name, cabinet_date, status,
+            id, pm_session_id, cabinet_name, status,
             power_supplies, distribution_blocks, diodes, network_equipment, 
-            controllers, inspection_data, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, 'active', '[]', '[]', '[]', '[]', '[]', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            controllers, inspection_data, uuid, synced, created_at, updated_at
+          ) VALUES (?, ?, ?, 'active', '[]', '[]', '[]', '[]', '[]', '{}', ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `).run([
-          uuidv4(),
+          newCabinetId,
           session_id,
           cabinet.cabinet_name.trim(),
-          cabinet.cabinet_date || new Date().toISOString().split('T')[0]
+          newCabinetId,
         ]);
         imported++;
       }

@@ -43,7 +43,6 @@ function buildDemoCabinets() {
   const goodCabinet = {
     id: 'demo-cab-001',
     cabinet_name: 'MCC-A — Control Room Cabinet (Example: Good Cabinet)',
-    cabinet_date: new Date().toISOString(),
     cabinet_type: 'cabinet',
     rack_has_ups: false,
     rack_has_hmi: true,
@@ -92,7 +91,6 @@ function buildDemoCabinets() {
   const badCabinet = {
     id: 'demo-cab-002',
     cabinet_name: 'MCC-B — Panel Room Cabinet (Example: Bad Cabinet — Multiple Critical Failures)',
-    cabinet_date: new Date().toISOString(),
     cabinet_type: 'cabinet',
     rack_has_ups: true,
     rack_has_hmi: false,
@@ -155,7 +153,6 @@ function buildDemoCabinets() {
   const mixedCabinet = {
     id: 'demo-cab-003',
     cabinet_name: 'MCC-C — Field Panel (Example: Mixed — Some Pass, Some Fail)',
-    cabinet_date: new Date().toISOString(),
     cabinet_type: 'cabinet',
     rack_has_ups: false,
     rack_has_hmi: false,
@@ -614,7 +611,6 @@ function buildModerateCabinets() {
   const cab1 = {
     id: 'demo-mod-001',
     cabinet_name: 'MCC-A — Control Room (Moderate Issues)',
-    cabinet_date: new Date().toISOString(),
     cabinet_type: 'cabinet',
     rack_has_ups: false, rack_has_hmi: true, rack_has_kvm: false, rack_has_monitor: false,
     power_supplies: [
@@ -660,7 +656,6 @@ function buildModerateCabinets() {
   const cab2 = {
     id: 'demo-mod-002',
     cabinet_name: 'MCC-B — Field Panel (Moderate Issues)',
-    cabinet_date: new Date().toISOString(),
     cabinet_type: 'cabinet',
     rack_has_ups: false, rack_has_hmi: false, rack_has_kvm: false, rack_has_monitor: false,
     power_supplies: [
@@ -791,7 +786,6 @@ function buildCleanCabinets() {
   const cab1 = {
     id: 'demo-clean-001',
     cabinet_name: 'MCC-A — Control Room (No Issues)',
-    cabinet_date: new Date().toISOString(),
     cabinet_type: 'cabinet',
     rack_has_ups: true, rack_has_hmi: true, rack_has_kvm: false, rack_has_monitor: true,
     power_supplies: [
@@ -839,7 +833,6 @@ function buildCleanCabinets() {
   const cab2 = {
     id: 'demo-clean-002',
     cabinet_name: 'MCC-B — Field Panel (No Issues)',
-    cabinet_date: new Date().toISOString(),
     cabinet_type: 'cabinet',
     rack_has_ups: false, rack_has_hmi: false, rack_has_kvm: false, rack_has_monitor: false,
     power_supplies: [

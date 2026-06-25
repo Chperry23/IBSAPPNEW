@@ -1,0 +1,20 @@
+---
+description: Git workflow, SemVer, and changelog conventions
+alwaysApply: true
+---
+
+# Git and versioning
+
+- Work on **`develop`**; branch `feature/*`, `fix/*`, or `chore/*` from there
+- **`main`** receives tagged releases only (`vX.Y.Z` annotated tags)
+- SemVer in `pyproject.toml`; `CHANGELOG.md` follows Keep a Changelog (`[Unreleased]` on `develop`)
+- Conventional Commits: `feat:`, `fix:`, `chore:`, etc.
+- Roboflow `--version N` is an ML artifact version, not the app version
+
+Full workflow: `../../notes/agents/PSS Cabinet Detection/git workflow and versioning.md`
+
+## Commits and PRs
+
+- Only commit when the user explicitly asks
+- Never force-push to `main`/`master`
+- Never skip hooks (`--no-verify`) unless the user requests it

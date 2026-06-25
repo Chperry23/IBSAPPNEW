@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
+const { syncFieldsForInsert } = require('../utils/sync-write-helper');
 
 const redundantFromSysReg = (r) => {
   if (r == null || r === '') return false;
@@ -74,16 +75,17 @@ router.post('/:customerId/sync-to-nodes', requireAuth, async (req, res) => {
         ]);
         totalUpdated++;
       } else {
+        const nodeUuid = syncFieldsForInsert('nodes').uuid;
         await db.prepare(`
           INSERT INTO nodes (
             customer_id, node_name, node_type, model, description, serial, firmware, 
-            version, status, redundant, os_name, bios_version, oem_type_description, synced
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            version, status, redundant, os_name, bios_version, oem_type_description, uuid, synced
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         `).run([
           nodeData.customer_id, nodeData.node_name, nodeData.node_type, nodeData.model,
           nodeData.description, nodeData.serial, nodeData.firmware, nodeData.version,
           nodeData.status, nodeData.redundant, nodeData.os_name, nodeData.bios_version,
-          nodeData.oem_type_description
+          nodeData.oem_type_description, nodeUuid
         ]);
         totalCreated++;
       }
@@ -128,15 +130,16 @@ router.post('/:customerId/sync-to-nodes', requireAuth, async (req, res) => {
         ]);
         totalUpdated++;
       } else {
+        const nodeUuid = syncFieldsForInsert('nodes').uuid;
         await db.prepare(`
           INSERT INTO nodes (
             customer_id, node_name, node_type, model, description, serial, firmware, 
-            version, status, redundant, synced
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            version, status, redundant, uuid, synced
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         `).run([
           nodeData.customer_id, nodeData.node_name, nodeData.node_type, nodeData.model,
           nodeData.description, nodeData.serial, nodeData.firmware, nodeData.version,
-          nodeData.status, nodeData.redundant
+          nodeData.status, nodeData.redundant, nodeUuid
         ]);
         totalCreated++;
       }
@@ -149,15 +152,16 @@ router.post('/:customerId/sync-to-nodes', requireAuth, async (req, res) => {
         `).get([customerId, partnerName]);
         
         if (!partnerExists) {
+          const partnerUuid = syncFieldsForInsert('nodes').uuid;
           await db.prepare(`
             INSERT INTO nodes (
               customer_id, node_name, node_type, model, description, serial, firmware, 
-              version, status, redundant, synced
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+              version, status, redundant, uuid, synced
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
           `).run([
             customerId, partnerName, ctrl.partner_model || nodeData.node_type, ctrl.partner_model,
             'Redundant Partner', ctrl.partner_serial_number, ctrl.partner_software_revision,
-            ctrl.partner_hardware_revision, 'active', 'yes'
+            ctrl.partner_hardware_revision, 'active', 'yes', partnerUuid
           ]);
           totalCreated++;
         }
@@ -202,15 +206,16 @@ router.post('/:customerId/sync-to-nodes', requireAuth, async (req, res) => {
         ]);
         totalUpdated++;
       } else {
+        const nodeUuid = syncFieldsForInsert('nodes').uuid;
         await db.prepare(`
           INSERT INTO nodes (
             customer_id, node_name, node_type, model, description, serial, firmware, 
-            version, status, synced
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            version, status, uuid, synced
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         `).run([
           nodeData.customer_id, nodeData.node_name, nodeData.node_type, nodeData.model,
           nodeData.description, nodeData.serial, nodeData.firmware, nodeData.version,
-          nodeData.status
+          nodeData.status, nodeUuid
         ]);
         totalCreated++;
       }
@@ -255,15 +260,16 @@ router.post('/:customerId/sync-to-nodes', requireAuth, async (req, res) => {
         ]);
         totalUpdated++;
       } else {
+        const nodeUuid = syncFieldsForInsert('nodes').uuid;
         await db.prepare(`
           INSERT INTO nodes (
             customer_id, node_name, node_type, model, description, serial, firmware, 
-            version, status, redundant, synced
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            version, status, redundant, uuid, synced
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         `).run([
           nodeData.customer_id, nodeData.node_name, nodeData.node_type, nodeData.model,
           nodeData.description, nodeData.serial, nodeData.firmware, nodeData.version,
-          nodeData.status, nodeData.redundant
+          nodeData.status, nodeData.redundant, nodeUuid
         ]);
         totalCreated++;
       }
@@ -276,15 +282,16 @@ router.post('/:customerId/sync-to-nodes', requireAuth, async (req, res) => {
         `).get([customerId, partnerName]);
         
         if (!partnerExists) {
+          const partnerUuid = syncFieldsForInsert('nodes').uuid;
           await db.prepare(`
             INSERT INTO nodes (
               customer_id, node_name, node_type, model, description, serial, firmware, 
-              version, status, redundant, synced
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+              version, status, redundant, uuid, synced
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
           `).run([
             customerId, partnerName, cioc.partner_model || nodeData.node_type, cioc.partner_model,
             'Redundant Partner', cioc.partner_serial_number, cioc.partner_software_revision,
-            cioc.partner_hardware_revision, 'active', 'yes'
+            cioc.partner_hardware_revision, 'active', 'yes', partnerUuid
           ]);
           totalCreated++;
         }

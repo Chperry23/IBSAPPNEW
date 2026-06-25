@@ -1,0 +1,28 @@
+---
+description: What to do freely vs what needs explicit user approval
+alwaysApply: true
+---
+
+# Autonomy boundaries
+
+## Proceed without asking
+
+- Edits to Python source, docs, tests, and scripts
+- Local git commits (when the user asks for a commit)
+- Reading config and tuning files for context
+
+## Ask before
+
+- Modifying `.env`, `tuning/`, or `tuning/inference/`
+- Editing model manifests or `models/` contents
+- Editing Docker / deploy configs (`deploy/`)
+- Running `pss-model build` (slow, resource-intensive)
+- Starting or stopping the inference container (`inference_server.sh`)
+- Any `git push` or branch operations beyond local commits
+- Creating or bulk-editing Obsidian notes outside `../../notes/agents/`
+
+## Hard limits
+
+- Never push directly to `main`
+- Never commit `.env` or files containing secrets/API keys
+- Never modify `tuning/` without explicit confirmation

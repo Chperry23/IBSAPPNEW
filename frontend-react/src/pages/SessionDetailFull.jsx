@@ -165,7 +165,6 @@ export default function SessionDetailFull() {
           const result = await api.createCabinet({
             pm_session_id: id,
             cabinet_name: cabinetName,
-            cabinet_date: new Date().toISOString().split('T')[0],
           });
           if (result.success) {
             successCount++;
@@ -547,7 +546,7 @@ export default function SessionDetailFull() {
             </button>
           )}
           {showCompleteSessionModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="modal-backdrop">
               <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 max-w-md w-full p-6">
                 <h3 className="text-lg font-semibold text-gray-100 mb-2">Complete PM Session</h3>
                 <p className="text-gray-300 text-sm mb-4">
@@ -840,11 +839,6 @@ export default function SessionDetailFull() {
                               </div>
                               <div className="px-4 py-3">
                                 <div className="space-y-2 mb-3">
-                                  <div className="flex items-center text-sm text-gray-400">
-                                    <span className="mr-2">📅</span>
-                                    {cabinet.cabinet_date ? new Date(cabinet.cabinet_date).toLocaleDateString() : 'No date'}
-                                  </div>
-                                  
                                   <div className="pt-2 border-t border-gray-700">
                                     <div className="grid grid-cols-2 gap-2 text-xs">
                                       {cabinet.cabinet_type === 'rack' ? (
@@ -977,16 +971,6 @@ export default function SessionDetailFull() {
                     name="cabinet_name"
                     required
                     placeholder="e.g., Building A - Control Room 1"
-                    className="form-input"
-                  />
-                </div>
-                <div>
-                  <label className="form-label">Cabinet Date *</label>
-                  <input
-                    type="date"
-                    name="cabinet_date"
-                    required
-                    defaultValue={new Date().toISOString().split('T')[0]}
                     className="form-input"
                   />
                 </div>
@@ -1284,16 +1268,6 @@ export default function SessionDetailFull() {
                     name="cabinet_name"
                     required
                     placeholder="e.g., Server Rack 1"
-                    className="form-input"
-                  />
-                </div>
-                <div>
-                  <label className="form-label">Rack Date *</label>
-                  <input
-                    type="date"
-                    name="cabinet_date"
-                    required
-                    defaultValue={new Date().toISOString().split('T')[0]}
                     className="form-input"
                   />
                 </div>

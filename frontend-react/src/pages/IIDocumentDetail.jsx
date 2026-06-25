@@ -4,98 +4,110 @@ import Layout from '../components/Layout';
 import api from '../services/api';
 import soundSystem from '../utils/sounds';
 
+/** @param {string} text @param {boolean} [recordedValue] @param {'Ω'|'VDC'|'VAC'|null} [unit] */
+const iiItem = (text, recordedValue = false, unit = null) => ({ text, recordedValue, unit });
+
+const showRecordedValueField = (def, savedItem) =>
+  def.recordedValue || Boolean((savedItem?.recorded_value || '').trim());
+
+const RECORDED_VALUE_PLACEHOLDERS = {
+  'Ω': 'e.g., 0.85',
+  VDC: 'e.g., 24.12',
+  VAC: 'e.g., 120.5',
+};
+
 // Define all checklist sections
 const CHECKLIST_SECTIONS = [
   {
     name: 'Good Engineering Practices',
     icon: '⚡',
     items: [
-      'Ensure all power supplied to the enclosures is de-energized (the circuit breaker(s) open)',
-      'In the DeltaV enclosures, open all circuit breakers and fuse holders and check for no power',
-      'Are there any environmental concerns about the installation? (Water leaks, Moisture, Dust, Dirt, Temperature, etc.?)'
+      iiItem('Ensure all power supplied to the enclosures is de-energized (the circuit breaker(s) open)'),
+      iiItem('In the DeltaV enclosures, open all circuit breakers and fuse holders and check for no power'),
+      iiItem('Are there any environmental concerns about the installation? (Water leaks, Moisture, Dust, Dirt, Temperature, etc.?)')
     ]
   },
   {
     name: 'Power and Grounding Connections',
     icon: '🔌',
     items: [
-      'Are the connections performed per design, properly terminated, and labeled. Is the wire of proper size for distance?',
-      'Check the impedance and current flow for the enclosure grounding system (AC/CG Chassis Ground). A High Integrity Ground should measure 1 ohm or less to ground. 5Ω Max',
-      'Is the Dedicated Instrumentation Ground (DIG) or Local DCG connected to the lowest available dedicated connection to true earth?',
-      'Is the DIG connection to the true earth dedicated and not shared with any other ground?',
-      'Is the DIG ground cable insulated? Is it physically separated from high voltage or variable speed drive cables?',
-      'Are isolated receptacles used to power the Servers and PCs?'
+      iiItem('Are the connections performed per design, properly terminated, and labeled. Is the wire of proper size for distance?'),
+      iiItem('Check the impedance and current flow for the enclosure grounding system (AC/CG Chassis Ground). A High Integrity Ground should measure 1 ohm or less to ground. 5Ω Max', true, 'Ω'),
+      iiItem('Is the Dedicated Instrumentation Ground (DIG) or Local DCG connected to the lowest available dedicated connection to true earth?'),
+      iiItem('Is the DIG connection to the true earth dedicated and not shared with any other ground?'),
+      iiItem('Is the DIG ground cable insulated? Is it physically separated from high voltage or variable speed drive cables?'),
+      iiItem('Are isolated receptacles used to power the Servers and PCs?')
     ]
   },
   {
     name: 'Enclosures',
     icon: '🗄️',
     items: [
-      'Is the enclosure free of any signs of environmental, shipping, or installation damage? Visually look over the DeltaV cabinet for loose wires, carrier separation, loose modules, and any damage that may have occurred during shipment and installation and correct any discrepancies found before proceeding',
-      'Are all cable entries in and out of the cabinets and enclosures sealed, if required?',
-      'Back planes plugged in tightly • All power supplies controllers, I/O modules screwed in securely (Do not over torque) • Input power wiring termination tight and labeled • Network cables locked in place',
-      'Are all enclosures properly positioned and mounted with groups of enclosures properly bolted together?',
-      'Are all Power and Ground connections solid and tightened? Is there good conduction in all connections (that is, no corrosion or hanging wire strands)?',
-      'Do the enclosure AC ground bus bar, the Instrument (DC) ground bus bar, and, if applicable, the Intrinsic Safety Ground have separately wired connections to the DIG using insulated wire of the proper size? Are all connections tight.',
-      'Calculate the DeltaV carrier power implementation. Verify that it does not exceed the recommendations.',
-      'Are network cables routed and installed according to the guidelines. Are the network cable shields terminated properly? Are the proper connector (shielded or unshielded) used and does the network installation follow the design?',
-      'Are colored boots used to distinguish primary and secondary DeltaV LAN cables?',
-      'Are all communication cables properly labeled at both ends?'
+      iiItem('Is the enclosure free of any signs of environmental, shipping, or installation damage? Visually look over the DeltaV cabinet for loose wires, carrier separation, loose modules, and any damage that may have occurred during shipment and installation and correct any discrepancies found before proceeding'),
+      iiItem('Are all cable entries in and out of the cabinets and enclosures sealed, if required?'),
+      iiItem('Back planes plugged in tightly • All power supplies controllers, I/O modules screwed in securely (Do not over torque) • Input power wiring termination tight and labeled • Network cables locked in place'),
+      iiItem('Are all enclosures properly positioned and mounted with groups of enclosures properly bolted together?'),
+      iiItem('Are all Power and Ground connections solid and tightened? Is there good conduction in all connections (that is, no corrosion or hanging wire strands)?'),
+      iiItem('Do the enclosure AC ground bus bar, the Instrument (DC) ground bus bar, and, if applicable, the Intrinsic Safety Ground have separately wired connections to the DIG using insulated wire of the proper size? Are all connections tight.'),
+      iiItem('Calculate the DeltaV carrier power implementation. Verify that it does not exceed the recommendations.'),
+      iiItem('Are network cables routed and installed according to the guidelines. Are the network cable shields terminated properly? Are the proper connector (shielded or unshielded) used and does the network installation follow the design?'),
+      iiItem('Are colored boots used to distinguish primary and secondary DeltaV LAN cables?'),
+      iiItem('Are all communication cables properly labeled at both ends?')
     ]
   },
   {
     name: 'AC Power System',
     icon: '⚡',
     items: [
-      'Verify that all AC powered devices in the enclosure are switched off or disconnected',
-      'With AC power system disconnected, measure impedance of system from all line and neutral connections to ground (Impedance must be high)',
-      'If the impedance is in conformance, have a person approved by the customer switch on the AC power system. Record the person\'s name.',
-      'Check that primary AC voltage is within specifications (85 to 264 VAC / 47 to 63 Hz measured between line and neutral)',
-      'Check that primary AC ground to neutral voltage is within specification (0.00 V +/-1.00 VAC)',
-      'Check that secondary AC voltage is within specifications (85 to 264 VAC / 47 to 63 Hz Measured between Line and Neutral)',
-      'Check that secondary AC ground to neutral voltage is within specification (0.00 V +/-1.00 VAC)',
-      'If conforming, it is appropriate to switch ON or reconnect all AC powered devices. One at a time switch on each of the cabinet sub-breakers or fuse holders and check the equipment that they feed power up correctly.',
-      'Verify that all AC powered fans, cooling devices, lights, and so on are running and operational.',
-      'Verify if LED\'s of all AC powered devices indicate normal'
+      iiItem('Verify that all AC powered devices in the enclosure are switched off or disconnected'),
+      iiItem('With AC power system disconnected, measure impedance of system from all line and neutral connections to ground (Impedance must be high)', true, 'Ω'),
+      iiItem('If the impedance is in conformance, have a person approved by the customer switch on the AC power system. Record the person\'s name.'),
+      iiItem('Check that primary AC voltage is within specifications (85 to 264 VAC / 47 to 63 Hz measured between line and neutral)', true, 'VAC'),
+      iiItem('Check that primary AC ground to neutral voltage is within specification (0.00 V +/-1.00 VAC)', true, 'VAC'),
+      iiItem('Check that secondary AC voltage is within specifications (85 to 264 VAC / 47 to 63 Hz Measured between Line and Neutral)', true, 'VAC'),
+      iiItem('Check that secondary AC ground to neutral voltage is within specification (0.00 V +/-1.00 VAC)', true, 'VAC'),
+      iiItem('If conforming, it is appropriate to switch ON or reconnect all AC powered devices. One at a time switch on each of the cabinet sub-breakers or fuse holders and check the equipment that they feed power up correctly.'),
+      iiItem('Verify that all AC powered fans, cooling devices, lights, and so on are running and operational.'),
+      iiItem('Verify if LED\'s of all AC powered devices indicate normal')
     ]
   },
   {
     name: 'DC Power System',
     icon: '🔋',
     items: [
-      'Verify that all AC-powered devices in the enclosure are switched off or disconnected',
-      'With the DC power system disconnected, measure impedance of system from all line and neutral connections to ground (Impedance MUST be High)',
-      'Apply DC voltage to the distribution system',
-      'Check that primary 24 VDC is within specifications. (21.6 VDC to 26.4 VDC)',
-      'Check that secondary 24 VDC is within specifications. (21.6 VDC to 26.4 VDC)',
-      'Check that primary 12 VDC is within specifications. (11.4 VDC to 12.6 VDC)',
-      'Check that secondary 12 VDC is within specifications. (11.4 VDC to 12.6 VDC)',
-      'Verify that all DC powered fans, cooling devices, lights, and so on are running and operational.',
-      'Verify that LEDs of all DC powered devices indicate normal',
-      'Check at the destination end of each of the system power supply feeds i.e. the connectors on the System Power supplies, carrier F.B. Connectors , etc. for the proper voltage levels.'
+      iiItem('Verify that all AC-powered devices in the enclosure are switched off or disconnected'),
+      iiItem('With the DC power system disconnected, measure impedance of system from all line and neutral connections to ground (Impedance MUST be High)', true, 'Ω'),
+      iiItem('Apply DC voltage to the distribution system'),
+      iiItem('Check that primary 24 VDC is within specifications. (21.6 VDC to 26.4 VDC)', true, 'VDC'),
+      iiItem('Check that secondary 24 VDC is within specifications. (21.6 VDC to 26.4 VDC)', true, 'VDC'),
+      iiItem('Check that primary 12 VDC is within specifications. (11.4 VDC to 12.6 VDC)'),
+      iiItem('Check that secondary 12 VDC is within specifications. (11.4 VDC to 12.6 VDC)'),
+      iiItem('Verify that all DC powered fans, cooling devices, lights, and so on are running and operational.'),
+      iiItem('Verify that LEDs of all DC powered devices indicate normal'),
+      iiItem('Check at the destination end of each of the system power supply feeds i.e. the connectors on the System Power supplies, carrier F.B. Connectors , etc. for the proper voltage levels.')
     ]
   },
   {
     name: 'DeltaV Controllers',
     icon: '🎛️',
     items: [
-      'System power supply LEDs normal (Power-ON, Error-OFF)',
-      'Active controller\'s LEDs normal (Power - ON, Error - OFF if downloaded / Flash if un-configured, Active - ON, Standby - OFF, CN1 - Flash if communicating on the primary control network, CN2 - Flash if communicating on the secondary control network)',
-      'Standby controller\'s LEDs normal (Power - ON, Error - OFF if downloaded / Flash if un-configured, Active - OFF, Standby - ON, CN1 - Flash if communicating on the primary control network, CN2 - Flash if communicating on the secondary control network)',
-      'Controller accessible through standard diagnostics (accessible, primary & secondary communication without increasing errors)',
-      'All I/O cards accessible through standard diagnostics (accessible, no mismatches, no missing cards)',
-      'Are network cables routed and installed according to the guidelines in the document Site Preparation and Design for DeltaV Digital Automation Systems?',
-      'Are servers, stations, routers, and so on, cleaned up (software) and reinstalled according to station specific installation?',
-      'Using Diagnostics, are both Primary and Secondary communications good?',
-      'Placeholder created w/ cold restart enabled, can controller be commissioned?',
-      'Did the controller(s) Auto-Sense their I/O cards properly when commissioned?',
-      'Software Upgrade(flash) newly integrated controllers, RIO/CIOC, and I/O to same system revision installed if able.',
-      'Can the controller(s) be downloaded?',
-      'Are all controllers and I/O cards error free after being downloaded?',
-      'Using Diagnostics, are both Primary and Secondary communications with each of the relevant Server and PC nodes good?',
-      'Have the system diagnostics been performed and do the diagnostics readings result in expected values?',
-      'Are servers, stations, routers, and so on, cleaned up (software) and reinstalled according to station specific installation, placeholders created with alarm and events assigned?',
-      'Downloaded setup data to controllers, CIOC/RIO, and PP if needed, to update enumeration sets and node tables.'
+      iiItem('System power supply LEDs normal (Power-ON, Error-OFF)'),
+      iiItem('Active controller\'s LEDs normal (Power - ON, Error - OFF if downloaded / Flash if un-configured, Active - ON, Standby - OFF, CN1 - Flash if communicating on the primary control network, CN2 - Flash if communicating on the secondary control network)'),
+      iiItem('Standby controller\'s LEDs normal (Power - ON, Error - OFF if downloaded / Flash if un-configured, Active - OFF, Standby - ON, CN1 - Flash if communicating on the primary control network, CN2 - Flash if communicating on the secondary control network)'),
+      iiItem('Controller accessible through standard diagnostics (accessible, primary & secondary communication without increasing errors)'),
+      iiItem('All I/O cards accessible through standard diagnostics (accessible, no mismatches, no missing cards)'),
+      iiItem('Are network cables routed and installed according to the guidelines in the document Site Preparation and Design for DeltaV Digital Automation Systems?'),
+      iiItem('Are servers, stations, routers, and so on, cleaned up (software) and reinstalled according to station specific installation?'),
+      iiItem('Using Diagnostics, are both Primary and Secondary communications good?'),
+      iiItem('Placeholder created w/ cold restart enabled, can controller be commissioned?'),
+      iiItem('Did the controller(s) Auto-Sense their I/O cards properly when commissioned?'),
+      iiItem('Software Upgrade(flash) newly integrated controllers, RIO/CIOC, and I/O to same system revision installed if able.'),
+      iiItem('Can the controller(s) be downloaded?'),
+      iiItem('Are all controllers and I/O cards error free after being downloaded?'),
+      iiItem('Using Diagnostics, are both Primary and Secondary communications with each of the relevant Server and PC nodes good?'),
+      iiItem('Have the system diagnostics been performed and do the diagnostics readings result in expected values?'),
+      iiItem('Are servers, stations, routers, and so on, cleaned up (software) and reinstalled according to station specific installation, placeholders created with alarm and events assigned?'),
+      iiItem('Downloaded setup data to controllers, CIOC/RIO, and PP if needed, to update enumeration sets and node tables.')
     ]
   }
 ];
@@ -113,6 +125,7 @@ export default function IIDocumentDetail() {
   const [autoSaveStatus, setAutoSaveStatus] = useState(null); // 'saving' | 'saved' | null
   const [collapsed, setCollapsed] = useState({});
   const [showEquipmentModal, setShowEquipmentModal] = useState(false);
+  const [applyingInitials, setApplyingInitials] = useState(false);
 
   useEffect(() => {
     loadDocumentData();
@@ -168,14 +181,19 @@ export default function IIDocumentDetail() {
     flashAutoSave();
 
     try {
-      await api.request(`/api/ii-documents/${id}/ii-equipment`, {
+      const saved = await api.request(`/api/ii-documents/${id}/ii-equipment`, {
         method: 'POST',
-        body: JSON.stringify(updatedEquipment)
+        body: JSON.stringify(updatedEquipment),
       });
+      if (saved && saved.error) {
+        throw new Error(saved.error);
+      }
+      setEquipment(saved && typeof saved === 'object' ? saved : updatedEquipment);
     } catch (error) {
       console.error('Error saving equipment:', error);
-      showMessage('Error saving equipment', 'error');
+      showMessage('Could not save equipment checklist — refreshed from server', 'error');
       soundSystem.playError();
+      loadDocumentData();
     }
   };
 
@@ -214,14 +232,61 @@ export default function IIDocumentDetail() {
     flashAutoSave();
 
     try {
-      await api.request(`/api/ii-documents/${id}/ii-checklist`, {
+      const saved = await api.request(`/api/ii-documents/${id}/ii-checklist`, {
         method: 'POST',
         body: JSON.stringify(updatedItem)
       });
+      if (!saved || saved.error) {
+        throw new Error(saved?.error || 'Save failed');
+      }
+      setChecklistItems((prev) => {
+        const ix = prev.findIndex(
+          (it) => it.section_name === sectionName && it.item_name === itemName
+        );
+        const row = { ...saved };
+        if (ix >= 0) {
+          const next = [...prev];
+          next[ix] = row;
+          return next;
+        }
+        return [...prev, row];
+      });
     } catch (error) {
       console.error('Error saving checklist item:', error);
-      showMessage('Error saving checklist item', 'error');
+      showMessage('Could not save I&I checklist — refreshed from server', 'error');
       soundSystem.playError();
+      loadDocumentData();
+    }
+  };
+
+  const handleApplyInitialsAll = async () => {
+    const initials = (session?.ii_initials || '').trim();
+    if (!initials) {
+      showMessage('Set default initials in session header first (Edit Header Info on the session page)', 'error');
+      return;
+    }
+    if (!window.confirm(`Apply initials "${initials}" to every checklist row on this cabinet?`)) {
+      return;
+    }
+
+    setApplyingInitials(true);
+    try {
+      const result = await api.request(`/api/ii-documents/${id}/ii-apply-initials`, {
+        method: 'POST',
+        body: JSON.stringify({ initials }),
+      });
+      if (result?.success) {
+        soundSystem.playSuccess();
+        await loadDocumentData();
+        showMessage(`Initials applied to ${result.rowsUpdated} checklist rows`, 'success');
+      } else {
+        throw new Error(result?.error || 'Apply failed');
+      }
+    } catch (error) {
+      soundSystem.playError();
+      showMessage(error.message || 'Error applying initials', 'error');
+    } finally {
+      setApplyingInitials(false);
     }
   };
 
@@ -322,7 +387,7 @@ export default function IIDocumentDetail() {
               </p>
             )}
           </div>
-          <div className="flex gap-3 items-center">
+          <div className="flex gap-3 items-center flex-wrap justify-end">
             {autoSaveStatus === 'saving' && (
               <span className="text-sm text-blue-400 animate-pulse">Saving…</span>
             )}
@@ -330,8 +395,16 @@ export default function IIDocumentDetail() {
               <span className="text-sm text-green-400">✓ Saved</span>
             )}
             <button
-              onClick={handleSaveAll}
+              onClick={handleApplyInitialsAll}
               className="btn btn-primary"
+              disabled={applyingInitials}
+              title={session?.ii_initials ? `Apply "${session.ii_initials}" to all checklist sign-offs` : 'Set default initials in session header first'}
+            >
+              {applyingInitials ? 'Applying…' : `✍️ Initial all with (${session?.ii_initials?.trim() || 'set initials'})`}
+            </button>
+            <button
+              onClick={handleSaveAll}
+              className="btn btn-secondary"
             >
               💾 Save All
             </button>
@@ -454,8 +527,10 @@ export default function IIDocumentDetail() {
           </div>
           {!collapsed[section.name] && (
             <div className="card-body space-y-4">
-              {section.items.map((itemName, idx) => {
+              {section.items.map((itemDef, idx) => {
+                const itemName = itemDef.text;
                 const item = getChecklistItem(section.name, itemName);
+                const needsRecordedValue = showRecordedValueField(itemDef, item);
                 return (
                   <div key={idx} className="border border-gray-600 rounded-lg p-4 bg-gray-700/30">
                     <div className="font-medium text-gray-200 mb-3">{itemName}</div>
@@ -466,7 +541,7 @@ export default function IIDocumentDetail() {
                         <div className="flex flex-wrap gap-2">
                         {['Yes', 'No', 'N/A', 'Pass', 'Fail'].map((answer) => {
                           const isSelected = item.answer === answer;
-                          const noIsGood = itemName.toLowerCase().includes('environmental concerns');
+                          const noIsGood = itemDef.text.toLowerCase().includes('environmental concerns');
                           let selectedCls = 'bg-gray-600 border-gray-500 text-white';
                           if (answer === 'Yes' || answer === 'Pass') selectedCls = 'bg-green-600 border-green-500 text-white';
                           else if (answer === 'Fail') selectedCls = 'bg-red-600 border-red-500 text-white';
@@ -486,18 +561,34 @@ export default function IIDocumentDetail() {
                       </div>
                     </div>
 
-                    {/* Value / Initials / Date */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-                      <div>
-                        <label className="form-label text-xs">Recorded Value</label>
-                        <input
-                          type="text"
-                          value={item.recorded_value || ''}
-                          onChange={(e) => handleChecklistChange(section.name, itemName, 'recorded_value', e.target.value)}
-                          className="form-input"
-                          placeholder="e.g., 24.2 VDC"
-                        />
-                      </div>
+                    {/* Initials / Date (+ recorded value only for measurement items) */}
+                    <div className={`grid grid-cols-1 gap-3 mb-3 ${needsRecordedValue ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
+                      {needsRecordedValue && (
+                        <div>
+                          <label className="form-label text-xs">
+                            Recorded Value{itemDef.unit ? ` (${itemDef.unit})` : ''}
+                          </label>
+                          <div className="flex">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={item.recorded_value || ''}
+                              onChange={(e) => handleChecklistChange(section.name, itemName, 'recorded_value', e.target.value)}
+                              className="form-input rounded-r-none flex-1 min-w-0"
+                              placeholder={
+                                itemDef.unit === 'VAC' && itemName.toLowerCase().includes('ground to neutral')
+                                  ? 'e.g., 0.05'
+                                  : (RECORDED_VALUE_PLACEHOLDERS[itemDef.unit] || 'e.g., value')
+                              }
+                            />
+                            {itemDef.unit && (
+                              <span className="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-600 bg-gray-700 text-gray-300 text-sm font-medium shrink-0">
+                                {itemDef.unit}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                       <div>
                         <label className="form-label text-xs">Initials</label>
                         <input

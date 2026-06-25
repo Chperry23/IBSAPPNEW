@@ -117,8 +117,7 @@ export default function GlobalSearch() {
       {/* Search modal overlay */}
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center pt-24 px-4"
-          style={{ background: 'rgba(0,0,0,0.6)' }}
+          className="modal-backdrop modal-backdrop-top"
           onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}
         >
           <div className="bg-gray-800 border border-gray-600 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">

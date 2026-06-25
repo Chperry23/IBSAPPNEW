@@ -1,0 +1,32 @@
+---
+description: Backend Node.js conventions for Cabinet PM
+globs: backend/**/*.js
+alwaysApply: false
+---
+
+# Backend conventions
+
+## Database
+
+- SQLite via `backend/config/database.js` — WAL mode enabled
+- Schema/migrations in `backend/config/init-db.js`
+- Mongo models: `backend/models/mongodb-models.js`
+
+## Sync writes
+
+Use `sync-write-helper.js` for inserts and soft-deletes on `SYNC_TABLES`:
+
+```javascript
+const { syncFieldsForInsert, afterSyncableWrite, softDeleteSyncRow } = require('../utils/sync-write-helper');
+```
+
+- String-id tables (`cabinets`, etc.): `uuid = id`
+- Sessions: separate `uuid` (not equal to `id`)
+- Hard `DELETE` on synced tables breaks cloud tombstones — use `softDeleteSyncRow`
+
+## Routes
+
+- `requireAuth` on mutating API routes
+- Match existing error JSON shape: `{ error: 'message' }`
+
+Keep changes minimal; match surrounding style and naming.

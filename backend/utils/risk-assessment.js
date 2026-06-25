@@ -13,6 +13,8 @@
  * Coverage tracks how many check-points were actually recorded vs expected.
  */
 
+const { controllerSupportsRedundancyCheck, isRedundantController } = require('./controllerType');
+
 // Voltage range specifications
 const VOLTAGE_RANGES = {
   '24VDC':         { min: 22.8,  max: 25.2,   type: 'DC' },
@@ -133,7 +135,7 @@ const RISK_CHECKS = {
     description: 'power supply status out of spec'
   },
   voltage_out_of_range: {
-    weight: 12, level: 'MODERATE', domain: 'power',
+    weight: 4, level: 'SLIGHT', domain: 'power',
     scoring_type: 'per_component',
     description: 'DC voltage deviation may cause instability'
   },
@@ -279,17 +281,11 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
     }
 
     // ── Redundancy not verified ──────────────────────────────────────────────
-    // Only applies to controllers that have a partner (partner_serial_number set
-    // or redundant field is truthy). If redundancy was not checked during PM,
-    // flag it as a MODERATE issue — failover capability is unverified.
-    const isRedundant =
-      (maintenance.redundant &&
-        (String(maintenance.redundant).toLowerCase() === 'yes' ||
-         String(maintenance.redundant).toLowerCase() === 'true' ||
-         String(maintenance.redundant) === '1')) ||
-      (maintenance.partner_serial_number && String(maintenance.partner_serial_number).trim() !== '');
-
-    if (isRedundant) {
+    // Only for controllers that support redundancy and have a real redundant pair.
+    if (
+      controllerSupportsRedundancyCheck(maintenance) &&
+      isRedundantController(maintenance)
+    ) {
       const redundancyNotChecked = !maintenance.redundancy_checked;
       observe('redundancy_not_verified', redundancyNotChecked);
       coverageCompleted++;
@@ -337,17 +333,19 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
     if (cabinet.power_supplies) {
       cabinet.power_supplies.forEach((ps, psIndex) => {
         totalComponents++;
-        // Status
-        observe('power_supply_fail', ps.status === 'fail');
+        const isPsuDead = ps.psu_dead === true || ps.status === 'fail';
+
+        observe('power_supply_fail', isPsuDead);
         coverageCompleted++;
         coverageTotal++;
-        if (ps.status === 'fail') {
+        if (isPsuDead) {
           failedComponents++;
-          riskBreakdown.push(`${cabinetName}: Power Supply ${psIndex + 1} voltage out of spec`);
-          addIssue('power_supply_fail', `${cabinetName}: Power Supply ${psIndex + 1} (${ps.voltage_type}) voltage out of spec`);
+          riskBreakdown.push(`${cabinetName}: Power Supply ${psIndex + 1} failed`);
+          addIssue('power_supply_fail', `${cabinetName}: Power Supply ${psIndex + 1} (${ps.voltage_type}) failed or dead`);
         }
-        // DC voltage range
-        if (ps.dc_reading !== undefined && ps.dc_reading !== '') {
+
+        // DC voltage range — SLIGHT advisory only; skip if PSU already marked dead/failed
+        if (!isPsuDead && ps.dc_reading !== undefined && ps.dc_reading !== '') {
           const voltageCheck = checkVoltageInRange(ps.dc_reading, ps.voltage_type);
           observe('voltage_out_of_range', !voltageCheck.inRange);
           coverageCompleted++;

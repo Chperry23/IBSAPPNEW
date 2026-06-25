@@ -3,19 +3,57 @@ const router = express.Router();
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
 const xml2js = require('xml2js');
+const { randomUUID } = require('crypto');
+const { resolveRegistryImportName } = require('../utils/registry-name');
+const { bumpRegistryVersion, markCustomerRegistryForSync } = require('../utils/registry-version');
+const { recordChangeForRow } = require('../utils/change-journal');
+const { softDeleteSyncRow } = require('../utils/sync-write-helper');
+const { REGISTRY_TABLES } = require('../services/sync-tables');
 
-// Import system registry from XML
-router.post('/api/customers/:customerId/system-registry/import', requireAuth, async (req, res) => {
-  const customerId = req.params.customerId;
-  const { xmlData } = req.body;
-  
+const MANUAL_REGISTRY_TABLES = {
+  workstation: {
+    table: 'sys_workstations',
+    fields: [
+      'model', 'type', 'redundant', 'software_revision', 'dv_hotfixes', 'os_name',
+      'dell_service_tag_number', 'computer_model', 'bios_version', 'memory',
+    ],
+  },
+  controller: {
+    table: 'sys_controllers',
+    fields: [
+      'model', 'software_revision', 'hardware_revision', 'serial_number',
+      'controller_free_memory', 'redundant',
+    ],
+  },
+  switch: {
+    table: 'sys_smart_switches',
+    fields: ['model', 'software_revision', 'hardware_revision', 'serial_number'],
+  },
+  cioc: {
+    table: 'sys_charms_io_cards',
+    fields: [
+      'model', 'software_revision', 'hardware_revision', 'serial_number', 'redundant',
+    ],
+  },
+};
+
+function notDeletedClause(alias = '') {
+  const p = alias ? `${alias}.` : '';
+  return `(${p}deleted IS NULL OR ${p}deleted = 0)`;
+}
+
+/**
+ * DeltaV registration / AutoData XML → sys_* (+ customer fields). Callable from REST or bundled ZIP import.
+ * @returns {Promise<{ success: true, payload: object } | { success: false, statusCode: number, payload: object }>}
+ */
+async function performSystemRegistryImport(customerId, xmlData) {
   console.log('🔵 [SYSTEM REGISTRY] Import request received for customer:', customerId);
   console.log('🔵 [SYSTEM REGISTRY] XML data length:', xmlData?.length || 0, 'characters');
-  
+
   if (!xmlData) {
-    return res.status(400).json({ error: 'No XML data provided' });
+    return { success: false, statusCode: 400, payload: { error: 'No XML data provided' } };
   }
-  
+
   try {
     // Configure parser to be more lenient with XML issues
     const parser = new xml2js.Parser({ 
@@ -325,25 +363,24 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
     // Helper: upsert that preserves assigned_cabinet_id and assigned_at
     async function upsertPreservingAssignment(table, customerId, name, dataFields, dataValues) {
       const existing = await db.prepare(
-        `SELECT id FROM ${table} WHERE customer_id = ? AND name = ?`
+        `SELECT * FROM ${table} WHERE customer_id = ? AND name = ? AND COALESCE(deleted, 0) != 1`
       ).get([customerId, name]);
-      
+
       if (existing) {
-        // UPDATE only data fields, preserve assignment columns
-        const setClauses = dataFields.map(f => `${f} = ?`).join(', ');
+        const setClauses = dataFields.map((f) => `${f} = ?`).join(', ');
         await db.prepare(
-          `UPDATE ${table} SET ${setClauses}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+          `UPDATE ${table} SET ${setClauses}, synced = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
         ).run([...dataValues, existing.id]);
         return 'updated';
-      } else {
-        // INSERT new record
-        const allFields = ['customer_id', 'name', ...dataFields];
-        const placeholders = allFields.map(() => '?').join(', ');
-        await db.prepare(
-          `INSERT INTO ${table} (${allFields.join(', ')}, updated_at) VALUES (${placeholders}, CURRENT_TIMESTAMP)`
-        ).run([customerId, name, ...dataValues]);
-        return 'created';
       }
+
+      const uuid = randomUUID();
+      const allFields = ['customer_id', 'name', ...dataFields, 'uuid', 'synced', 'deleted'];
+      const placeholders = allFields.map(() => '?').join(', ');
+      await db.prepare(
+        `INSERT INTO ${table} (${allFields.join(', ')}, updated_at) VALUES (${placeholders}, CURRENT_TIMESTAMP)`
+      ).run([customerId, name, ...dataValues, uuid, 0, 0]);
+      return 'created';
     }
 
     let newCount = 0;
@@ -360,7 +397,13 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
             return obj[fieldName] || obj[fieldName.toUpperCase()] || obj[fieldName.toLowerCase()] || null;
           };
           
-          const result = await upsertPreservingAssignment('sys_workstations', customerId, getField(ws, 'Name') || '',
+          const wsName = resolveRegistryImportName(getField, ws, 'WS');
+          if (!wsName) {
+            console.warn('⚠️ [SYSTEM REGISTRY] Skipping workstation with no Name (and no serial/model to derive one)');
+            continue;
+          }
+
+          const result = await upsertPreservingAssignment('sys_workstations', customerId, wsName,
             ['model', 'type', 'redundant', 'software_revision', 'dv_hotfixes', 'os_name', 'ms_office_installed', 'terminal_server', 'domain_controller', 'iddc', 'dell_service_tag_number', 'computer_model', 'bios_version', 'memory'],
             [getField(ws, 'Model'), getField(ws, 'Type'), getField(ws, 'Redundant'), getField(ws, 'SoftwareRevision'), getField(ws, 'DVHotFixes'), getField(ws, 'OSName'), getField(ws, 'MSOfficeInstalled'), getField(ws, 'TerminalServer'), getField(ws, 'DomainController'), getField(ws, 'IDDC'), getField(ws, 'DellServiceTagNumber'), getField(ws, 'ComputerModel'), getField(ws, 'BIOSVersion'), getField(ws, 'Memory')]
           );
@@ -383,7 +426,13 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
             return obj[fieldName] || obj[fieldName.toUpperCase()] || obj[fieldName.toLowerCase()] || null;
           };
           
-          const result = await upsertPreservingAssignment('sys_smart_switches', customerId, getField(sw, 'Name') || '',
+          const swName = resolveRegistryImportName(getField, sw, 'SW');
+          if (!swName) {
+            console.warn('⚠️ [SYSTEM REGISTRY] Skipping smart switch with no Name');
+            continue;
+          }
+
+          const result = await upsertPreservingAssignment('sys_smart_switches', customerId, swName,
             ['model', 'software_revision', 'hardware_revision', 'serial_number'],
             [getField(sw, 'Model'), getField(sw, 'SoftwareRevision'), getField(sw, 'HardwareRevision'), getField(sw, 'SerialNumber')]
           );
@@ -400,8 +449,11 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
       const devices = Array.isArray(root.IODevice) ? root.IODevice : [root.IODevice];
       console.log('🔵 [SYSTEM REGISTRY] Processing', devices.length, 'I/O devices');
       
-      // Clear existing IO devices for this customer first
-      await db.prepare('DELETE FROM sys_io_devices WHERE customer_id = ?').run([customerId]);
+      // Soft-delete existing IO devices so removals sync to cloud (replaced on next import)
+      await db.prepare(
+        `UPDATE sys_io_devices SET deleted = 1, synced = 0, updated_at = CURRENT_TIMESTAMP
+         WHERE customer_id = ? AND COALESCE(deleted, 0) != 1`
+      ).run([customerId]);
       
       for (const dev of devices) {
         try {
@@ -412,8 +464,8 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
           await db.prepare(`
             INSERT INTO sys_io_devices (
               customer_id, bus_type, device_type, node, card,
-              device_name, channel, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+              device_name, channel, uuid, synced, deleted, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP)
           `).run([
             customerId,
             getField(dev, 'BusType'),
@@ -421,7 +473,8 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
             getField(dev, 'Node'),
             getField(dev, 'Card'),
             getField(dev, 'DeviceName'),
-            getField(dev, 'Channel')
+            getField(dev, 'Channel'),
+            randomUUID(),
           ]);
           stats.ioDevices++;
         } catch (err) {
@@ -491,7 +544,13 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
             return obj[fieldName] || obj[fieldName.toUpperCase()] || obj[fieldName.toLowerCase()] || null;
           };
           
-          const result = await upsertPreservingAssignment('sys_controllers', customerId, getField(ctrl, 'Name') || '',
+          const ctrlName = resolveRegistryImportName(getField, ctrl, 'CTRL');
+          if (!ctrlName) {
+            console.warn('⚠️ [SYSTEM REGISTRY] Skipping controller with no Name');
+            continue;
+          }
+
+          const result = await upsertPreservingAssignment('sys_controllers', customerId, ctrlName,
             ['model', 'software_revision', 'hardware_revision', 'serial_number', 'controller_free_memory', 'redundant', 'partner_model', 'partner_software_revision', 'partner_hardware_revision', 'partner_serial_number'],
             [getField(ctrl, 'Model'), getField(ctrl, 'SoftwareRevision'), getField(ctrl, 'HardwareRevision'), getField(ctrl, 'SerialNumber'), getField(ctrl, 'ControllerFreeMemory'), getField(ctrl, 'Redundant'), getField(ctrl, 'PartnerModel'), getField(ctrl, 'PartnerSoftwareRevision'), getField(ctrl, 'PartnerHardwareRevision'), getField(ctrl, 'PartnerSerialNumber')]
           );
@@ -502,7 +561,6 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
           const nestedCards = ctrl.Card || ctrl.CARD || ctrl.card;
           if (nestedCards) {
             const cardList = Array.isArray(nestedCards) ? nestedCards : [nestedCards];
-            const ctrlName = getField(ctrl, 'Name') || 'Unknown';
             console.log(`🔵 [IO-CARDS] Controller ${ctrlName} has ${cardList.length} card(s)`);
             for (const card of cardList) {
               await insertCard(ctrlName, card);
@@ -524,10 +582,15 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
         try {
           const getField = (obj, fieldName) =>
             obj[fieldName] || obj[fieldName.toUpperCase()] || obj[fieldName.toLowerCase()] || null;
+          const ctrlName = resolveRegistryImportName(getField, ctrl, 'CTRL');
+          if (!ctrlName) {
+            console.warn(`⚠️ [SYSTEM REGISTRY] Skipping ${logLabel} entry with no Name`);
+            continue;
+          }
           const result = await upsertPreservingAssignment(
             'sys_controllers',
             customerId,
-            getField(ctrl, 'Name') || '',
+            ctrlName,
             [
               'model', 'software_revision', 'hardware_revision', 'serial_number',
               'controller_free_memory', 'redundant', 'partner_model',
@@ -550,7 +613,6 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
           const nestedCards = ctrl.Card || ctrl.CARD || ctrl.card;
           if (nestedCards) {
             const cardList = Array.isArray(nestedCards) ? nestedCards : [nestedCards];
-            const ctrlName = getField(ctrl, 'Name') || logLabel;
             for (const card of cardList) {
               await insertCard(ctrlName, card);
             }
@@ -608,7 +670,13 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
             return obj[fieldName] || obj[fieldName.toUpperCase()] || obj[fieldName.toLowerCase()] || null;
           };
           
-          const result = await upsertPreservingAssignment('sys_charms_io_cards', customerId, getField(card, 'Name') || '',
+          const ciocName = resolveRegistryImportName(getField, card, 'CIOC');
+          if (!ciocName) {
+            console.warn('⚠️ [SYSTEM REGISTRY] Skipping Charms I/O card with no Name');
+            continue;
+          }
+
+          const result = await upsertPreservingAssignment('sys_charms_io_cards', customerId, ciocName,
             ['model', 'software_revision', 'hardware_revision', 'serial_number', 'redundant', 'partner_model', 'partner_software_revision', 'partner_hardware_revision', 'partner_serial_number'],
             [getField(card, 'Model'), getField(card, 'SoftwareRevision'), getField(card, 'HardwareRevision'), getField(card, 'SerialNumber'), getField(card, 'Redundant'), getField(card, 'PartnerModel'), getField(card, 'PartnerSoftwareRevision'), getField(card, 'PartnerHardwareRevision'), getField(card, 'PartnerSerialNumber')]
           );
@@ -620,8 +688,8 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
           const nestedCharms = card.Charm || card.CHARM || card.charm;
           if (nestedCharms) {
             const charms = Array.isArray(nestedCharms) ? nestedCharms : [nestedCharms];
-            const ciocName = getField(card, 'Name');
-            console.log('🔵 [SYSTEM REGISTRY] Found', charms.length, 'nested Charms in', ciocName);
+            const ciocNameForCharms = ciocName;
+            console.log('🔵 [SYSTEM REGISTRY] Found', charms.length, 'nested Charms in', ciocNameForCharms);
             
             for (const charm of charms) {
               const model   = getField(charm, 'Model');
@@ -636,13 +704,14 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
                 await db.prepare(`
                   INSERT INTO sys_charms (
                     customer_id, charms_io_card_name, name, model, software_revision, 
-                    hardware_revision, serial_number, updated_at
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    hardware_revision, serial_number, uuid, synced, deleted, updated_at
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP)
                 `).run([
                   customerId,
                   ciocName,
                   getField(charm, 'Name') || '',
-                  model, swRev, hwRev, serial
+                  model, swRev, hwRev, serial,
+                  randomUUID(),
                 ]);
                 stats.charms++;
               } catch (err) {
@@ -695,13 +764,14 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
           await db.prepare(`
             INSERT INTO sys_charms (
               customer_id, charms_io_card_name, name, model, software_revision, 
-              hardware_revision, serial_number, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+              hardware_revision, serial_number, uuid, synced, deleted, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP)
           `).run([
             customerId,
             null,
             getField(charm, 'Name') || '',
-            model, swRev, hwRev, serial
+            model, swRev, hwRev, serial,
+            randomUUID(),
           ]);
           stats.charms++;
         } catch (err) {
@@ -737,7 +807,9 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
           await db.prepare(`UPDATE sys_ams_systems SET software_revision = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run([getField(ams, 'SoftwareRevision'), existingAms.id]);
           updatedCount++;
         } else {
-          await db.prepare(`INSERT INTO sys_ams_systems (customer_id, software_revision, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)`).run([customerId, getField(ams, 'SoftwareRevision')]);
+          await db.prepare(
+            `INSERT INTO sys_ams_systems (customer_id, software_revision, uuid, synced, deleted, updated_at) VALUES (?, ?, ?, 0, 0, CURRENT_TIMESTAMP)`
+          ).run([customerId, getField(ams, 'SoftwareRevision'), randomUUID()]);
           newCount++;
         }
         stats.amsSystems++;
@@ -782,14 +854,23 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
     console.log('✅ [SYSTEM REGISTRY] Stats:', JSON.stringify(stats, null, 2));
     console.log(`✅ [SYSTEM REGISTRY] New: ${newCount}, Updated: ${updatedCount}`);
     console.log('💡 [SYSTEM REGISTRY] PM Sessions will now read directly from System Registry tables');
+
+    await bumpRegistryVersion(db, customerId);
+    const syncMarked = await markCustomerRegistryForSync(db, customerId);
+    console.log(
+      `✅ [SYSTEM REGISTRY] Marked ${syncMarked.rows} registry row(s) for cloud sync (customer ${customerId})`
+    );
     
-    res.json({
+    return {
       success: true,
-      message: 'System registry imported successfully - ready for PM sessions',
-      stats,
-      newCount,
-      updatedCount
-    });
+      payload: {
+        success: true,
+        message: 'System registry imported successfully - ready for PM sessions',
+        stats,
+        newCount,
+        updatedCount,
+      },
+    };
   } catch (error) {
     console.error('❌ [SYSTEM REGISTRY] Import error:', error);
     console.error('❌ [SYSTEM REGISTRY] Error stack:', error.stack);
@@ -814,14 +895,26 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
     
     console.error('❌ [SYSTEM REGISTRY] User message:', userMessage);
     console.error('❌ [SYSTEM REGISTRY] Help text:', helpText);
-    
-    res.status(500).json({ 
-      error: userMessage,
-      details: error.message,
-      help: helpText,
-      lineNumber: error.message.match(/Line: (\d+)/) ? error.message.match(/Line: (\d+)/)[1] : null
-    });
+
+    return {
+      success: false,
+      statusCode: 500,
+      payload: {
+        error: userMessage,
+        details: error.message,
+        help: helpText,
+        lineNumber: error.message.match(/Line: (\d+)/) ? error.message.match(/Line: (\d+)/)[1] : null,
+      },
+    };
   }
+}
+
+router.post('/api/customers/:customerId/system-registry/import', requireAuth, async (req, res) => {
+  const result = await performSystemRegistryImport(req.params.customerId, req.body.xmlData);
+  if (!result.success) {
+    return res.status(result.statusCode).json(result.payload);
+  }
+  res.json(result.payload);
 });
 
 // Get system registry import overview for ALL customers
@@ -877,14 +970,39 @@ router.get('/api/customers/:customerId/system-registry/summary', requireAuth, as
   const customerId = req.params.customerId;
   
   try {
-    const workstations = await db.prepare('SELECT COUNT(*) as count FROM sys_workstations WHERE customer_id = ?').get([customerId]);
-    const smartSwitches = await db.prepare('SELECT COUNT(*) as count FROM sys_smart_switches WHERE customer_id = ?').get([customerId]);
-    const ioDevices = await db.prepare('SELECT COUNT(*) as count FROM sys_io_devices WHERE customer_id = ?').get([customerId]);
-    const controllers = await db.prepare('SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ?').get([customerId]);
-    const charmsIOCards = await db.prepare('SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ?').get([customerId]);
-    const charms = await db.prepare('SELECT COUNT(*) as count FROM sys_charms WHERE customer_id = ?').get([customerId]);
-    const amsSystems = await db.prepare('SELECT COUNT(*) as count FROM sys_ams_systems WHERE customer_id = ?').get([customerId]);
-    
+    const nd = notDeletedClause();
+    const workstations = await db.prepare(`SELECT COUNT(*) as count FROM sys_workstations WHERE customer_id = ? AND ${nd}`).get([customerId]);
+    const smartSwitches = await db.prepare(`SELECT COUNT(*) as count FROM sys_smart_switches WHERE customer_id = ? AND ${nd}`).get([customerId]);
+    const ioDevices = await db.prepare(`SELECT COUNT(*) as count FROM sys_io_devices WHERE customer_id = ? AND ${nd}`).get([customerId]);
+    const controllers = await db.prepare(`SELECT COUNT(*) as count FROM sys_controllers WHERE customer_id = ? AND ${nd}`).get([customerId]);
+    const charmsIOCards = await db.prepare(`SELECT COUNT(*) as count FROM sys_charms_io_cards WHERE customer_id = ? AND ${nd}`).get([customerId]);
+    const charms = await db.prepare(`SELECT COUNT(*) as count FROM sys_charms WHERE customer_id = ? AND ${nd}`).get([customerId]);
+    const amsSystems = await db.prepare(`SELECT COUNT(*) as count FROM sys_ams_systems WHERE customer_id = ? AND ${nd}`).get([customerId]);
+
+    const fhxDv = await Promise.all([
+      db.prepare('SELECT COUNT(*) as count FROM dv_modules WHERE customer_id = ?').get([customerId]),
+      db.prepare('SELECT COUNT(*) as count FROM dv_pid_modules WHERE customer_id = ?').get([customerId]),
+      db.prepare('SELECT COUNT(*) as count FROM dv_ai_modules WHERE customer_id = ?').get([customerId]),
+      db.prepare('SELECT COUNT(*) as count FROM dv_ao_modules WHERE customer_id = ?').get([customerId]),
+      db.prepare('SELECT COUNT(*) as count FROM dv_di_modules WHERE customer_id = ?').get([customerId]),
+      db.prepare('SELECT COUNT(*) as count FROM dv_do_modules WHERE customer_id = ?').get([customerId]),
+    ]);
+    const fhxModules = {
+      modules: fhxDv[0]?.count || 0,
+      pid: fhxDv[1]?.count || 0,
+      ai: fhxDv[2]?.count || 0,
+      ao: fhxDv[3]?.count || 0,
+      di: fhxDv[4]?.count || 0,
+      do: fhxDv[5]?.count || 0,
+    };
+    const fhxModuleTotal =
+      fhxModules.modules +
+      fhxModules.pid +
+      fhxModules.ai +
+      fhxModules.ao +
+      fhxModules.di +
+      fhxModules.do;
+
     res.json({
       workstations: workstations?.count || 0,
       smartSwitches: smartSwitches?.count || 0,
@@ -892,10 +1010,47 @@ router.get('/api/customers/:customerId/system-registry/summary', requireAuth, as
       controllers: controllers?.count || 0,
       charmsIOCards: charmsIOCards?.count || 0,
       charms: charms?.count || 0,
-      amsSystems: amsSystems?.count || 0
+      amsSystems: amsSystems?.count || 0,
+      fhxModules,
+      fhxModuleTotal,
     });
   } catch (error) {
     console.error('Get summary error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+const FHX_MODULE_TABLE_BY_KIND = {
+  modules: 'dv_modules',
+  pid: 'dv_pid_modules',
+  ai: 'dv_ai_modules',
+  ao: 'dv_ao_modules',
+  di: 'dv_di_modules',
+  do: 'dv_do_modules',
+};
+
+router.get('/api/customers/:customerId/system-registry/fhx-modules/:kind', requireAuth, async (req, res) => {
+  const customerId = req.params.customerId;
+  const kind = (req.params.kind || '').toLowerCase();
+  const table = FHX_MODULE_TABLE_BY_KIND[kind];
+
+  if (!table) {
+    return res.status(400).json({ error: 'Invalid kind. Use: modules, pid, ai, ao, di, do' });
+  }
+
+  try {
+    const orderCol =
+      kind === 'modules'
+        ? `COALESCE(NULLIF(TRIM(module), ''), '-')`
+        : `COALESCE(NULLIF(TRIM(tag_name), ''), NULLIF(TRIM(module_name), ''), '-')`;
+
+    const rows = await db
+      .prepare(`SELECT * FROM ${table} WHERE customer_id = ? ORDER BY ${orderCol}`)
+      .all([customerId]);
+
+    res.json(rows);
+  } catch (error) {
+    console.error('[FHX modules list]', error);
     res.status(500).json({ error: 'Database error' });
   }
 });
@@ -905,7 +1060,9 @@ router.get('/api/customers/:customerId/system-registry/workstations', requireAut
   const customerId = req.params.customerId;
   
   try {
-    const workstations = await db.prepare('SELECT * FROM sys_workstations WHERE customer_id = ? ORDER BY name').all([customerId]);
+    const workstations = await db.prepare(
+      `SELECT * FROM sys_workstations WHERE customer_id = ? AND ${notDeletedClause()} ORDER BY name`
+    ).all([customerId]);
     res.json(workstations);
   } catch (error) {
     console.error('Get workstations error:', error);
@@ -918,7 +1075,9 @@ router.get('/api/customers/:customerId/system-registry/controllers', requireAuth
   const customerId = req.params.customerId;
   
   try {
-    const controllers = await db.prepare('SELECT * FROM sys_controllers WHERE customer_id = ? ORDER BY name').all([customerId]);
+    const controllers = await db.prepare(
+      `SELECT * FROM sys_controllers WHERE customer_id = ? AND ${notDeletedClause()} ORDER BY name`
+    ).all([customerId]);
     res.json(controllers);
   } catch (error) {
     console.error('Get controllers error:', error);
@@ -931,7 +1090,9 @@ router.get('/api/customers/:customerId/system-registry/switches', requireAuth, a
   const customerId = req.params.customerId;
   
   try {
-    const switches = await db.prepare('SELECT * FROM sys_smart_switches WHERE customer_id = ? ORDER BY name').all([customerId]);
+    const switches = await db.prepare(
+      `SELECT * FROM sys_smart_switches WHERE customer_id = ? AND ${notDeletedClause()} ORDER BY name`
+    ).all([customerId]);
     res.json(switches);
   } catch (error) {
     console.error('Get switches error:', error);
@@ -957,7 +1118,9 @@ router.get('/api/customers/:customerId/system-registry/charms-io-cards', require
   const customerId = req.params.customerId;
   
   try {
-    const cards = await db.prepare('SELECT * FROM sys_charms_io_cards WHERE customer_id = ? ORDER BY name').all([customerId]);
+    const cards = await db.prepare(
+      `SELECT * FROM sys_charms_io_cards WHERE customer_id = ? AND ${notDeletedClause()} ORDER BY name`
+    ).all([customerId]);
     res.json(cards);
   } catch (error) {
     console.error('Get Charms I/O cards error:', error);
@@ -1028,19 +1191,31 @@ router.get('/api/customers/:customerId/system-registry/ams-system', requireAuth,
   }
 });
 
-// Delete all system registry data for a customer
+// Delete all system registry data for a customer (soft-delete synced tables for cloud push)
 router.delete('/api/customers/:customerId/system-registry', requireAuth, async (req, res) => {
   const customerId = req.params.customerId;
   
   try {
-    await db.prepare('DELETE FROM sys_workstations WHERE customer_id = ?').run([customerId]);
-    await db.prepare('DELETE FROM sys_smart_switches WHERE customer_id = ?').run([customerId]);
-    await db.prepare('DELETE FROM sys_io_devices WHERE customer_id = ?').run([customerId]);
-    await db.prepare('DELETE FROM sys_controllers WHERE customer_id = ?').run([customerId]);
-    await db.prepare('DELETE FROM sys_charms_io_cards WHERE customer_id = ?').run([customerId]);
-    await db.prepare('DELETE FROM sys_charms WHERE customer_id = ?').run([customerId]);
-    await db.prepare('DELETE FROM sys_ams_systems WHERE customer_id = ?').run([customerId]);
+    for (const table of REGISTRY_TABLES) {
+      const rows = await db.prepare(
+        `SELECT id FROM ${table} WHERE customer_id = ? AND COALESCE(deleted, 0) != 1`
+      ).all([customerId]);
+      for (const row of rows) {
+        await softDeleteSyncRow(db, table, row.id);
+      }
+    }
+
+    // Local-only tables — hard delete is fine
     await db.prepare('DELETE FROM sys_cards WHERE customer_id = ?').run([customerId]);
+    await db.prepare('DELETE FROM dv_modules WHERE customer_id = ?').run([customerId]);
+    await db.prepare('DELETE FROM dv_pid_modules WHERE customer_id = ?').run([customerId]);
+    await db.prepare('DELETE FROM dv_ai_modules WHERE customer_id = ?').run([customerId]);
+    await db.prepare('DELETE FROM dv_ao_modules WHERE customer_id = ?').run([customerId]);
+    await db.prepare('DELETE FROM dv_di_modules WHERE customer_id = ?').run([customerId]);
+    await db.prepare('DELETE FROM dv_do_modules WHERE customer_id = ?').run([customerId]);
+    await db.prepare('DELETE FROM dv_fhx_import_meta WHERE customer_id = ?').run([customerId]);
+
+    await bumpRegistryVersion(db, customerId);
     
     res.json({ success: true, message: 'System registry data deleted' });
   } catch (error) {
@@ -1084,160 +1259,6 @@ router.post('/api/system-registry/rebuild-charms-table', requireAuth, async (req
   }
 });
 
-// Helper function to sync System Registry to nodes table (auto-called after import)
-async function syncSystemRegistryToNodes(customerId) {
-  console.log('🔄 [SYNC] Starting sync for customer:', customerId);
-  let totalCreated = 0;
-  let totalUpdated = 0;
-  const redundantFromXml = (r) => {
-    if (r == null || r === '') return false;
-    const v = String(r).trim().toLowerCase();
-    return v === 'yes' || v === 'true' || v === '1';
-  };
-
-  // Sync Workstations
-  const workstations = await db.prepare('SELECT * FROM sys_workstations WHERE customer_id = ?').all([customerId]);
-  console.log(`🔄 [SYNC] Processing ${workstations.length} workstations...`);
-  for (const ws of workstations) {
-    const existing = await db.prepare('SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?').get([customerId, ws.name]);
-    if (existing) {
-      await db.prepare(`
-        UPDATE nodes SET node_type = ?, model = ?, serial = ?, firmware = ?, version = ?, 
-        os_name = ?, bios_version = ?, updated_at = CURRENT_TIMESTAMP, synced = 0
-        WHERE id = ?
-      `).run([ws.type || 'Workstation', ws.model, ws.dell_service_tag_number, ws.software_revision,
-        ws.dv_hotfixes, ws.os_name, ws.bios_version, existing.id]);
-      totalUpdated++;
-    } else {
-      await db.prepare(`
-        INSERT INTO nodes (customer_id, node_name, node_type, model, serial, firmware, version, 
-        os_name, bios_version, status, synced)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0)
-      `).run([customerId, ws.name, ws.type || 'Workstation', ws.model, ws.dell_service_tag_number,
-        ws.software_revision, ws.dv_hotfixes, ws.os_name, ws.bios_version]);
-      totalCreated++;
-    }
-  }
-  
-  console.log(`✅ [SYNC] Workstations: ${totalCreated} created, ${totalUpdated} updated`);
-  
-  // Sync Controllers
-  const controllers = await db.prepare('SELECT * FROM sys_controllers WHERE customer_id = ?').all([customerId]);
-  console.log(`🔄 [SYNC] Processing ${controllers.length} controllers...`);
-  const ctrlCreatedBefore = totalCreated;
-  const ctrlUpdatedBefore = totalUpdated;
-  for (const ctrl of controllers) {
-    const existing = await db.prepare('SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?').get([customerId, ctrl.name]);
-    if (existing) {
-      await db.prepare(`
-        UPDATE nodes SET node_type = ?, model = ?, serial = ?, firmware = ?, version = ?, 
-        redundant = ?, updated_at = CURRENT_TIMESTAMP, synced = 0
-        WHERE id = ?
-      `).run([ctrl.model || 'Controller', ctrl.model, ctrl.serial_number, ctrl.software_revision,
-        ctrl.hardware_revision, ctrl.redundant, existing.id]);
-      totalUpdated++;
-    } else {
-      await db.prepare(`
-        INSERT INTO nodes (customer_id, node_name, node_type, model, serial, firmware, version, 
-        redundant, status, synced)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 0)
-      `).run([customerId, ctrl.name, ctrl.model || 'Controller', ctrl.model, ctrl.serial_number,
-        ctrl.software_revision, ctrl.hardware_revision, ctrl.redundant]);
-      totalCreated++;
-    }
-    
-    // Create partner if redundant
-    if (redundantFromXml(ctrl.redundant) && ctrl.partner_serial_number) {
-      const partnerName = `${ctrl.name}-partner`;
-      const partnerExists = await db.prepare('SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?').get([customerId, partnerName]);
-      if (!partnerExists) {
-        await db.prepare(`
-          INSERT INTO nodes (customer_id, node_name, node_type, model, serial, firmware, version, 
-          redundant, status, synced)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'yes', 'active', 0)
-        `).run([customerId, partnerName, ctrl.partner_model || 'Controller', ctrl.partner_model,
-          ctrl.partner_serial_number, ctrl.partner_software_revision, ctrl.partner_hardware_revision]);
-        totalCreated++;
-      }
-    }
-  }
-  
-  console.log(`✅ [SYNC] Controllers: ${totalCreated - ctrlCreatedBefore} created, ${totalUpdated - ctrlUpdatedBefore} updated`);
-  
-  // Sync Smart Switches
-  const switches = await db.prepare('SELECT * FROM sys_smart_switches WHERE customer_id = ?').all([customerId]);
-  console.log(`🔄 [SYNC] Processing ${switches.length} smart switches...`);
-  const swCreatedBefore = totalCreated;
-  const swUpdatedBefore = totalUpdated;
-  for (const sw of switches) {
-    const existing = await db.prepare('SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?').get([customerId, sw.name]);
-    if (existing) {
-      await db.prepare(`
-        UPDATE nodes SET node_type = ?, model = ?, serial = ?, firmware = ?, version = ?, 
-        updated_at = CURRENT_TIMESTAMP, synced = 0
-        WHERE id = ?
-      `).run([sw.model || 'Smart Switch', sw.model, sw.serial_number, sw.software_revision,
-        sw.hardware_revision, existing.id]);
-      totalUpdated++;
-    } else {
-      await db.prepare(`
-        INSERT INTO nodes (customer_id, node_name, node_type, model, serial, firmware, version, status, synced)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 0)
-      `).run([customerId, sw.name, sw.model || 'Smart Switch', sw.model, sw.serial_number,
-        sw.software_revision, sw.hardware_revision]);
-      totalCreated++;
-    }
-  }
-  
-  console.log(`✅ [SYNC] Smart Switches: ${totalCreated - swCreatedBefore} created, ${totalUpdated - swUpdatedBefore} updated`);
-  
-  // Sync Charms I/O Cards
-  const ciocs = await db.prepare('SELECT * FROM sys_charms_io_cards WHERE customer_id = ?').all([customerId]);
-  console.log(`🔄 [SYNC] Processing ${ciocs.length} Charms I/O cards...`);
-  const ciocCreatedBefore = totalCreated;
-  const ciocUpdatedBefore = totalUpdated;
-  for (const cioc of ciocs) {
-    const existing = await db.prepare('SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?').get([customerId, cioc.name]);
-    if (existing) {
-      await db.prepare(`
-        UPDATE nodes SET node_type = ?, model = ?, serial = ?, firmware = ?, version = ?, 
-        redundant = ?, updated_at = CURRENT_TIMESTAMP, synced = 0
-        WHERE id = ?
-      `).run([cioc.model || 'Charms I/O Card', cioc.model, cioc.serial_number, cioc.software_revision,
-        cioc.hardware_revision, cioc.redundant, existing.id]);
-      totalUpdated++;
-    } else {
-      await db.prepare(`
-        INSERT INTO nodes (customer_id, node_name, node_type, model, serial, firmware, version, 
-        redundant, status, synced)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 0)
-      `).run([customerId, cioc.name, cioc.model || 'Charms I/O Card', cioc.model, cioc.serial_number,
-        cioc.software_revision, cioc.hardware_revision, cioc.redundant]);
-      totalCreated++;
-    }
-    
-    // Create partner if redundant
-    if (redundantFromXml(cioc.redundant) && cioc.partner_serial_number) {
-      const partnerName = `${cioc.name}-partner`;
-      const partnerExists = await db.prepare('SELECT id FROM nodes WHERE customer_id = ? AND node_name = ?').get([customerId, partnerName]);
-      if (!partnerExists) {
-        await db.prepare(`
-          INSERT INTO nodes (customer_id, node_name, node_type, model, serial, firmware, version, 
-          redundant, status, synced)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'yes', 'active', 0)
-        `).run([customerId, partnerName, cioc.partner_model || 'Charms I/O Card', cioc.partner_model,
-          cioc.partner_serial_number, cioc.partner_software_revision, cioc.partner_hardware_revision]);
-        totalCreated++;
-      }
-    }
-  }
-  
-  console.log(`✅ [SYNC] Charms I/O Cards: ${totalCreated - ciocCreatedBefore} created, ${totalUpdated - ciocUpdatedBefore} updated`);
-  console.log(`✅ [SYNC] TOTAL: ${totalCreated} created, ${totalUpdated} updated, ${totalCreated + totalUpdated} total`);
-  
-  return { total: totalCreated + totalUpdated, created: totalCreated, updated: totalUpdated };
-}
-
 // CIOC + Charm count stats for a customer
 router.get('/api/customers/:customerId/system-registry/cioc-stats', requireAuth, async (req, res) => {
   const customerId = parseInt(req.params.customerId);
@@ -1255,4 +1276,81 @@ router.get('/api/customers/:customerId/system-registry/cioc-stats', requireAuth,
   }
 });
 
+// Manually add a workstation, controller, switch, or CIOC (when SMS/XML omits virtual stations, etc.)
+router.post('/api/customers/:customerId/system-registry/nodes', requireAuth, async (req, res) => {
+  const customerId = parseInt(req.params.customerId, 10);
+  const { category, name, ...rest } = req.body || {};
+  const config = MANUAL_REGISTRY_TABLES[category];
+
+  if (!config) {
+    return res.status(400).json({ error: 'Invalid category. Use workstation, controller, switch, or cioc.' });
+  }
+  const trimmedName = String(name || '').trim();
+  if (!trimmedName) {
+    return res.status(400).json({ error: 'Name is required' });
+  }
+
+  try {
+    const customer = await db.prepare('SELECT id FROM customers WHERE id = ?').get([customerId]);
+    if (!customer) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    const existing = await db.prepare(
+      `SELECT id FROM ${config.table} WHERE customer_id = ? AND name = ? AND ${notDeletedClause()}`
+    ).get([customerId, trimmedName]);
+    if (existing) {
+      return res.status(409).json({ error: `A ${category} named "${trimmedName}" already exists for this customer` });
+    }
+
+    const dataValues = config.fields.map((f) => (rest[f] != null && String(rest[f]).trim() !== '' ? String(rest[f]).trim() : null));
+    const allFields = ['customer_id', 'name', ...config.fields, 'uuid', 'synced', 'deleted'];
+    const placeholders = allFields.map(() => '?').join(', ');
+    const values = [customerId, trimmedName, ...dataValues, randomUUID(), 0, 0];
+
+    const result = await db.prepare(
+      `INSERT INTO ${config.table} (${allFields.join(', ')}, updated_at) VALUES (${placeholders}, CURRENT_TIMESTAMP)`
+    ).run(values);
+
+    const row = await db.prepare(`SELECT * FROM ${config.table} WHERE id = ?`).get([result.lastInsertRowid]);
+    await bumpRegistryVersion(db, customerId);
+    await recordChangeForRow(db, config.table, row, 'upsert');
+    console.log(`✅ [MANUAL REGISTRY] Added ${category} "${trimmedName}" for customer ${customerId}`);
+    res.status(201).json({ success: true, category, row });
+  } catch (error) {
+    console.error('Manual registry create error:', error);
+    res.status(500).json({ error: error.message || 'Database error' });
+  }
+});
+
+// Soft-delete a manually added (or any) registry node
+router.delete('/api/customers/:customerId/system-registry/nodes/:category/:rowId', requireAuth, async (req, res) => {
+  const customerId = parseInt(req.params.customerId, 10);
+  const rowId = parseInt(req.params.rowId, 10);
+  const config = MANUAL_REGISTRY_TABLES[req.params.category];
+
+  if (!config || !rowId) {
+    return res.status(400).json({ error: 'Invalid category or id' });
+  }
+
+  try {
+    const result = await db.prepare(
+      `UPDATE ${config.table} SET deleted = 1, synced = 0, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND customer_id = ? AND ${notDeletedClause()}`
+    ).run([rowId, customerId]);
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    await bumpRegistryVersion(db, customerId);
+    const row = await db.prepare(`SELECT * FROM ${config.table} WHERE id = ?`).get([rowId]);
+    if (row?.uuid) await recordChangeForRow(db, config.table, row, 'delete');
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Manual registry delete error:', error);
+    res.status(500).json({ error: error.message || 'Database error' });
+  }
+});
+
+router.performSystemRegistryImport = performSystemRegistryImport;
 module.exports = router;

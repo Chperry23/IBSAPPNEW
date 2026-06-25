@@ -1,50 +1,12 @@
-const { getControllerType, getDefaultPerformanceType } = require('../../utils/controllerType');
+const { getControllerType, controllerSupportsRedundancyCheck } = require('../../utils/controllerType');
+const { categorizeMaintenanceNodes } = require('../../utils/nodeCategories');
 
 function generateMaintenanceReportPage(nodeMaintenanceData) {
   if (!nodeMaintenanceData || nodeMaintenanceData.length === 0) {
     return '';
   }
 
-  // Categorize nodes
-  const controllers = nodeMaintenanceData.filter(node => {
-    const nodeType = (node.node_type || '').toLowerCase();
-    const nodeName = (node.node_name || '').toLowerCase();
-    const model = (node.model || '').toLowerCase();
-    return nodeType.includes('controller') || 
-           nodeType.includes('cioc') || 
-           nodeType.includes('sis') ||
-           nodeType.includes('eioc') ||
-           nodeName.includes('csls') ||
-           nodeName.includes('-sz') ||
-           nodeName.includes('eioc') ||
-           model.includes('se4101') ||
-           model.includes('ve4021') ||
-           /sz0[1-9]/.test(nodeName);
-  });
-
-  const computers = nodeMaintenanceData.filter(node => {
-    const nodeType = (node.node_type || '').toLowerCase();
-    const nodeName = (node.node_name || '').toLowerCase();
-    
-    return nodeType.includes('workstation') || 
-           nodeType.includes('computer') || 
-           nodeType.includes('pc') ||
-           nodeType.includes('local application') ||
-           nodeType.includes('local operator') ||
-           nodeType.includes('local professionalplus') ||
-           nodeType.includes('hmi') ||
-           nodeType.includes('operator') ||
-           nodeName.includes('cpu') ||
-           nodeName.includes('hmi') ||
-           nodeName.includes('workstation') ||
-           nodeName.includes('operator');
-  });
-
-  const switches = nodeMaintenanceData.filter(node => {
-    const nodeType = (node.node_type || '').toLowerCase();
-    return nodeType.includes('switch') || 
-           nodeType.includes('network');
-  });
+  const { controllers, computers, switches, other } = categorizeMaintenanceNodes(nodeMaintenanceData);
 
   const formatPerformance = (node) => {
     if (!node.performance_value || !node.performance_type) return 'N/A';
@@ -91,6 +53,7 @@ function generateMaintenanceReportPage(nodeMaintenanceData) {
             ${nodes.map(node => {
               const controllerType = getControllerType(node);
               const isRIU = controllerType === 'RIU';
+              const showRedundancy = controllerSupportsRedundancyCheck(node);
               const noError = tableType === 'controllers' ? isNoErrors(node) : true;
               const errorsText = noError ? 'No Error' : 'Has Errors';
               const errorsCellClass = noError ? 'no-error-cell' : 'error-cell';
@@ -103,7 +66,7 @@ function generateMaintenanceReportPage(nodeMaintenanceData) {
                 <td>${isRIU ? 'N/A' : (node.serial || 'N/A')}</td>
                 <td>${formatPerformance(node)}</td>
                 <td class="${node.hf_updated ? 'checked-cell' : ''}">${node.hf_updated ? '✅' : ''}</td>
-                <td class="${node.redundancy_checked ? 'checked-cell' : ''}">${node.redundancy_checked ? '✅' : ''}</td>
+                <td class="${showRedundancy && node.redundancy_checked ? 'checked-cell' : ''}">${showRedundancy ? (node.redundancy_checked ? '✅' : '') : 'N/A'}</td>
                 <td class="${node.cold_restart_checked ? 'checked-cell' : ''}">${node.cold_restart_checked ? '✅' : ''}</td>
                 <td class="${errorsCellClass}">${errorsText}</td>
                 <td style="font-size: 10px; color: #666;">${node.notes || '—'}</td>
@@ -178,6 +141,7 @@ function generateMaintenanceReportPage(nodeMaintenanceData) {
     </div>
     ${computers.length ? `<div style="page-break-before: always;">${generateMaintenanceTable(computers, 'Computers & Workstations', 'workstations')}</div>` : ''}
     ${switches.length ? `<div style="page-break-before: always;">${generateMaintenanceTable(switches, 'Network Switches', 'switches')}</div>` : ''}
+    ${other.length ? `<div style="page-break-before: always;">${generateMaintenanceTable(other, 'Custom & Non-DeltaV Equipment', 'workstations')}</div>` : ''}
 
       ${hddReplaced > 0 ? `
         <div class="maintenance-section">

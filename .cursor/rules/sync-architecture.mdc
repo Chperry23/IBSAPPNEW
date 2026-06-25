@@ -1,0 +1,28 @@
+---
+description: Sync protocol, UUID rules, and troubleshooting
+globs: "{backend/services/sync*.js,sync-server/**/*.js,backend/utils/*sync*,backend/utils/change-journal.js,backend/utils/ensure-row-uuid.js}"
+alwaysApply: false
+---
+
+# Sync architecture
+
+## Upload eligibility
+
+```sql
+SELECT * FROM {table} WHERE synced = 0 AND uuid IS NOT NULL AND TRIM(uuid) != ''
+```
+
+## Common failures
+
+| Symptom | Likely cause |
+|---------|----------------|
+| Push tries 100k+ rows | Bloated `change_log` — run `prune-stale-change-log.js` |
+| Txn aborted on commit | Too many rows in one Mongo transaction — batch commit in `sync-server/services/commit.js` |
+| Row never uploads | Missing `uuid` on insert |
+| Stuck unsynced after upgrade | `node scripts/backfill-sync-uuids.js` then Upload |
+
+## Push flow
+
+Tablet `sync-client.push()` → prune journal → build from `synced=0` → HTTP chunks → `commit.js` upsert by `uuid`
+
+Do not re-introduce journal-only changeset builds without filtering `synced=0`.

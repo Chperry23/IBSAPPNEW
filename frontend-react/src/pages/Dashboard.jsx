@@ -98,6 +98,35 @@ export default function Dashboard() {
           </div>
           <div className="card-body overflow-y-auto max-h-[420px] space-y-4 pr-1">
 
+            {/* v2.7 entry */}
+            <div className="border-l-4 border-violet-500 pl-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-bold bg-violet-600 text-white px-2 py-0.5 rounded">v2.7 — May 15</span>
+              </div>
+              <ul className="text-sm text-gray-300 space-y-1.5">
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-400 mt-0.5 shrink-0">~</span>
+                  <span><strong className="text-gray-100">Duplicate session / cabinets</strong> — Duplicating a PM session now carries over cabinet structure more reliably, including equipment labels and related options you choose at copy time, so new sessions do not drop or mis-link cabinet data.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-400 mt-0.5 shrink-0">~</span>
+                  <span><strong className="text-gray-100">Import nodes (System Registry)</strong> — Import is <strong className="text-gray-200">file upload only</strong> (paste XML removed). Modals on the customer page and System Registry tracking page are <strong className="text-gray-200">smaller and simpler</strong> so the flow matches how teams actually import.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-400 mt-0.5 shrink-0">~</span>
+                  <span><strong className="text-gray-100">CIOC charms / I/O errors</strong> — Controllers marked as <strong className="text-gray-200">CIOC</strong> again use the <strong className="text-gray-200">two-stage charm picker</strong> when adding I/O errors. Fixed a crash when registry data was still loading (<strong className="text-gray-200">null cards</strong>) and aligned detection with controller type and diagnostics.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-400 mt-0.5 shrink-0">+</span>
+                  <span><strong className="text-gray-100">First-time cloud download</strong> — On a <strong className="text-gray-200">brand-new database</strong> (no customers, sessions, or cabinets yet), Cloud Sync offers a <strong className="text-gray-200">one-time fast full pull</strong> from the cloud with less per-record work. Regular download also benefits from <strong className="text-gray-200">cached schema metadata</strong> so large pulls are quicker.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-400 mt-0.5 shrink-0">~</span>
+                  <span><strong className="text-gray-100">Customer import bundle</strong> — ZIP bundle path (registration XML + FHX workbook) continues to align with the expected manifest; use it when you need FHX-driven I/O and module tables in one step.</span>
+                </li>
+              </ul>
+            </div>
+
             {/* v2.6 entry */}
             <div className="border-l-4 border-sky-500 pl-4">
               <div className="flex items-center gap-2 mb-1">

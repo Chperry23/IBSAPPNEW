@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cabinet PM — Database Schema</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #f0f2f5;
+      margin: 0;
+      padding: 24px;
+      color: #1a1a1a;
+    }
+    h1 { font-size: 1.5rem; margin: 0 0 8px; }
+    .subtitle { color: #555; margin-bottom: 24px; font-size: 0.9rem; }
+    .subtitle a { color: #2563eb; }
+    section {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+      margin-bottom: 32px;
+      padding: 20px;
+      overflow: auto;
+    }
+    section h2 {
+      font-size: 1rem;
+      margin: 0 0 16px;
+      color: #333;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 8px;
+    }
+    .canvas {
+      position: relative;
+      min-height: 420px;
+      min-width: 1100px;
+    }
+    .entity {
+      position: absolute;
+      background: #fff;
+      border: 1px solid #c5d4e8;
+      border-radius: 4px;
+      min-width: 200px;
+      font-size: 12px;
+      box-shadow: 0 2px 6px rgba(0,0,0,.06);
+    }
+    .entity-header {
+      background: linear-gradient(180deg, #5b9bd5 0%, #4a8bc2 100%);
+      color: #fff;
+      font-weight: 600;
+      padding: 8px 10px;
+      border-radius: 3px 3px 0 0;
+      letter-spacing: 0.02em;
+    }
+    .entity-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 10px;
+      border-top: 1px solid #eef2f7;
+    }
+    .entity-row.pk .col { font-weight: 600; }
+    .entity-row.pk .col::after { content: ' 🔑'; font-size: 10px; }
+    .entity-row.fk .col { color: #1d4ed8; }
+    .col { flex: 1; }
+    .type { color: #6b7280; font-size: 11px; text-align: right; margin-left: 12px; }
+    svg.connectors {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      overflow: visible;
+    }
+    svg.connectors line {
+      stroke: #94a3b8;
+      stroke-width: 1.5;
+      fill: none;
+    }
+    svg.connectors text {
+      font-size: 10px;
+      fill: #64748b;
+    }
+    .note {
+      font-size: 0.85rem;
+      color: #666;
+      margin-top: 12px;
+      padding: 10px;
+      background: #f8fafc;
+      border-left: 3px solid #5b9bd5;
+    }
+    .legend { font-size: 0.8rem; color: #666; margin-bottom: 16px; }
+    .legend span { margin-right: 16px; }
+    .legend .pk-sample { color: #1a1a1a; font-weight: 600; }
+    .legend .fk-sample { color: #1d4ed8; }
+  </style>
+</head>
+<body>
+  <h1>Cabinet PM — Relational Database Schema</h1>
+  <p class="subtitle">
+    SQLite <code>data/cabinet_pm_tablet.db</code> · Master: MongoDB <code>cabinet_pm_db</code> ·
+    Source: <code>backend/config/init-db.js</code> ·
+    Full editable diagram: <a href="https://dbdiagram.io/d" target="_blank">dbdiagram.io</a> → import
+    <a href="./cabinet-pm-schema.dbml">cabinet-pm-schema.dbml</a>
+  </p>
+
+  <p class="legend">
+    <span><span class="pk-sample">column 🔑</span> = primary key</span>
+    <span><span class="fk-sample">column</span> = foreign key (blue)</span>
+    <span>Lines = relationships</span>
+  </p>
+
+  <!-- Diagram 1: Core + PM -->
+  <section>
+    <h2>Core → PM session</h2>
+    <div class="canvas" id="canvas-core" style="min-height: 520px; min-width: 1050px;">
+      <div class="entity" data-table="users" style="left: 20px; top: 40px;">
+        <div class="entity-header">users</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row"><span class="col">username</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">password_hash</span><span class="type">varchar</span></div>
+      </div>
+
+      <div class="entity" data-table="customers" style="left: 280px; top: 20px;">
+        <div class="entity-header">customers</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row"><span class="col">name</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">alias</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">location</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">uuid</span><span class="type">varchar</span></div>
+      </div>
+
+      <div class="entity" data-table="sessions" style="left: 520px; top: 40px;">
+        <div class="entity-header">sessions</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">varchar</span></div>
+        <div class="entity-row fk"><span class="col">customer_id</span><span class="type">int</span></div>
+        <div class="entity-row fk"><span class="col">user_id</span><span class="type">int</span></div>
+        <div class="entity-row"><span class="col">session_name</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">session_type</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">status</span><span class="type">varchar</span></div>
+      </div>
+
+      <div class="entity" data-table="cabinets" style="left: 760px; top: 20px;">
+        <div class="entity-header">cabinets</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">varchar</span></div>
+        <div class="entity-row fk"><span class="col">pm_session_id</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">cabinet_name</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">inspection_data</span><span class="type">text</span></div>
+      </div>
+
+      <div class="entity" data-table="session_diagnostics" style="left: 760px; top: 200px;">
+        <div class="entity-header">session_diagnostics</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row fk"><span class="col">session_id</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">controller_name</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">card_number</span><span class="type">int</span></div>
+        <div class="entity-row"><span class="col">error_type</span><span class="type">varchar</span></div>
+      </div>
+
+      <div class="entity" data-table="session_node_maintenance" style="left: 520px; top: 220px;">
+        <div class="entity-header">session_node_maintenance</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row fk"><span class="col">session_id</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">node_id</span><span class="type">int</span></div>
+        <div class="entity-row"><span class="col">node_name</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">performance_value</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">has_io_errors</span><span class="type">int</span></div>
+      </div>
+
+      <div class="entity" data-table="nodes" style="left: 280px; top: 200px;">
+        <div class="entity-header">nodes</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row fk"><span class="col">customer_id</span><span class="type">int</span></div>
+        <div class="entity-row"><span class="col">node_name</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">node_type</span><span class="type">varchar</span></div>
+        <div class="entity-row fk"><span class="col">assigned_cabinet_id</span><span class="type">varchar</span></div>
+      </div>
+
+      <div class="entity" data-table="session_pm_notes" style="left: 520px; top: 400px;">
+        <div class="entity-header">session_pm_notes</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row fk"><span class="col">session_id</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">common_tasks</span><span class="type">text</span></div>
+      </div>
+      <svg class="connectors" id="svg-core"></svg>
+    </div>
+    <p class="note">
+      <strong>Logical link (dashed in app, not SQL FK):</strong>
+      <code>session_node_maintenance.node_id</code> usually points at
+      <code>sys_controllers</code> / <code>sys_workstations</code> via offset IDs (+1M, +2M), not
+      <code>nodes.id</code>.
+    </p>
+  </section>
+
+  <!-- Diagram 2: System registry -->
+  <section>
+    <h2>System registry (per customer) — Customer → Nodes screen</h2>
+    <div class="canvas" id="canvas-registry" style="min-height: 480px; min-width: 1000px;">
+      <div class="entity" data-table="customers" style="left: 360px; top: 20px;">
+        <div class="entity-header">customers</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row"><span class="col">name</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">alias</span><span class="type">varchar</span></div>
+      </div>
+
+      <div class="entity" data-table="sys_workstations" style="left: 40px; top: 160px;">
+        <div class="entity-header">sys_workstations</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row fk"><span class="col">customer_id</span><span class="type">int</span></div>
+        <div class="entity-row"><span class="col">name</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">type</span><span class="type">varchar</span></div>
+      </div>
+
+      <div class="entity" data-table="sys_controllers" style="left: 280px; top: 160px;">
+        <div class="entity-header">sys_controllers</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row fk"><span class="col">customer_id</span><span class="type">int</span></div>
+        <div class="entity-row"><span class="col">name</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">model</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">redundant</span><span class="type">varchar</span></div>
+      </div>
+
+      <div class="entity" data-table="sys_smart_switches" style="left: 520px; top: 160px;">
+        <div class="entity-header">sys_smart_switches</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row fk"><span class="col">customer_id</span><span class="type">int</span></div>
+        <div class="entity-row"><span class="col">name</span><span class="type">varchar</span></div>
+      </div>
+
+      <div class="entity" data-table="sys_charms_io_cards" style="left: 720px; top: 160px;">
+        <div class="entity-header">sys_charms_io_cards</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row fk"><span class="col">customer_id</span><span class="type">int</span></div>
+        <div class="entity-row"><span class="col">name</span><span class="type">varchar</span></div>
+      </div>
+
+      <div class="entity" data-table="sys_io_devices" style="left: 160px; top: 320px;">
+        <div class="entity-header">sys_io_devices</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row fk"><span class="col">customer_id</span><span class="type">int</span></div>
+        <div class="entity-row"><span class="col">node</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">card</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">device_name</span><span class="type">varchar</span></div>
+      </div>
+
+      <div class="entity" data-table="sys_charms" style="left: 420px; top: 320px;">
+        <div class="entity-header">sys_charms</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row fk"><span class="col">customer_id</span><span class="type">int</span></div>
+        <div class="entity-row"><span class="col">charms_io_card_name</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">name</span><span class="type">varchar</span></div>
+      </div>
+
+      <div class="entity" data-table="sys_ams_systems" style="left: 680px; top: 320px;">
+        <div class="entity-header">sys_ams_systems</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row fk"><span class="col">customer_id</span><span class="type">int</span></div>
+        <div class="entity-row"><span class="col">software_revision</span><span class="type">varchar</span></div>
+      </div>
+      <svg class="connectors" id="svg-registry"></svg>
+    </div>
+    <p class="note">
+      <strong>Import sources:</strong> Registration XML → workstations, controllers, switches, CIOCs.
+      FHX / bundle workbook → <code>sys_io_devices</code>, charms, <code>dv_*</code> tables.
+    </p>
+  </section>
+
+  <!-- Diagram 3: I&I -->
+  <section>
+    <h2>I&amp;I (Installation &amp; Inspection)</h2>
+    <div class="canvas" id="canvas-ii" style="min-height: 320px; min-width: 900px;">
+      <div class="entity" data-table="sessions" style="left: 40px; top: 80px;">
+        <div class="entity-header">sessions</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">varchar</span></div>
+        <div class="entity-row fk"><span class="col">customer_id</span><span class="type">int</span></div>
+      </div>
+
+      <div class="entity" data-table="session_ii_documents" style="left: 280px; top: 60px;">
+        <div class="entity-header">session_ii_documents</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">varchar</span></div>
+        <div class="entity-row fk"><span class="col">session_id</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">document_name</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">revision_number</span><span class="type">int</span></div>
+      </div>
+
+      <div class="entity" style="left: 540px; top: 20px;">
+        <div class="entity-header">session_ii_equipment</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row fk"><span class="col">document_id</span><span class="type">varchar</span></div>
+      </div>
+
+      <div class="entity" data-table="session_ii_checklist" style="left: 540px; top: 140px;">
+        <div class="entity-header">session_ii_checklist</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row fk"><span class="col">document_id</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">section_name</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">item_name</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">recorded_value</span><span class="type">varchar</span></div>
+      </div>
+
+      <div class="entity" data-table="session_ii_equipment_used" style="left: 540px; top: 280px;">
+        <div class="entity-header">session_ii_equipment_used</div>
+        <div class="entity-row pk"><span class="col">id</span><span class="type">int</span></div>
+        <div class="entity-row fk"><span class="col">document_id</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">manufacturer</span><span class="type">varchar</span></div>
+        <div class="entity-row"><span class="col">serial_number</span><span class="type">varchar</span></div>
+      </div>
+      <svg class="connectors" id="svg-ii"></svg>
+    </div>
+  </section>
+
+  <script>
+    function connect(canvasId, svgId, pairs) {
+      const canvas = document.getElementById(canvasId);
+      const svg = document.getElementById(svgId);
+      if (!canvas || !svg) return;
+      const cr = canvas.getBoundingClientRect();
+      svg.setAttribute('width', canvas.scrollWidth);
+      svg.setAttribute('height', canvas.scrollHeight);
+      pairs.forEach(([fromName, toName, label]) => {
+        const from = canvas.querySelector('[data-table="' + fromName + '"]');
+        const to = canvas.querySelector('[data-table="' + toName + '"]');
+        if (!from || !to) return;
+        const fr = from.getBoundingClientRect();
+        const tr = to.getBoundingClientRect();
+        const x1 = fr.left + fr.width / 2 - cr.left;
+        const y1 = fr.top + fr.height / 2 - cr.top;
+        const x2 = tr.left + tr.width / 2 - cr.left;
+        const y2 = tr.top + tr.height / 2 - cr.top;
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', x1);
+        line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2);
+        line.setAttribute('y2', y2);
+        svg.appendChild(line);
+        if (label) {
+          const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          t.setAttribute('x', (x1 + x2) / 2);
+          t.setAttribute('y', (y1 + y2) / 2 - 4);
+          t.setAttribute('text-anchor', 'middle');
+          t.textContent = label;
+          svg.appendChild(t);
+        }
+      });
+    }
+
+    function run() {
+      connect('canvas-core', 'svg-core', [
+        ['customers', 'sessions', 'customer_id'],
+        ['users', 'sessions', 'user_id'],
+        ['sessions', 'cabinets', 'pm_session_id'],
+        ['sessions', 'session_diagnostics', 'session_id'],
+        ['sessions', 'session_node_maintenance', 'session_id'],
+        ['sessions', 'session_pm_notes', 'session_id'],
+        ['customers', 'nodes', 'customer_id'],
+      ]);
+      connect('canvas-registry', 'svg-registry', [
+        ['customers', 'sys_workstations', 'customer_id'],
+        ['customers', 'sys_controllers', 'customer_id'],
+        ['customers', 'sys_smart_switches', 'customer_id'],
+        ['customers', 'sys_charms_io_cards', 'customer_id'],
+        ['customers', 'sys_io_devices', 'customer_id'],
+        ['customers', 'sys_charms', 'customer_id'],
+        ['customers', 'sys_ams_systems', 'customer_id'],
+      ]);
+      connect('canvas-ii', 'svg-ii', [
+        ['sessions', 'session_ii_documents', 'session_id'],
+        ['session_ii_documents', 'session_ii_equipment', 'document_id'],
+        ['session_ii_documents', 'session_ii_checklist', 'document_id'],
+        ['session_ii_documents', 'session_ii_equipment_used', 'document_id'],
+      ]);
+    }
+    window.addEventListener('load', run);
+    window.addEventListener('resize', () => {
+      ['svg-core', 'svg-registry', 'svg-ii'].forEach((id) => {
+        const s = document.getElementById(id);
+        if (s) s.innerHTML = '';
+      });
+      run();
+    });
+  </script>
+</body>
+</html>

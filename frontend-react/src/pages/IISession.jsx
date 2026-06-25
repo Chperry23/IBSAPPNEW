@@ -14,6 +14,7 @@ export default function IISession() {
   const [message, setMessage] = useState(null);
   const [showNewDocumentModal, setShowNewDocumentModal] = useState(false);
   const [showHeaderModal, setShowHeaderModal] = useState(false);
+  const [applyingInitials, setApplyingInitials] = useState(false);
 
   useEffect(() => {
     loadSessionData();
@@ -96,6 +97,41 @@ export default function IISession() {
     } catch (error) {
       soundSystem.playError();
       showMessage('Error saving header information', 'error');
+    }
+  };
+
+  const handleApplyInitialsAll = async () => {
+    const initials = (session?.ii_initials || '').trim();
+    if (!initials) {
+      showMessage('Set default initials in Edit Header Info first', 'error');
+      setShowHeaderModal(true);
+      return;
+    }
+    if (!documents.length) {
+      showMessage('Add at least one cabinet before applying initials', 'error');
+      return;
+    }
+    if (!window.confirm(`Apply initials "${initials}" to every checklist row in all ${documents.length} cabinet(s)?`)) {
+      return;
+    }
+
+    setApplyingInitials(true);
+    try {
+      const result = await api.request(`/api/sessions/${id}/ii-apply-initials`, {
+        method: 'POST',
+        body: JSON.stringify({ initials }),
+      });
+      if (result?.success) {
+        soundSystem.playSuccess();
+        showMessage(`Initials applied to ${result.rowsUpdated} checklist rows across ${result.documents} cabinet(s)`, 'success');
+      } else {
+        throw new Error(result?.error || 'Apply failed');
+      }
+    } catch (error) {
+      soundSystem.playError();
+      showMessage(error.message || 'Error applying initials', 'error');
+    } finally {
+      setApplyingInitials(false);
     }
   };
 
@@ -188,6 +224,14 @@ export default function IISession() {
           )}
         </div>
         <div className="flex gap-3 flex-wrap">
+          <button
+            onClick={handleApplyInitialsAll}
+            className="btn btn-primary"
+            disabled={applyingInitials || documents.length === 0}
+            title={session?.ii_initials ? `Apply "${session.ii_initials}" to all checklist sign-offs` : 'Set default initials in header first'}
+          >
+            {applyingInitials ? 'Applying…' : `✍️ Initial all with (${session?.ii_initials?.trim() || 'set initials'})`}
+          </button>
           <button
             onClick={() => setShowHeaderModal(true)}
             className="btn btn-secondary"

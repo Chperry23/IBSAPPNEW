@@ -3,9 +3,46 @@ const router = express.Router();
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
 const { findChrome, getPuppeteer } = require('../utils/chrome');
-const { generateIIPDF, generateCombinedIIPDF } = require('../services/pdf/iiReport');
+const { generateIIPDF, generateCombinedIIPDF, buildBlankIIChecklistItems } = require('../services/pdf/iiReport');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
+
+/** Checklist PATCH semantics: JSON body may omit fields; only supplied keys overwrite (fixes wiped readings on partial autosave). */
+function mergeChecklistPayload(body, prevRowOrNull) {
+  const isInsert = !prevRowOrNull;
+  const pick = (key) => {
+    if (Object.prototype.hasOwnProperty.call(body, key)) return body[key];
+    return isInsert ? null : prevRowOrNull[key];
+  };
+  return {
+    answer: pick('answer'),
+    comments: pick('comments'),
+    performed_by: pick('performed_by'),
+    date_completed: pick('date_completed'),
+    measurement_ohms: pick('measurement_ohms'),
+    measurement_ac_ma: pick('measurement_ac_ma'),
+    measurement_dc_ma: pick('measurement_dc_ma'),
+    measurement_voltage: pick('measurement_voltage'),
+    measurement_frequency: pick('measurement_frequency'),
+    recorded_value: pick('recorded_value'),
+  };
+}
+
+/** Equipment section: PATCH semantics so one checkbox POST does not null the rest */
+function mergeEquipmentPayload(body, prevRowOrNull) {
+  const isInsert = !prevRowOrNull;
+  const pick = (key) => {
+    if (Object.prototype.hasOwnProperty.call(body, key)) return body[key];
+    return isInsert ? null : prevRowOrNull[key];
+  };
+  return {
+    clamp_on_rms_ammeter: pick('clamp_on_rms_ammeter'),
+    digit_dvm: pick('digit_dvm'),
+    fluke_1630_earth_ground: pick('fluke_1630_earth_ground'),
+    fluke_mt8200_micromapper: pick('fluke_mt8200_micromapper'),
+    notes: pick('notes'),
+  };
+}
 
 // Get all I&I documents for a session
 router.get('/api/sessions/:sessionId/ii-documents', requireAuth, async (req, res) => {
@@ -56,6 +93,102 @@ router.get('/api/ii-documents/:documentId', requireAuth, async (req, res) => {
   }
 });
 
+/** Apply session default initials (and date when missing) to every checklist row on a cabinet document */
+async function applyInitialsToDocument(documentId, sessionId, initials, defaultDate) {
+  const templateItems = buildBlankIIChecklistItems();
+  const now = new Date().toISOString();
+  let updated = 0;
+
+  for (const tpl of templateItems) {
+    const existing = await db.prepare(
+      'SELECT id, date_completed FROM session_ii_checklist WHERE document_id = ? AND section_name = ? AND item_name = ? AND deleted = 0'
+    ).get([documentId, tpl.section_name, tpl.item_name]);
+
+    if (existing) {
+      await db.prepare(
+        `UPDATE session_ii_checklist SET performed_by = ?, date_completed = COALESCE(date_completed, ?), synced = 0, updated_at = ? WHERE id = ?`
+      ).run([initials, defaultDate, now, existing.id]);
+    } else {
+      await db.prepare(
+        `INSERT INTO session_ii_checklist (session_id, document_id, section_name, item_name, performed_by, date_completed, uuid, synced, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+      ).run([sessionId, documentId, tpl.section_name, tpl.item_name, initials, defaultDate, crypto.randomUUID(), now, now]);
+    }
+    updated += 1;
+  }
+
+  return updated;
+}
+
+// Apply default initials to all checklist rows in every cabinet in an I&I session
+router.post('/api/sessions/:sessionId/ii-apply-initials', requireAuth, async (req, res) => {
+  const { sessionId } = req.params;
+
+  try {
+    const session = await db.prepare('SELECT * FROM sessions WHERE id = ? AND session_type = ?').get([sessionId, 'ii']);
+    if (!session) {
+      return res.status(404).json({ error: 'I&I session not found' });
+    }
+
+    const initials = (req.body?.initials || session.ii_initials || '').trim();
+    if (!initials) {
+      return res.status(400).json({ error: 'Set default initials in session header first' });
+    }
+
+    const defaultDate = session.ii_date_performed || new Date().toISOString().split('T')[0];
+    const documents = await db.prepare(
+      'SELECT id FROM session_ii_documents WHERE session_id = ? AND deleted = 0'
+    ).all([sessionId]);
+
+    if (!documents.length) {
+      return res.status(400).json({ error: 'No cabinets in this I&I session' });
+    }
+
+    let rowsUpdated = 0;
+    for (const doc of documents) {
+      rowsUpdated += await applyInitialsToDocument(doc.id, sessionId, initials, defaultDate);
+    }
+
+    await db.prepare('UPDATE sessions SET updated_at = ?, synced = 0 WHERE id = ?').run([new Date().toISOString(), sessionId]);
+
+    res.json({
+      success: true,
+      initials,
+      documents: documents.length,
+      rowsUpdated,
+    });
+  } catch (error) {
+    console.error('Apply I&I initials (session) error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Apply default initials to all checklist rows on one cabinet document
+router.post('/api/ii-documents/:documentId/ii-apply-initials', requireAuth, async (req, res) => {
+  const { documentId } = req.params;
+
+  try {
+    const document = await db.prepare('SELECT * FROM session_ii_documents WHERE id = ? AND deleted = 0').get([documentId]);
+    if (!document) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    const session = await db.prepare('SELECT * FROM sessions WHERE id = ?').get([document.session_id]);
+    const initials = (req.body?.initials || session?.ii_initials || '').trim();
+    if (!initials) {
+      return res.status(400).json({ error: 'Set default initials in session header first' });
+    }
+
+    const defaultDate = session?.ii_date_performed || new Date().toISOString().split('T')[0];
+    const rowsUpdated = await applyInitialsToDocument(documentId, document.session_id, initials, defaultDate);
+
+    res.json({ success: true, initials, rowsUpdated });
+  } catch (error) {
+    console.error('Apply I&I initials (document) error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 // Save I&I header information for a session
 router.post('/api/sessions/:sessionId/ii-header', requireAuth, async (req, res) => {
   const { sessionId } = req.params;
@@ -97,12 +230,11 @@ router.get('/api/ii-documents/:documentId/ii-equipment', requireAuth, async (req
 // Save I&I equipment checklist for a document
 router.post('/api/ii-documents/:documentId/ii-equipment', requireAuth, async (req, res) => {
   const { documentId } = req.params;
-  const { clamp_on_rms_ammeter, digit_dvm, fluke_1630_earth_ground, fluke_mt8200_micromapper, notes } = req.body;
-  
+  const body = req.body;
+
   console.log(`🔍 DEBUG: Saving I&I equipment for document ID: ${documentId}`);
   
   try {
-    // Get the session_id for this document
     const document = await db.prepare('SELECT session_id FROM session_ii_documents WHERE id = ?').get([documentId]);
     if (!document) {
       return res.status(404).json({ error: 'Document not found' });
@@ -118,17 +250,28 @@ router.post('/api/ii-documents/:documentId/ii-equipment', requireAuth, async (re
     
     let equipment;
     if (existing) {
-      console.log(`🔍 DEBUG: Updating existing equipment record`);
-      await db.prepare('UPDATE session_ii_equipment SET clamp_on_rms_ammeter = ?, digit_dvm = ?, fluke_1630_earth_ground = ?, fluke_mt8200_micromapper = ?, notes = ?, synced = 0, updated_at = ? WHERE document_id = ? AND deleted = 0').run([clamp_on_rms_ammeter, digit_dvm, fluke_1630_earth_ground, fluke_mt8200_micromapper, notes, now, documentId]);
+      const prevFull = await db.prepare('SELECT * FROM session_ii_equipment WHERE document_id = ? AND deleted = 0').get([documentId]);
+      const merged = mergeEquipmentPayload(body, prevFull);
+      console.log(`🔍 DEBUG: Updating existing equipment record (merged partial save)`);
+      await db.prepare('UPDATE session_ii_equipment SET clamp_on_rms_ammeter = ?, digit_dvm = ?, fluke_1630_earth_ground = ?, fluke_mt8200_micromapper = ?, notes = ?, synced = 0, updated_at = ? WHERE document_id = ? AND deleted = 0').run([
+        merged.clamp_on_rms_ammeter,
+        merged.digit_dvm,
+        merged.fluke_1630_earth_ground,
+        merged.fluke_mt8200_micromapper,
+        merged.notes,
+        now,
+        documentId
+      ]);
       equipment = await db.prepare('SELECT * FROM session_ii_equipment WHERE document_id = ? AND deleted = 0').get([documentId]);
     } else {
+      const merged = mergeEquipmentPayload(body, null);
       console.log(`🔍 DEBUG: Creating new equipment record with session_id: ${sessionId} and document_id: ${documentId}`);
-      await db.prepare('INSERT INTO session_ii_equipment (session_id, document_id, clamp_on_rms_ammeter, digit_dvm, fluke_1630_earth_ground, fluke_mt8200_micromapper, notes, uuid, synced, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)').run([sessionId, documentId, clamp_on_rms_ammeter, digit_dvm, fluke_1630_earth_ground, fluke_mt8200_micromapper, notes, uuid, now, now]);
+      await db.prepare('INSERT INTO session_ii_equipment (session_id, document_id, clamp_on_rms_ammeter, digit_dvm, fluke_1630_earth_ground, fluke_mt8200_micromapper, notes, uuid, synced, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)').run([sessionId, documentId, merged.clamp_on_rms_ammeter, merged.digit_dvm, merged.fluke_1630_earth_ground, merged.fluke_mt8200_micromapper, merged.notes, uuid, now, now]);
       equipment = await db.prepare('SELECT * FROM session_ii_equipment WHERE document_id = ? AND deleted = 0').get([documentId]);
     }
     
     console.log(`✅ DEBUG: Successfully saved equipment:`, equipment);
-    res.json(equipment);
+    res.json(equipment || {});
   } catch (error) {
     console.error('❌ DEBUG: Save I&I equipment error:', error);
     res.status(500).json({ error: 'Database error' });
@@ -155,8 +298,9 @@ router.get('/api/ii-documents/:documentId/ii-checklist', requireAuth, async (req
 // Save I&I checklist item for a document
 router.post('/api/ii-documents/:documentId/ii-checklist', requireAuth, async (req, res) => {
   const { documentId } = req.params;
-  const { section_name, item_name, answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, recorded_value } = req.body;
-  
+  const body = req.body;
+  const { section_name, item_name } = body;
+
   console.log(`🔍 DEBUG: Saving I&I checklist item for document ID: ${documentId}, section: ${section_name}, item: ${item_name}`);
   
   try {
@@ -172,20 +316,61 @@ router.post('/api/ii-documents/:documentId/ii-checklist', requireAuth, async (re
     const uuid = crypto.randomUUID();
     const now = new Date().toISOString();
     
-    // Check if item already exists
     const existing = await db.prepare('SELECT id FROM session_ii_checklist WHERE document_id = ? AND section_name = ? AND item_name = ? AND deleted = 0').get([documentId, section_name, item_name]);
-    
+
     let item;
     if (existing) {
-      console.log(`🔍 DEBUG: Updating existing checklist item`);
-      await db.prepare('UPDATE session_ii_checklist SET answer = ?, comments = ?, performed_by = ?, date_completed = ?, measurement_ohms = ?, measurement_ac_ma = ?, measurement_dc_ma = ?, measurement_voltage = ?, measurement_frequency = ?, recorded_value = ?, synced = 0, updated_at = ? WHERE id = ?').run([answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, recorded_value, now, existing.id]);
+      const prevFull = await db.prepare('SELECT * FROM session_ii_checklist WHERE id = ?').get([existing.id]);
+      const merged = mergeChecklistPayload(body, prevFull);
+      console.log(`🔍 DEBUG: Updating existing checklist item (merged partial save)`);
+      await db.prepare(
+        `UPDATE session_ii_checklist SET answer = ?, comments = ?, performed_by = ?, date_completed = ?,
+          measurement_ohms = ?, measurement_ac_ma = ?, measurement_dc_ma = ?, measurement_voltage = ?, measurement_frequency = ?,
+          recorded_value = ?, synced = 0, updated_at = ? WHERE id = ?`
+      ).run([
+        merged.answer,
+        merged.comments,
+        merged.performed_by,
+        merged.date_completed,
+        merged.measurement_ohms,
+        merged.measurement_ac_ma,
+        merged.measurement_dc_ma,
+        merged.measurement_voltage,
+        merged.measurement_frequency,
+        merged.recorded_value,
+        now,
+        existing.id
+      ]);
       item = await db.prepare('SELECT * FROM session_ii_checklist WHERE id = ?').get([existing.id]);
     } else {
+      const merged = mergeChecklistPayload(body, null);
       console.log(`🔍 DEBUG: Creating new checklist item with session_id: ${sessionId} and document_id: ${documentId}`);
-      await db.prepare('INSERT INTO session_ii_checklist (session_id, document_id, section_name, item_name, answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, recorded_value, uuid, synced, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)').run([sessionId, documentId, section_name, item_name, answer, comments, performed_by, date_completed, measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, recorded_value, uuid, now, now]);
+      await db.prepare(
+        `INSERT INTO session_ii_checklist (session_id, document_id, section_name, item_name, answer, comments, performed_by, date_completed,
+          measurement_ohms, measurement_ac_ma, measurement_dc_ma, measurement_voltage, measurement_frequency, recorded_value,
+          uuid, synced, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+      ).run([
+        sessionId,
+        documentId,
+        section_name,
+        item_name,
+        merged.answer,
+        merged.comments,
+        merged.performed_by,
+        merged.date_completed,
+        merged.measurement_ohms,
+        merged.measurement_ac_ma,
+        merged.measurement_dc_ma,
+        merged.measurement_voltage,
+        merged.measurement_frequency,
+        merged.recorded_value,
+        uuid,
+        now,
+        now
+      ]);
       item = await db.prepare('SELECT * FROM session_ii_checklist WHERE document_id = ? AND section_name = ? AND item_name = ? AND deleted = 0').get([documentId, section_name, item_name]);
     }
-    
+
     console.log(`✅ DEBUG: Successfully saved checklist item:`, item);
     res.json(item);
   } catch (error) {

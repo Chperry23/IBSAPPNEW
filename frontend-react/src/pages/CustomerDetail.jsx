@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import api from '../services/api';
@@ -27,6 +27,9 @@ export default function CustomerDetail() {
   const [showEditSessionModal, setShowEditSessionModal] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
   const [showSystemRegModal, setShowSystemRegModal] = useState(false);
+  const [showImportBundleModal, setShowImportBundleModal] = useState(false);
+  const [bundleImporting, setBundleImporting] = useState(false);
+  const bundleZipInputRef = useRef(null);
   const [systemRegSummary, setSystemRegSummary] = useState(null);
   const [hddHistory, setHddHistory] = useState([]);
   const [hddLoading, setHddLoading] = useState(false);
@@ -181,33 +184,25 @@ export default function CustomerDetail() {
 
   const handleSystemRegImport = async (e) => {
     e.preventDefault();
-    
+
     const fileInput = e.target.xml_file.files[0];
-    const textInput = e.target.xml_data.value;
-    
-    let xmlText = '';
-    
-    if (fileInput) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const buf = new Uint8Array(event.target.result);
-        let encoding = 'UTF-8';
-        if (buf.length >= 2) {
-          if (buf[0] === 0xFF && buf[1] === 0xFE) encoding = 'UTF-16LE';
-          else if (buf[0] === 0xFE && buf[1] === 0xFF) encoding = 'UTF-16BE';
-        }
-        const decoder = new TextDecoder(encoding);
-        xmlText = decoder.decode(buf);
-        await processXMLImport(xmlText);
-      };
-      reader.readAsArrayBuffer(fileInput);
+    if (!fileInput) {
+      showMessage('Please select an XML file', 'error');
       return;
-    } else if (textInput) {
-      xmlText = textInput;
-      await processXMLImport(xmlText);
-    } else {
-      showMessage('Please select a file or paste XML data', 'error');
     }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const buf = new Uint8Array(event.target.result);
+      let encoding = 'UTF-8';
+      if (buf.length >= 2) {
+        if (buf[0] === 0xff && buf[1] === 0xfe) encoding = 'UTF-16LE';
+        else if (buf[0] === 0xfe && buf[1] === 0xff) encoding = 'UTF-16BE';
+      }
+      const decoder = new TextDecoder(encoding);
+      await processXMLImport(decoder.decode(buf));
+    };
+    reader.readAsArrayBuffer(fileInput);
   };
 
   const processXMLImport = async (xmlData) => {
@@ -283,6 +278,85 @@ export default function CustomerDetail() {
       soundSystem.playError();
       console.error('❌ Import exception:', error);
       showMessage('Error importing system registry: ' + error.message, 'error');
+    }
+  };
+
+  const formatBundleFhxCounts = (c) => {
+    if (!c || typeof c !== 'object') return '';
+    const parts = [
+      c.simple_io != null && `${c.simple_io} simple I/O`,
+      c.charms != null && `${c.charms} charms`,
+      c.modules != null && `${c.modules} modules`,
+      c.pid != null && `${c.pid} PID`,
+      c.ai != null && `${c.ai} AI`,
+      c.ao != null && `${c.ao} AO`,
+      c.di != null && `${c.di} DI`,
+      c.do != null && `${c.do} DO`,
+    ].filter(Boolean);
+    return parts.join('; ');
+  };
+
+  const handleCustomerBundleImport = async (e) => {
+    e.preventDefault();
+    const file = e.target.bundle_zip?.files?.[0];
+    if (!file) {
+      showMessage('Choose a .zip bundle (cabinet-pm-customer-import-bundle/v1).', 'error');
+      return;
+    }
+    setBundleImporting(true);
+    try {
+      const result = await api.uploadCustomerImportBundle(id, file);
+      const reg = result.registration;
+      const fhx = result.fhx;
+
+      if (result.success) {
+        soundSystem.playSuccess();
+        const regParts = reg?.ok && reg.stats
+          ? [
+              reg.stats.workstations && `${reg.stats.workstations} workstations`,
+              reg.stats.controllers && `${reg.stats.controllers} controllers`,
+              reg.stats.smartSwitches && `${reg.stats.smartSwitches} switches`,
+              reg.stats.charmsIOCards && `${reg.stats.charmsIOCards} CIOCs`,
+              reg.stats.ioDevices && `${reg.stats.ioDevices} I/O`,
+              reg.stats.charms && `${reg.stats.charms} charms`,
+              reg.stats.amsSystems && `${reg.stats.amsSystems} AMS`,
+            ].filter(Boolean).join(', ')
+          : '';
+        const regLine =
+          reg?.skipped ? `Registration: skipped (${reg.note || 'no XML in ZIP'}).` :
+          reg?.ok ? `Registration: imported${regParts ? ` — ${regParts}` : ''}.` :
+          'Registration failed.';
+        const fhxLine =
+          fhx?.skipped ? `FHX: skipped (${fhx.note || 'no workbook'}).` :
+          fhx?.ok ? `FHX: ${formatBundleFhxCounts(fhx.counts)}.` :
+          '';
+        showMessage(`${regLine} ${fhxLine}`.trim(), 'success');
+        setShowImportBundleModal(false);
+        if (bundleZipInputRef.current) bundleZipInputRef.current.value = '';
+        await loadCustomerData();
+        await loadSystemRegSummary();
+        await loadSystemRegStats();
+        return;
+      }
+
+      soundSystem.playError();
+      const errTxt = Array.isArray(result.errors) ? result.errors.join(' ') : (result.error || 'Bundle import failed');
+      if (result.partialRegistration && reg?.ok) {
+        showMessage(
+          `Registration succeeded but FHX ingest failed — I/O rows may reflect only registration XML: ${errTxt}`,
+          'error'
+        );
+        await loadCustomerData();
+        await loadSystemRegSummary();
+        await loadSystemRegStats();
+      } else {
+        showMessage(errTxt, 'error');
+      }
+    } catch (error) {
+      soundSystem.playError();
+      showMessage('Bundle import error: ' + error.message, 'error');
+    } finally {
+      setBundleImporting(false);
     }
   };
 
@@ -423,8 +497,8 @@ export default function CustomerDetail() {
 
       {/* Trend over time modal */}
       {showTrendModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 max-w-4xl w-full max-h-[85vh] flex flex-col">
+        <div className="modal-backdrop">
+          <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 max-w-4xl w-full flex flex-col">
             <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
               <h3 className="text-lg font-semibold text-gray-100">📈 Metrics trend over time</h3>
               <button onClick={() => setShowTrendModal(false)} className="text-gray-400 hover:text-white text-2xl leading-none">×</button>
@@ -728,6 +802,53 @@ export default function CustomerDetail() {
                 </div>
               </div>
             )}
+            {systemRegSummary &&
+              ((systemRegSummary.ioDevices ?? 0) > 0 ||
+                (systemRegSummary.charms ?? 0) > 0 ||
+                (systemRegSummary.fhxModuleTotal ?? 0) > 0) && (
+              <div className="mt-4 pt-4 border-t border-gray-600">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="text-sm text-gray-400">Imported extracts (workbook/XML)</div>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/system-registry/${customer.id}`)}
+                    className="text-xs text-blue-400 hover:text-blue-300"
+                  >
+                    View Details →
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  {(systemRegSummary.ioDevices ?? 0) > 0 && (
+                    <div className="text-center bg-yellow-900/20 rounded p-2">
+                      <div className="font-bold text-yellow-200">{systemRegSummary.ioDevices}</div>
+                      <div className="text-gray-500">Simple I-O</div>
+                    </div>
+                  )}
+                  {(systemRegSummary.charms ?? 0) > 0 && (
+                    <div className="text-center bg-orange-900/20 rounded p-2">
+                      <div className="font-bold text-orange-200">{systemRegSummary.charms}</div>
+                      <div className="text-gray-500">CHARM linkage</div>
+                    </div>
+                  )}
+                  {(systemRegSummary.fhxModuleTotal ?? 0) > 0 && systemRegSummary.fhxModules && (
+                    <>
+                      <div className="text-center bg-violet-900/25 rounded p-2 col-span-2 sm:col-span-2">
+                        <div className="font-bold text-violet-200">
+                          {(systemRegSummary.fhxModules.modules ?? 0) +
+                            (systemRegSummary.fhxModules.pid ?? 0)}{' '}
+                          mod + PID
+                        </div>
+                        <div className="text-gray-500 text-[10px] mt-1">
+                          AI {(systemRegSummary.fhxModules.ai ?? 0)} · AO {(systemRegSummary.fhxModules.ao ?? 0)} · DI{' '}
+                          {(systemRegSummary.fhxModules.di ?? 0)} · DO {(systemRegSummary.fhxModules.do ?? 0)} — lists on Nodes
+                          page
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
             {systemRegStats && (systemRegStats.cioc_count > 0 || systemRegStats.charm_count > 0) && (
               <div className="mt-4 pt-4 border-t border-gray-600">
                 <div className="text-sm text-gray-400 mb-2">CHARMs Data</div>
@@ -773,14 +894,19 @@ export default function CustomerDetail() {
             >
               📋 Import Nodes
             </button>
-            {systemRegSummary && (systemRegSummary.workstations > 0 || systemRegSummary.controllers > 0) && (
-              <button
-                onClick={() => navigate(`/system-registry/${customer.id}`)}
-                className="btn btn-success w-full"
-              >
-                👁️ View Nodes
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setShowImportBundleModal(true)}
+              className="btn btn-secondary w-full border-violet-500/50 text-violet-200 hover:bg-violet-900/40"
+            >
+              📦 Import customer bundle (ZIP)
+            </button>
+            <button
+              onClick={() => navigate(`/system-registry/${customer.id}`)}
+              className="btn btn-success w-full"
+            >
+              🖥️ Manage Nodes
+            </button>
             <button
               onClick={() => {
                 const today = new Date().toISOString().split('T')[0];
@@ -1427,101 +1553,118 @@ export default function CustomerDetail() {
         </div>
       )}
 
-      {/* System Registry Import Modal */}
-      {showSystemRegModal && (
+      {/* Customer import bundle ZIP (registration + FHX workbook) */}
+      {showImportBundleModal && (
         <div className="modal-backdrop">
-          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-3xl w-full mx-4 border border-gray-700">
+          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-2xl w-full mx-4 border border-gray-700">
             <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-100">📋 Import Nodes (System Registry XML)</h3>
+              <h3 className="text-lg font-semibold text-gray-100">📦 Import customer bundle</h3>
               <button
-                onClick={() => setShowSystemRegModal(false)}
+                type="button"
+                onClick={() => { setShowImportBundleModal(false); }}
                 className="text-gray-400 hover:text-gray-200 text-2xl"
               >
                 ×
               </button>
             </div>
-            <form onSubmit={handleSystemRegImport}>
+            <form onSubmit={handleCustomerBundleImport}>
               <div className="px-6 py-4 space-y-4">
+                <div className="rounded-lg border border-violet-500/40 bg-violet-950/40 p-3 text-sm text-violet-100 space-y-2">
+                  <p>
+                    Upload a ZIP in <strong className="text-violet-200">cabinet-pm-customer-import-bundle/v1</strong>{' '}
+                    form: optionally <code className="text-xs bg-black/30 px-1 rounded">registration/SystemRegistration.xml</code>,{' '}
+                    plus <code className="text-xs bg-black/30 px-1 rounded">fhx/AllExtracts.xlsx</code> from FHXWEBAPP’s Cabinet bundle download.
+                  </p>
+                  <p className="text-violet-200/90">
+                    Order: registration import runs first, then FHX replaces this customer’s simple I/O and charm rows from the workbook and loads module tables (<code className="text-xs bg-black/30 px-1 rounded">dv_*</code>).
+                  </p>
+                </div>
+                <div className="rounded-lg border border-amber-600/40 bg-amber-950/30 p-3 text-xs text-amber-100">
+                  Re-importing FHX overwrites cabinet-scoped simple I/O and charm linkage derived from SIMPLE_IO / CHARMS. Confirm cabinet assignments if those keys moved.
+                </div>
+                <div>
+                  <label className="form-label">Bundle ZIP</label>
+                  <input
+                    ref={bundleZipInputRef}
+                    type="file"
+                    name="bundle_zip"
+                    accept=".zip,application/zip"
+                    className="form-input"
+                  />
+                </div>
+              </div>
+              <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowImportBundleModal(false)}
+                  className="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={bundleImporting}>
+                  {bundleImporting ? 'Importing…' : 'Upload bundle'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* System Registry Import Modal */}
+      {showSystemRegModal && (
+        <div className="modal-backdrop">
+          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-lg w-full mx-4 border border-gray-700 max-h-[90vh] overflow-y-auto">
+            <div className="px-5 py-3 border-b border-gray-700 flex justify-between items-center">
+              <h3 className="text-base font-semibold text-gray-100">Import System Registry XML</h3>
+              <button
+                onClick={() => setShowSystemRegModal(false)}
+                className="text-gray-400 hover:text-gray-200 text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleSystemRegImport}>
+              <div className="px-5 py-3 space-y-3">
                 {systemRegSummary && (
-                  <div className={`border rounded-lg p-4 ${
+                  <div className={`border rounded-lg p-3 text-sm ${
                     (systemRegSummary.workstations > 0 || systemRegSummary.controllers > 0 || systemRegSummary.smartSwitches > 0)
                       ? 'bg-blue-900/30 border-blue-500'
                       : 'bg-gray-700/30 border-gray-600'
                   }`}>
-                    <h4 className={`font-semibold mb-2 ${
-                      (systemRegSummary.workstations > 0 || systemRegSummary.controllers > 0 || systemRegSummary.smartSwitches > 0)
-                        ? 'text-blue-300'
-                        : 'text-gray-400'
-                    }`}>
-                      {(systemRegSummary.workstations > 0 || systemRegSummary.controllers > 0 || systemRegSummary.smartSwitches > 0)
-                        ? '📊 Current System Registry Data'
-                        : '📋 No System Registry Data Yet'}
-                    </h4>
-                    <div className="grid grid-cols-2 gap-2 text-sm text-gray-300">
-                      <div>Workstations: <strong>{systemRegSummary.workstations || 0}</strong></div>
-                      <div>Controllers: <strong>{systemRegSummary.controllers || 0}</strong></div>
-                      <div>Smart Switches: <strong>{systemRegSummary.smartSwitches || 0}</strong></div>
-                      <div>I/O Devices: <strong>{systemRegSummary.ioDevices || 0}</strong></div>
-                      <div>Charms I/O Cards: <strong>{systemRegSummary.charmsIOCards || 0}</strong></div>
-                      <div>Charms: <strong>{systemRegSummary.charms || 0}</strong></div>
+                    <div className="font-medium text-gray-200 mb-1.5">Current registry</div>
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-gray-300 text-xs">
+                      <div>WS <strong>{systemRegSummary.workstations || 0}</strong></div>
+                      <div>Ctrl <strong>{systemRegSummary.controllers || 0}</strong></div>
+                      <div>Switch <strong>{systemRegSummary.smartSwitches || 0}</strong></div>
+                      <div>I/O <strong>{systemRegSummary.ioDevices || 0}</strong></div>
+                      <div>CIOC <strong>{systemRegSummary.charmsIOCards || 0}</strong></div>
+                      <div>Charm <strong>{systemRegSummary.charms || 0}</strong></div>
                     </div>
                     {(systemRegSummary.workstations > 0 || systemRegSummary.controllers > 0) && (
-                      <div className="mt-3 pt-3 border-t border-blue-700">
-                        <p className="text-xs text-blue-200">
-                          💡 Importing will update existing records with the same names
-                        </p>
-                      </div>
+                      <p className="text-[11px] text-blue-200/90 mt-2 pt-2 border-t border-blue-700/50">
+                        Re-import updates matching names; cabinet assignments are preserved.
+                      </p>
                     )}
                   </div>
                 )}
-                
+
                 <div>
-                  <label className="form-label">Upload XML File</label>
+                  <label className="form-label text-sm">XML file</label>
                   <input
                     type="file"
                     name="xml_file"
                     accept=".xml"
-                    className="form-input"
+                    className="form-input text-sm"
                   />
-                  <p className="text-sm text-gray-400 mt-2">
-                    💡 Select your DeltaV System Registry XML export
-                  </p>
-                </div>
-                
-                <div className="text-center text-gray-500">OR</div>
-                
-                <div>
-                  <label className="form-label">Paste XML Data</label>
-                  <textarea
-                    name="xml_data"
-                    rows="10"
-                    placeholder="<?xml version=&quot;1.0&quot;?>&#10;<Export>&#10;  <Workstation>...</Workstation>&#10;  <Controller>...</Controller>&#10;</Export>"
-                    className="form-textarea font-mono text-sm"
-                  ></textarea>
-                  <p className="text-sm text-gray-400 mt-2">
-                    💡 Or paste XML data directly
-                  </p>
+                  <p className="text-xs text-gray-500 mt-1">DeltaV System Registry export</p>
                 </div>
 
-                <div className="bg-yellow-900/30 border border-yellow-500 rounded-lg p-3">
-                  <p className="text-yellow-300 text-sm mb-2">
-                    <strong>Important:</strong> XML must use these exact element names (case-sensitive):
-                  </p>
-                  <div className="text-xs text-yellow-200 space-y-1 ml-4">
-                    <div>• <code className="bg-black/30 px-1 rounded">&lt;Workstation&gt;</code> - Workstation records</div>
-                    <div>• <code className="bg-black/30 px-1 rounded">&lt;Controller&gt;</code> - Controller records</div>
-                    <div>• <code className="bg-black/30 px-1 rounded">&lt;SmartSwitch&gt;</code> - Smart Switch records</div>
-                    <div>• <code className="bg-black/30 px-1 rounded">&lt;IODevice&gt;</code> - I/O Device records</div>
-                    <div>• <code className="bg-black/30 px-1 rounded">&lt;CharmsIOCard&gt;</code> - Charms I/O Card records</div>
-                    <div>• <code className="bg-black/30 px-1 rounded">&lt;Charm&gt;</code> - Charm records</div>
-                    <div>• <code className="bg-black/30 px-1 rounded">&lt;AMSSystem&gt;</code> - AMS System record</div>
-                  </div>
-                  <p className="text-yellow-200 text-xs mt-2">
-                    📄 See <code className="bg-black/30 px-1 rounded">sample-system-registry.xml</code> in the project root for the correct format.
-                  </p>
-                </div>
+                <p className="text-[11px] text-amber-200/90 bg-amber-950/25 border border-amber-600/30 rounded px-2 py-1.5">
+                  Root elements must match exactly: Workstation, Controller, SmartSwitch, IODevice, CharmsIOCard, Charm, AMSSystem. See{' '}
+                  <code className="bg-black/30 px-0.5 rounded text-[10px]">sample-system-registry.xml</code>.
+                </p>
               </div>
-              <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
+              <div className="px-5 py-3 border-t border-gray-700 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setShowSystemRegModal(false)}

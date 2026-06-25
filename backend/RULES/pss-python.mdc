@@ -1,0 +1,40 @@
+---
+description: PSS cabinet detection Python architecture and config
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Python architecture
+
+## Config layer (`config.py`)
+
+Load order (later wins): `.env` → `tuning/<CAMERA_TYPE>.env` → `tuning/inference/<INFERENCE_PROFILE>.env`
+
+All settings via typed getters. Key vars: `CAMERA_TYPE`, `INFERENCE_API_URL`, `CONFIDENCE`, `INFERENCE_PROFILE`, `INFERENCE_WIDTH/HEIGHT`.
+
+## Module layout
+
+- `camera/factory.py` — backend per `CAMERA_TYPE` (V4L2 / GStreamer / USB)
+- `client/factory.py` — PSS TRT HTTP client; posts BGR frames to `/v1/infer`
+- `apps/live_demo.py` — camera → letterbox → inference (bg thread) → overlay
+- `apps/phone_demo.py` — browser demo (FastAPI/WebSocket, TLS in `.certs/`)
+- `ocr/` + `charm_match.py` — CHARM OCR and fuzzy relabel (`CHARM_*` tunables)
+- `model_runtime/` — fetch → build → activate; `models/active/` symlinks
+
+## Commands
+
+```bash
+uv sync                          # add --group {upload,model-build,dev,jetson} as needed
+uv run pytest                    # unit tests (coordinate math, focus/crop, CHARM OCR)
+uv run pss-live-demo             # OpenCV live demo
+uv run pss-phone-demo            # mobile web demo
+uv run pss-model {fetch,build,activate,list}
+```
+
+## Testing
+
+- Unit tests live in `tests/` — coordinate math, focus/crop geometry, CHARM OCR matching
+- Run `uv run pytest` after changes to those areas; no camera, Jetson, or inference server required
+- End-to-end behavior (camera, TRT inference, live overlay) still validated manually via demos
+
+Keep changes minimal; match existing naming, types, and import style.

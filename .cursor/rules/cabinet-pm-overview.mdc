@@ -1,0 +1,33 @@
+---
+description: Cabinet PM project overview and key commands
+alwaysApply: true
+---
+
+# Cabinet PM (IBS APP)
+
+Offline-first PM tablet app: SQLite local, MongoDB master, sync-server HTTP API.
+
+## Stack
+
+- `server-tablet.js` → Express + SQLite (`data/cabinet_pm_tablet.db`)
+- `frontend-react/` → Vite/React UI
+- `sync-server/` → master upload/commit service
+- Field deploy: `npm run build` → `.exe` + `dist/`
+
+## Sync rules (critical)
+
+- New synced rows need `uuid` + `synced = 0` at insert (`sync-write-helper.js`)
+- Push builds from `synced = 0` rows, not raw `change_log` volume
+- Soft-delete (`deleted = 1`) for cloud-visible deletes; keep `uuid`
+- `change_log` can balloon after registry import — run prune before push if sync is slow
+
+## Commands
+
+```bash
+npm start
+npm run sync-server
+node scripts/prune-stale-change-log.js
+node scripts/audit-unsynced-by-table.js
+```
+
+Full agent guide: `AGENTS.md`

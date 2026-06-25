@@ -614,6 +614,7 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
             <th>Neutral to Ground (mV)</th>
             <th>DC Reading (V)</th>
             <th>Status</th>
+            <th>PSU Dead</th>
           </tr>
         </thead>
         <tbody>
@@ -625,6 +626,7 @@ function generateSingleCabinetHtml(cabinet, sessionInfo, cabinetNumber) {
               <td>${formatValue(ps.neutral_ground)}</td>
               <td>${formatValue(ps.dc_reading)}</td>
               <td class="status-${ps.status}">${formatStatus(ps.status)}</td>
+              <td>${ps.psu_dead ? 'Yes' : '—'}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -887,8 +889,8 @@ function generatePDFHtml(data) {
           <span class="info-value">${cabinet.cabinet_name}</span>
         </div>
         <div class="info-row">
-          <span class="info-label">Date:</span>
-          <span class="info-value">${formatDate(cabinet.cabinet_date)}</span>
+          <span class="info-label">PM Date:</span>
+          <span class="info-value">${formatDate(sessionInfo?.completed_at || sessionInfo?.created_at)}</span>
         </div>
       </div>
       
@@ -904,6 +906,7 @@ function generatePDFHtml(data) {
               <th>Neutral to Ground (mV)</th>
               <th>DC Reading (V)</th>
               <th>Status</th>
+              <th>PSU Dead</th>
             </tr>
           </thead>
           <tbody>
@@ -915,6 +918,7 @@ function generatePDFHtml(data) {
                 <td>${formatValue(ps.neutral_ground)}</td>
                 <td>${formatValue(ps.dc_reading)}</td>
                 <td class="status-${ps.status}">${formatStatus(ps.status)}</td>
+                <td>${ps.psu_dead ? 'Yes' : '—'}</td>
               </tr>
             `).join('')}
           </tbody>

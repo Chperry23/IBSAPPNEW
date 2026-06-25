@@ -1,0 +1,365 @@
+// Cabinet PM — SQLite schema (tablet) / MongoDB sync collections
+// Open at https://dbdiagram.io → Import → paste this file
+// Renders table boxes with columns and relationship lines (like a classic ER diagram)
+
+Project cabinet_pm {
+  database_type: 'SQLite'
+  Note: 'Sync columns (uuid, synced, device_id, deleted, timestamps) on most tables — omitted here for clarity.'
+}
+
+// ========== Core ==========
+
+Table users {
+  id integer [pk, increment]
+  username varchar [unique, not null]
+  password_hash varchar [not null]
+  email varchar
+}
+
+Table customers {
+  id integer [pk, increment]
+  name varchar [not null]
+  alias varchar
+  location varchar
+  contact_info varchar
+  uuid varchar
+}
+
+Table sessions {
+  id varchar [pk, note: 'UUID']
+  customer_id integer [not null, ref: > customers.id]
+  user_id integer [not null, ref: > users.id]
+  session_name varchar [not null]
+  session_type varchar [default: 'pm']
+  status varchar [default: 'active']
+  completed_at datetime
+}
+
+Table sync_metadata {
+  key varchar [pk]
+  value varchar
+  updated_at datetime
+}
+
+// ========== PM session ==========
+
+Table cabinets {
+  id varchar [pk]
+  pm_session_id varchar [not null, ref: > sessions.id]
+  cabinet_name varchar [not null]
+  cabinet_location varchar
+  inspection_data text
+  location_id varchar
+}
+
+Table cabinet_locations {
+  id varchar [pk]
+  session_id varchar [not null, ref: > sessions.id]
+  location_name varchar [not null]
+  description varchar
+}
+
+Table cabinet_names {
+  id varchar [pk]
+  session_id varchar [not null, ref: > sessions.id]
+  location_name varchar [not null]
+}
+
+Table session_pm_notes {
+  id integer [pk, increment]
+  session_id varchar [not null, unique, ref: > sessions.id]
+  common_tasks text
+  additional_work_notes text
+  troubleshooting_notes text
+  recommendations_notes text
+}
+
+Table session_diagnostics {
+  id integer [pk, increment]
+  session_id varchar [not null, ref: > sessions.id]
+  controller_name varchar [not null, note: 'Text name — not FK to sys_controllers']
+  card_number integer [not null]
+  channel_number integer
+  error_type varchar [not null]
+  error_description text
+  device_name varchar
+  card_type varchar
+}
+
+Table session_node_maintenance {
+  id integer [pk, increment]
+  session_id varchar [not null, ref: > sessions.id]
+  node_id integer [not null, note: 'Offset id: +1M ws, +2M ctrl — see docs']
+  node_name varchar [note: 'Display name for sync']
+  node_type varchar
+  performance_type varchar
+  performance_value varchar
+  free_time varchar
+  has_io_errors integer
+  completed boolean
+  notes text
+
+  indexes {
+    (session_id, node_id) [unique]
+  }
+}
+
+Table session_node_tracker {
+  id integer [pk, increment]
+  session_id varchar [not null, ref: > sessions.id]
+  node_id integer [not null, ref: > nodes.id]
+  completed boolean
+  notes text
+
+  indexes {
+    (session_id, node_id) [unique]
+  }
+}
+
+Table session_node_snapshots {
+  id integer [pk, increment]
+  session_id varchar [not null, ref: > sessions.id]
+  original_node_id integer [not null]
+  node_name varchar [not null]
+  node_type varchar [not null]
+  model varchar
+  serial varchar
+
+  indexes {
+    (session_id, original_node_id) [unique]
+  }
+}
+
+Table nodes {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  node_name varchar [not null]
+  node_type varchar [not null]
+  model varchar
+  serial varchar
+  assigned_cabinet_id varchar [ref: > cabinets.id]
+
+  indexes {
+    (customer_id, node_name) [unique]
+  }
+}
+
+// ========== System registry (per customer) ==========
+
+Table sys_workstations {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  name varchar [not null]
+  type varchar
+  model varchar
+  redundant varchar
+  software_revision varchar
+  assigned_cabinet_id varchar
+
+  indexes {
+    (customer_id, name) [unique]
+  }
+}
+
+Table sys_controllers {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  name varchar [not null]
+  model varchar
+  software_revision varchar
+  redundant varchar
+  serial_number varchar
+  assigned_cabinet_id varchar
+
+  indexes {
+    (customer_id, name) [unique]
+  }
+}
+
+Table sys_smart_switches {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  name varchar [not null]
+  model varchar
+  serial_number varchar
+
+  indexes {
+    (customer_id, name) [unique]
+  }
+}
+
+Table sys_charms_io_cards {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  name varchar [not null]
+  model varchar
+  redundant varchar
+
+  indexes {
+    (customer_id, name) [unique]
+  }
+}
+
+Table sys_charms {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  charms_io_card_name varchar
+  name varchar [not null]
+  fhx_dst varchar
+  fhx_controller_assignment varchar
+}
+
+Table sys_io_devices {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  node varchar [note: 'Controller/node label from FHX']
+  card varchar
+  device_name varchar
+  channel varchar
+  device_type varchar
+  fhx_description varchar
+}
+
+Table sys_ams_systems {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  software_revision varchar
+
+  indexes {
+    (customer_id) [unique]
+  }
+}
+
+Table sys_cards {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  name varchar [not null]
+  channel_count integer
+}
+
+// ========== I and I ==========
+
+Table session_ii_documents {
+  id varchar [pk]
+  session_id varchar [not null, ref: > sessions.id]
+  document_name varchar [not null]
+  deltav_system_id varchar
+  revision_number integer
+  performed_by varchar
+  date_performed date
+}
+
+Table session_ii_equipment {
+  id integer [pk, increment]
+  document_id varchar [not null, unique, ref: > session_ii_documents.id]
+  session_id varchar
+  clamp_on_rms_ammeter boolean
+  digit_dvm boolean
+  notes text
+}
+
+Table session_ii_checklist {
+  id integer [pk, increment]
+  document_id varchar [not null, ref: > session_ii_documents.id]
+  session_id varchar
+  section_name varchar [not null]
+  item_name varchar [not null]
+  answer varchar
+  recorded_value varchar
+  comments text
+}
+
+Table session_ii_equipment_used {
+  id integer [pk, increment]
+  document_id varchar [not null, ref: > session_ii_documents.id]
+  session_id varchar
+  manufacturer varchar
+  serial_number varchar
+  used_in_section varchar
+}
+
+// ========== Customer extras + FHX ==========
+
+Table customer_notes {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  note varchar [not null]
+  source varchar
+  created_by varchar
+}
+
+Table customer_custom_equipment_models {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  equipment_type varchar [not null]
+  model_name varchar [not null]
+
+  indexes {
+    (customer_id, equipment_type, model_name) [unique]
+  }
+}
+
+Table customer_metric_history {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  session_id varchar [not null, ref: > sessions.id]
+  error_count integer
+  risk_score integer
+  risk_level varchar
+  recorded_at datetime
+}
+
+Table dv_modules {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  module varchar
+  area varchar
+  description varchar
+}
+
+Table dv_pid_modules {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  tag_name varchar
+  module_name varchar
+}
+
+Table dv_ai_modules {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  tag_name varchar
+}
+
+Table dv_ao_modules {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  tag_name varchar
+}
+
+Table dv_di_modules {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  tag_name varchar
+}
+
+Table dv_do_modules {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  tag_name varchar
+}
+
+Table dv_fhx_import_meta {
+  id integer [pk, increment]
+  customer_id integer [not null, ref: > customers.id]
+  imported_at datetime
+  simple_io_rows integer
+  charms_rows integer
+}
+
+Table custom_io_error_types {
+  id integer [pk, increment]
+  error_type varchar [not null]
+}
+
+// Logical PM link (not enforced in SQLite FK):
+// session_node_maintenance.node_id → sys_* via offset (+1M / +2M / +3M / +4M)

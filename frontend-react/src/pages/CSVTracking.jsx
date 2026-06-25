@@ -46,24 +46,16 @@ export default function CSVTracking() {
     if (!importingCustomerId) return;
 
     const fileInput = e.target.xml_file?.files[0];
-    const textInput = e.target.xml_data?.value;
-
-    let xmlText = '';
-
-    if (fileInput) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        xmlText = event.target.result;
-        await processImport(xmlText);
-      };
-      reader.readAsText(fileInput);
+    if (!fileInput) {
+      showMsg('Please select an XML file', 'error');
       return;
-    } else if (textInput) {
-      xmlText = textInput;
-      await processImport(xmlText);
-    } else {
-      showMsg('Please select a file or paste XML data', 'error');
     }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      await processImport(String(event.target.result || ''));
+    };
+    reader.readAsText(fileInput);
   };
 
   const processImport = async (xmlData) => {
@@ -324,57 +316,45 @@ export default function CSVTracking() {
 
       {/* Import Modal */}
       {showImportModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-700">
+        <div className="modal-backdrop">
+          <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-md">
+            <div className="p-4 border-b border-gray-700">
               <div className="flex justify-between items-center">
                 <div>
-                  <h2 className="text-xl font-bold text-gray-100">
+                  <h2 className="text-lg font-bold text-gray-100">
                     {imports.find(i => i.customer_id === importingCustomerId)?.has_import 
                       ? 'Update System Registry' 
                       : 'Import System Registry'}
                   </h2>
-                  <p className="text-sm text-gray-400 mt-1">{importingCustomerName}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{importingCustomerName}</p>
                 </div>
-                <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
+                <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-white text-xl leading-none">&times;</button>
               </div>
             </div>
             
-            <form onSubmit={handleImport} className="p-6">
+            <form onSubmit={handleImport} className="p-4">
               {imports.find(i => i.customer_id === importingCustomerId)?.has_import && (
-                <div className="mb-4 p-3 bg-blue-900/30 border border-blue-700/50 rounded-lg">
-                  <p className="text-sm text-blue-300">
-                    This customer already has imported data. Re-importing will <strong>add any new nodes</strong> and <strong>update existing ones</strong> without affecting cabinet assignments.
+                <div className="mb-3 p-2.5 bg-blue-900/30 border border-blue-700/50 rounded-lg">
+                  <p className="text-xs text-blue-300">
+                    Re-import adds new nodes and updates existing names without changing cabinet assignments.
                   </p>
                 </div>
               )}
 
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Upload XML File
+                <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                  XML file
                 </label>
                 <input
                   ref={fileInputRef}
                   type="file"
                   name="xml_file"
                   accept=".xml,.txt"
-                  className="w-full text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-500 file:cursor-pointer"
+                  className="w-full text-gray-300 text-sm file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-500 file:cursor-pointer"
                 />
               </div>
-              
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Or Paste XML Data
-                </label>
-                <textarea
-                  name="xml_data"
-                  rows="8"
-                  className="input-dark w-full font-mono text-xs"
-                  placeholder="Paste XML content here..."
-                ></textarea>
-              </div>
 
-              <div className="flex gap-3 justify-end">
+              <div className="flex gap-2 justify-end">
                 <button
                   type="button"
                   onClick={() => setShowImportModal(false)}
@@ -399,6 +379,17 @@ export default function CSVTracking() {
                   )}
                 </button>
               </div>
+              <p className="text-xs text-gray-500 mt-4 border-t border-gray-700 pt-4">
+                <strong className="text-gray-400">Full bundle:</strong>{' '}
+                For ZIP import (registration XML +{' '}
+                <code className="text-[10px] bg-gray-900 px-1 rounded">fhx/AllExtracts.xlsx</code>
+                ), open{' '}
+                <Link to={`/customer/${importingCustomerId}`} className="text-violet-400 hover:text-violet-300 underline">
+                  this customer’s detail page
+                </Link>{' '}
+                and use <strong>Import customer bundle (ZIP)</strong> — schema{' '}
+                <code className="text-[10px] bg-gray-900 px-1 rounded">cabinet-pm-customer-import-bundle/v1</code>.
+              </p>
             </form>
           </div>
         </div>

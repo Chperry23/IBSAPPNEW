@@ -3,6 +3,16 @@ const router = express.Router();
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
 const { isSessionCompleted } = require('../utils/session');
+const { generateUUID } = require('../utils/uuid-helper');
+
+function coalescePerformanceValue(maint) {
+  if (!maint) return null;
+  const pv = maint.performance_value;
+  if (pv != null && String(pv).trim() !== '') return pv;
+  const ft = maint.free_time;
+  if (ft != null && String(ft).trim() !== '') return ft;
+  return null;
+}
 
 // Get node maintenance data for a session
 router.get('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
@@ -10,18 +20,20 @@ router.get('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
   
   try {
     const maintenanceData = await db.prepare(`
-      SELECT node_id, dv_checked, os_checked, macafee_checked, 
+      SELECT node_id, node_name, node_type, dv_checked, os_checked, macafee_checked, 
              free_time, redundancy_checked, cold_restart_checked, has_io_errors,
              hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked,
              notes, is_custom_node, completed
       FROM session_node_maintenance 
-      WHERE session_id = ?
+      WHERE session_id = ? AND (deleted IS NULL OR deleted = 0)
     `).all([sessionId]);
     
     // Convert to object format {nodeId: {dv_checked: true, ...}}
     const result = {};
     maintenanceData.forEach(item => {
       result[item.node_id] = {
+        node_name: item.node_name || null,
+        node_type: item.node_type || null,
         dv_checked: Boolean(item.dv_checked),
         os_checked: Boolean(item.os_checked),
         macafee_checked: Boolean(item.macafee_checked),
@@ -31,7 +43,7 @@ router.get('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
         has_io_errors: item.has_io_errors == null ? true : Boolean(item.has_io_errors),
         hdd_replaced: Boolean(item.hdd_replaced),
         performance_type: item.performance_type || null,
-        performance_value: item.performance_value || null,
+        performance_value: coalescePerformanceValue(item),
         hf_updated: Boolean(item.hf_updated),
         firmware_updated_checked: Boolean(item.firmware_updated_checked),
         notes: item.notes || '',
@@ -76,29 +88,51 @@ router.post('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
       const nid = parseInt(nodeId, 10);
       if (Number.isNaN(nid)) continue;
       
+      const nodeName =
+        maintenance.node_name && String(maintenance.node_name).trim()
+          ? String(maintenance.node_name).trim()
+          : null;
+      const nodeType =
+        maintenance.node_type && String(maintenance.node_type).trim()
+          ? String(maintenance.node_type).trim()
+          : null;
+
+      const existing = await db
+        .prepare(
+          `SELECT uuid FROM session_node_maintenance WHERE session_id = ? AND node_id = ?`
+        )
+        .get([sessionId, nid]);
+      const rowUuid =
+        existing?.uuid && String(existing.uuid).trim() ? existing.uuid : generateUUID();
+
       await db.prepare(`
         INSERT INTO session_node_maintenance (
-          session_id, node_id, dv_checked, os_checked, macafee_checked,
+          session_id, node_id, node_name, node_type,
+          dv_checked, os_checked, macafee_checked,
           free_time, redundancy_checked, cold_restart_checked, has_io_errors,
           hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked,
-          notes, is_custom_node, completed
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          notes, is_custom_node, completed, uuid, synced
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ON CONFLICT(session_id, node_id) DO UPDATE SET
+          node_name=COALESCE(excluded.node_name, session_node_maintenance.node_name),
+          node_type=COALESCE(excluded.node_type, session_node_maintenance.node_type),
           dv_checked=excluded.dv_checked, os_checked=excluded.os_checked, macafee_checked=excluded.macafee_checked,
           free_time=excluded.free_time, redundancy_checked=excluded.redundancy_checked, cold_restart_checked=excluded.cold_restart_checked,
           has_io_errors=excluded.has_io_errors, hdd_replaced=excluded.hdd_replaced,
           performance_type=excluded.performance_type, performance_value=excluded.performance_value,
           hf_updated=excluded.hf_updated, firmware_updated_checked=excluded.firmware_updated_checked,
           notes=excluded.notes, is_custom_node=excluded.is_custom_node, completed=excluded.completed,
+          uuid=COALESCE(session_node_maintenance.uuid, excluded.uuid),
           synced=0, updated_at=CURRENT_TIMESTAMP
       `).run([
-        sessionId, nid,
+        sessionId, nid, nodeName, nodeType,
         maintenance.dv_checked ? 1 : 0, maintenance.os_checked ? 1 : 0, maintenance.macafee_checked ? 1 : 0,
         maintenance.free_time || null, maintenance.redundancy_checked ? 1 : 0, maintenance.cold_restart_checked ? 1 : 0,
         maintenance.has_io_errors != null ? (maintenance.has_io_errors ? 1 : 0) : 1, maintenance.hdd_replaced ? 1 : 0,
         maintenance.performance_type || 'free_time', maintenance.performance_value != null ? maintenance.performance_value : null,
         maintenance.hf_updated ? 1 : 0, maintenance.firmware_updated_checked ? 1 : 0,
-        maintenance.notes || null, maintenance.is_custom_node ? 1 : 0, maintenance.completed ? 1 : 0
+        maintenance.notes || null, maintenance.is_custom_node ? 1 : 0, maintenance.completed ? 1 : 0,
+        rowUuid,
       ]);
       count++;
     }

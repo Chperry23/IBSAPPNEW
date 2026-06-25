@@ -286,7 +286,12 @@ initializeDatabase()
         // STEP 8 — Register sync endpoints
         // ─────────────────────────────────────────────────────────────────────
         stamp('STEP 8', 'Registering sync endpoints');
-        const mongoUri = process.env.MONGODB_URI || 'mongodb://172.16.10.124:27017/cabinet_pm_db';
+        // Tablets default to HTTP sync API on master :3090; set SYNC_USE_LEGACY=1 for direct Mongo only
+        if (process.env.SYNC_USE_LEGACY !== '1' && !process.env.SYNC_API_URL) {
+            process.env.SYNC_API_URL = 'http://172.16.10.124:3090';
+        }
+        const { getDefaultMongoUri } = require('./backend/utils/mongo-uri');
+        const mongoUri = getDefaultMongoUri();
         if (setupEnhancedMergeSyncEndpoints) {
             try {
                 setupEnhancedMergeSyncEndpoints(app, db, mongoUri);

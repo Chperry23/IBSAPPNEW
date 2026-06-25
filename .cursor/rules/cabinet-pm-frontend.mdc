@@ -1,0 +1,21 @@
+---
+description: React frontend conventions
+globs: frontend-react/**/*.{jsx,js,css}
+alwaysApply: false
+---
+
+# Frontend conventions
+
+- React 18 + Vite; pages in `frontend-react/src/pages/`
+- API client: `frontend-react/src/services/api.js`
+- Settings/context: `frontend-react/src/contexts/`
+- Use existing Tailwind patterns in `index.css` and page components
+
+## Build
+
+```bash
+cd frontend-react && npm run dev    # dev
+npm run build:frontend              # from repo root
+```
+
+Match existing component structure; avoid new UI libraries without user approval.
