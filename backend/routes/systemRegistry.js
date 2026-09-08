@@ -917,47 +917,74 @@ router.post('/api/customers/:customerId/system-registry/import', requireAuth, as
   res.json(result.payload);
 });
 
+const REGISTRY_IMPORT_COUNT_TABLES = [
+  ['workstations', 'sys_workstations'],
+  ['controllers', 'sys_controllers'],
+  ['smart_switches', 'sys_smart_switches'],
+  ['charms_io_cards', 'sys_charms_io_cards'],
+  ['io_devices', 'sys_io_devices'],
+  ['charms', 'sys_charms'],
+  ['ams_systems', 'sys_ams_systems'],
+];
+
+function emptyRegistryCounts() {
+  return {
+    workstations: 0,
+    controllers: 0,
+    smart_switches: 0,
+    charms_io_cards: 0,
+    io_devices: 0,
+    charms: 0,
+    ams_systems: 0,
+    last_dates: [],
+  };
+}
+
 // Get system registry import overview for ALL customers
 router.get('/api/system-registry/imports', requireAuth, async (req, res) => {
   try {
     const customers = await db.prepare('SELECT id, name, location FROM customers WHERE deleted = 0 OR deleted IS NULL ORDER BY name').all([]);
-    
-    const imports = [];
-    for (const customer of customers) {
-      // Get counts from each sys_* table
-      const ws = await db.prepare('SELECT COUNT(*) as count, MAX(updated_at) as last_update FROM sys_workstations WHERE customer_id = ?').get([customer.id]);
-      const ctrl = await db.prepare('SELECT COUNT(*) as count, MAX(updated_at) as last_update FROM sys_controllers WHERE customer_id = ?').get([customer.id]);
-      const sw = await db.prepare('SELECT COUNT(*) as count, MAX(updated_at) as last_update FROM sys_smart_switches WHERE customer_id = ?').get([customer.id]);
-      const cioc = await db.prepare('SELECT COUNT(*) as count, MAX(updated_at) as last_update FROM sys_charms_io_cards WHERE customer_id = ?').get([customer.id]);
-      const io = await db.prepare('SELECT COUNT(*) as count, MAX(updated_at) as last_update FROM sys_io_devices WHERE customer_id = ?').get([customer.id]);
-      const ch = await db.prepare('SELECT COUNT(*) as count, MAX(updated_at) as last_update FROM sys_charms WHERE customer_id = ?').get([customer.id]);
-      const ams = await db.prepare('SELECT COUNT(*) as count, MAX(updated_at) as last_update FROM sys_ams_systems WHERE customer_id = ?').get([customer.id]);
-      
-      const totalNodes = (ws?.count || 0) + (ctrl?.count || 0) + (sw?.count || 0) + (cioc?.count || 0);
-      const totalAll = totalNodes + (io?.count || 0) + (ch?.count || 0) + (ams?.count || 0);
-      
-      // Find the most recent update across all tables
-      const dates = [ws?.last_update, ctrl?.last_update, sw?.last_update, cioc?.last_update, io?.last_update, ch?.last_update, ams?.last_update].filter(Boolean);
-      const lastImport = dates.length > 0 ? dates.sort().reverse()[0] : null;
-      
-      imports.push({
+
+    // One GROUP BY per table instead of 7 COUNT/MAX queries per customer.
+    // sys_charms can be 80k+ rows; the old per-customer loop scanned it for every customer.
+    const statsByCustomer = new Map();
+    for (const [key, table] of REGISTRY_IMPORT_COUNT_TABLES) {
+      const rows = await db.prepare(
+        `SELECT customer_id, COUNT(*) as count, MAX(updated_at) as last_update FROM ${table} GROUP BY customer_id`
+      ).all([]);
+      for (const row of rows) {
+        const id = String(row.customer_id);
+        if (!statsByCustomer.has(id)) statsByCustomer.set(id, emptyRegistryCounts());
+        const stats = statsByCustomer.get(id);
+        stats[key] = row.count || 0;
+        if (row.last_update) stats.last_dates.push(row.last_update);
+      }
+    }
+
+    const imports = customers.map((customer) => {
+      const stats = statsByCustomer.get(String(customer.id)) || emptyRegistryCounts();
+      const totalNodes = stats.workstations + stats.controllers + stats.smart_switches + stats.charms_io_cards;
+      const totalAll = totalNodes + stats.io_devices + stats.charms + stats.ams_systems;
+      const lastImport = stats.last_dates.length > 0 ? stats.last_dates.sort().reverse()[0] : null;
+
+      return {
         customer_id: customer.id,
         customer_name: customer.name,
         customer_location: customer.location,
         has_import: totalAll > 0,
-        workstations: ws?.count || 0,
-        controllers: ctrl?.count || 0,
-        smart_switches: sw?.count || 0,
-        charms_io_cards: cioc?.count || 0,
-        io_devices: io?.count || 0,
-        charms: ch?.count || 0,
-        ams_systems: ams?.count || 0,
+        workstations: stats.workstations,
+        controllers: stats.controllers,
+        smart_switches: stats.smart_switches,
+        charms_io_cards: stats.charms_io_cards,
+        io_devices: stats.io_devices,
+        charms: stats.charms,
+        ams_systems: stats.ams_systems,
         total_assignable: totalNodes,
         total_all: totalAll,
         last_import: lastImport
-      });
-    }
-    
+      };
+    });
+
     res.json(imports);
   } catch (error) {
     console.error('Get system registry imports error:', error);

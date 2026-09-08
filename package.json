@@ -1,6 +1,6 @@
 {
   "name": "cabinet-pm-tablet",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Cabinet PM Tablet Application - Preventive Maintenance & Inspection Management System",
   "main": "server-tablet.js",
   "bin": "server-tablet.js",

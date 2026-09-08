@@ -16,6 +16,7 @@ import Nodes from './pages/Nodes';
 import SystemRegistry from './pages/SystemRegistry';
 import Sync from './pages/Sync';
 import CSVTracking from './pages/CSVTracking';
+import DellDispatches from './pages/DellDispatches';
 
 function App() {
   return (
@@ -120,6 +121,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <CSVTracking />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dispatches"
+            element={
+              <ProtectedRoute>
+                <DellDispatches />
               </ProtectedRoute>
             }
           />

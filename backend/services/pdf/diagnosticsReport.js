@@ -1,3 +1,17 @@
+/** Monochrome bar shades for error-type distribution (matches report blue #2563eb). */
+function errorDistributionBarShades(count) {
+  if (count <= 0) return [];
+  const hue = 214;
+  const saturation = 78;
+  const minLight = 32;
+  const maxLight = 68;
+  if (count === 1) return [`hsl(${hue}, ${saturation}%, 45%)`];
+  return Array.from({ length: count }, (_, i) => {
+    const light = minLight + (i * (maxLight - minLight)) / (count - 1);
+    return `hsl(${hue}, ${saturation}%, ${Math.round(light)}%)`;
+  });
+}
+
 function generateControllerPage(controllerName, errors, errorTypeLabels = {}) {
   const fmtCtrlType = (t) => errorTypeLabels[t] || String(t || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   const errorCounts = {};
@@ -292,12 +306,7 @@ function generateDiagnosticsSummary(diagnosticsData, customErrorLabels = {}) {
   const errorTypes = Object.entries(errorCounts).sort((a, b) => b[1] - a[1]);
   const labels = errorTypes.map(([type]) => formatErrorType(type));
   const data = errorTypes.map(([, count]) => count);
-  const barColors = [
-    '#dc3545', '#fd7e14', '#ffc107', '#28a745', '#007bff',
-    '#6f42c1', '#17a2b8', '#e83e8c', '#20c997', '#6610f2',
-    '#e67e22', '#1abc9c', '#9b59b6', '#3498db', '#e74c3c',
-  ];
-  const bgColors = labels.map((_, i) => barColors[i % barColors.length]);
+  const bgColors = errorDistributionBarShades(labels.length);
   const maxCount = data.length > 0 ? Math.max(...data) : 1;
 
   return `

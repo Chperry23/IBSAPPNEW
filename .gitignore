@@ -20,6 +20,7 @@ logs/
 .env
 .env.local
 .env.production
+DELL.env
 
 # SharePoint credentials (contains client secret — never commit)
 sharepoint-config.json

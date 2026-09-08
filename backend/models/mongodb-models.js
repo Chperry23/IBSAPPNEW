@@ -448,6 +448,13 @@ const sysWorkstationSchema = new mongoose.Schema({
   memory: { type: String },
   assigned_cabinet_id: { type: String },
   assigned_at: { type: Date },
+  warranty_ends: { type: String },
+  warranty_in_coverage: { type: Number },
+  warranty_product: { type: String },
+  warranty_service_level: { type: String },
+  warranty_ship_date: { type: String },
+  warranty_invalid: { type: Number, default: 0 },
+  warranty_checked_at: { type: Date },
   uuid: { type: String },
   synced: { type: Number, default: 0 },
   device_id: { type: String },
@@ -645,6 +652,62 @@ const customIOErrorTypeSchema = new mongoose.Schema({
 customIOErrorTypeSchema.index({ uuid: 1 }, { unique: true, sparse: true });
 customIOErrorTypeSchema.index({ updated_at: 1, deleted: 1 });
 
+// Dell SDSR part dispatch (HDD / parts) — metadata only; attachment files stay on tablet
+const dellDispatchSchema = new mongoose.Schema({
+  _id: { type: Number, required: true },
+  customer_id: { type: Number, required: true },
+  session_id: { type: String },
+  node_id: { type: Number },
+  node_name: { type: String },
+  service_tag: { type: String, required: true },
+  product_line: { type: String },
+  part_number: { type: String },
+  part_description: { type: String },
+  part_qty: { type: Number, default: 1 },
+  part_ppid: { type: String },
+  troubleshooting_note: { type: String },
+  primary_contact_name: { type: String },
+  primary_contact_phone: { type: String },
+  primary_contact_email: { type: String },
+  alternate_contact_name: { type: String },
+  alternate_contact_phone: { type: String },
+  ship_address_line1: { type: String },
+  ship_address_line2: { type: String },
+  ship_city: { type: String },
+  ship_state: { type: String },
+  ship_zip: { type: String },
+  ship_country: { type: String },
+  ship_timezone: { type: String },
+  reference_po: { type: String },
+  request_complete_care: { type: Number, default: 0 },
+  request_return_to_depot: { type: Number, default: 0 },
+  request_onsite_technician: { type: Number, default: 0 },
+  branch_name: { type: String },
+  dell_customer_name: { type: String },
+  track: { type: String },
+  status: { type: String, default: 'draft' },
+  dps_number: { type: String },
+  work_order: { type: String },
+  dell_status_raw: { type: String },
+  dell_last_error: { type: String },
+  warranty_ends: { type: String },
+  warranty_in_coverage: { type: Number },
+  submitted_at: { type: Date },
+  last_status_at: { type: Date },
+  created_by: { type: String },
+  uuid: { type: String },
+  synced: { type: Number, default: 0 },
+  device_id: { type: String },
+  deleted: { type: Number, default: 0 },
+  created_at: { type: Date, default: Date.now },
+  updated_at: { type: Date, default: Date.now }
+}, { collection: 'dell_dispatches', versionKey: false });
+dellDispatchSchema.index({ customer_id: 1 });
+dellDispatchSchema.index({ status: 1 });
+dellDispatchSchema.index({ service_tag: 1 });
+dellDispatchSchema.index({ uuid: 1 }, { unique: true, sparse: true });
+dellDispatchSchema.index({ updated_at: 1, deleted: 1 });
+
 // Export all models
 module.exports = {
   User: mongoose.model('User', userSchema),
@@ -672,5 +735,6 @@ module.exports = {
   SysAMSSystem: mongoose.model('SysAMSSystem', sysAMSSystemSchema),
   CustomerMetricHistory: mongoose.model('CustomerMetricHistory', customerMetricHistorySchema),
   CustomerNote: mongoose.model('CustomerNote', customerNotesSchema),
-  CustomIOErrorType: mongoose.model('CustomIOErrorType', customIOErrorTypeSchema)
+  CustomIOErrorType: mongoose.model('CustomIOErrorType', customIOErrorTypeSchema),
+  DellDispatch: mongoose.model('DellDispatch', dellDispatchSchema)
 };

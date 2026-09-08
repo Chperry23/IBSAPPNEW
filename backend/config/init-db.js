@@ -1009,6 +1009,14 @@ function initializeDatabase() {
       addColumnIfNotExists('sys_workstations', 'synced', 'INTEGER DEFAULT 0');
       addColumnIfNotExists('sys_workstations', 'device_id', 'TEXT');
       addColumnIfNotExists('sys_workstations', 'deleted', 'INTEGER DEFAULT 0');
+      // Cached Dell warranty (filled on Refresh; page load reads local only)
+      addColumnIfNotExists('sys_workstations', 'warranty_ends', 'TEXT');
+      addColumnIfNotExists('sys_workstations', 'warranty_in_coverage', 'INTEGER');
+      addColumnIfNotExists('sys_workstations', 'warranty_product', 'TEXT');
+      addColumnIfNotExists('sys_workstations', 'warranty_service_level', 'TEXT');
+      addColumnIfNotExists('sys_workstations', 'warranty_ship_date', 'TEXT');
+      addColumnIfNotExists('sys_workstations', 'warranty_invalid', 'INTEGER DEFAULT 0');
+      addColumnIfNotExists('sys_workstations', 'warranty_checked_at', 'DATETIME');
 
       // SmartSwitch table
       db.run(
@@ -1433,6 +1441,25 @@ function initializeDatabase() {
         }
       );
 
+      // customer_id indexes for System Registry overview (GROUP BY / per-customer counts)
+      const sysCustomerIdIndexTables = [
+        ['sys_workstations', 'idx_sys_workstations_customer_id'],
+        ['sys_smart_switches', 'idx_sys_smart_switches_customer_id'],
+        ['sys_io_devices', 'idx_sys_io_devices_customer_id'],
+        ['sys_controllers', 'idx_sys_controllers_customer_id'],
+        ['sys_charms_io_cards', 'idx_sys_charms_io_cards_customer_id'],
+        ['sys_charms', 'idx_sys_charms_customer_id'],
+        ['sys_ams_systems', 'idx_sys_ams_systems_customer_id'],
+      ];
+      for (const [table, indexName] of sysCustomerIdIndexTables) {
+        const cols = table === 'sys_charms' || table === 'sys_io_devices'
+          ? '(customer_id, updated_at)'
+          : '(customer_id)';
+        db.run(`CREATE INDEX IF NOT EXISTS ${indexName} ON ${table}${cols}`, (err) => {
+          if (err) console.error(`❌ Error creating ${indexName}:`, err.message);
+        });
+      }
+
       db.run(
         `CREATE TABLE IF NOT EXISTS custom_io_error_types (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1449,6 +1476,84 @@ function initializeDatabase() {
         (err) => {
           if (err) console.error('❌ Error creating custom_io_error_types table:', err);
           else console.log('✅ Created (or found) custom_io_error_types table');
+        }
+      );
+
+      // Dell SDSR / HDD part dispatch requests (metadata syncs; attachment files stay local)
+      db.run(
+        `CREATE TABLE IF NOT EXISTS dell_dispatches (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id INTEGER NOT NULL,
+          session_id TEXT,
+          node_id INTEGER,
+          node_name TEXT,
+          service_tag TEXT NOT NULL,
+          product_line TEXT,
+          part_number TEXT,
+          part_description TEXT,
+          part_qty INTEGER DEFAULT 1,
+          part_ppid TEXT,
+          troubleshooting_note TEXT,
+          primary_contact_name TEXT,
+          primary_contact_phone TEXT,
+          primary_contact_email TEXT,
+          alternate_contact_name TEXT,
+          alternate_contact_phone TEXT,
+          ship_address_line1 TEXT,
+          ship_address_line2 TEXT,
+          ship_city TEXT,
+          ship_state TEXT,
+          ship_zip TEXT,
+          ship_country TEXT,
+          ship_timezone TEXT,
+          reference_po TEXT,
+          request_complete_care INTEGER DEFAULT 0,
+          request_return_to_depot INTEGER DEFAULT 0,
+          request_onsite_technician INTEGER DEFAULT 0,
+          branch_name TEXT,
+          dell_customer_name TEXT,
+          track TEXT,
+          status TEXT DEFAULT 'draft',
+          dps_number TEXT,
+          work_order TEXT,
+          dell_status_raw TEXT,
+          dell_last_error TEXT,
+          warranty_ends TEXT,
+          warranty_in_coverage INTEGER,
+          submitted_at DATETIME,
+          last_status_at DATETIME,
+          created_by TEXT,
+          uuid TEXT,
+          synced INTEGER DEFAULT 0,
+          device_id TEXT,
+          deleted INTEGER DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (customer_id) REFERENCES customers(id)
+        )`,
+        (err) => {
+          if (err) console.error('❌ Error creating dell_dispatches table:', err);
+          else console.log('✅ Created (or found) dell_dispatches table');
+        }
+      );
+      db.run(`CREATE INDEX IF NOT EXISTS idx_dell_dispatches_customer ON dell_dispatches(customer_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_dell_dispatches_status ON dell_dispatches(status)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_dell_dispatches_tag ON dell_dispatches(service_tag)`);
+
+      db.run(
+        `CREATE TABLE IF NOT EXISTS dell_dispatch_attachments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          dispatch_id INTEGER NOT NULL,
+          filename TEXT NOT NULL,
+          mime_type TEXT,
+          file_path TEXT NOT NULL,
+          description TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (dispatch_id) REFERENCES dell_dispatches(id)
+        )`,
+        (err) => {
+          if (err) console.error('❌ Error creating dell_dispatch_attachments table:', err);
+          else console.log('✅ Created (or found) dell_dispatch_attachments table');
         }
       );
 
@@ -1487,6 +1592,7 @@ function installChangeLogTriggers() {
     'session_ii_equipment', 'session_ii_checklist', 'session_ii_equipment_used',
     'sys_workstations', 'sys_smart_switches', 'sys_io_devices', 'sys_controllers',
     'sys_charms_io_cards', 'sys_charms', 'sys_ams_systems', 'customer_metric_history', 'customer_notes',
+    'dell_dispatches',
   ];
 
   return new Promise((resolve, reject) => {

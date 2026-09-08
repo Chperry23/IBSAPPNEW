@@ -10,6 +10,7 @@ export default function Dashboard() {
     completed_sessions: 0,
     total_cabinets: 0,
   });
+  const [openDispatches, setOpenDispatches] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,10 +19,14 @@ export default function Dashboard() {
 
   const loadDashboardData = async () => {
     try {
-      // Load stats
-      const statsData = await api.getDashboardStats();
+      const [statsData, summary] = await Promise.all([
+        api.getDashboardStats(),
+        fetch('/api/dell-dispatches/status-summary', { credentials: 'include' })
+          .then((r) => (r.ok ? r.json() : { open_count: 0 }))
+          .catch(() => ({ open_count: 0 })),
+      ]);
       setStats(statsData);
-
+      setOpenDispatches(summary.open_count || 0);
     } catch (error) {
       console.error('Error loading dashboard:', error);
     } finally {
@@ -280,6 +285,20 @@ export default function Dashboard() {
                 <div>
                   <div className="font-medium text-gray-200">System Registry</div>
                   <div className="text-xs text-gray-400">View & manage imports</div>
+                </div>
+              </div>
+            </Link>
+            <Link to="/dispatches" className="block p-4 bg-gray-700/30 hover:bg-gray-700/50 rounded-lg border border-gray-600 hover:border-orange-500 transition-all">
+              <div className="flex items-center gap-3">
+                <div className="text-2xl">💾</div>
+                <div>
+                  <div className="font-medium text-gray-200">
+                    Open Dell parts
+                    {openDispatches > 0 && (
+                      <span className="ml-2 px-2 py-0.5 rounded text-xs bg-orange-600 text-white">{openDispatches}</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-400">HDD / SDSR dispatch tracker</div>
                 </div>
               </div>
             </Link>

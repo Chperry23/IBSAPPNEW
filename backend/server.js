@@ -25,6 +25,7 @@ const sharepointRoutes = require('./routes/sharepoint');
 const customErrorTypesRoutes = require('./routes/customErrorTypes');
 const searchRoutes = require('./routes/search');
 const demoReportRoutes = require('./routes/demoReport');
+const dellDispatchesRoutes = require('./routes/dellDispatches');
 
 const PORT = process.env.PORT || 3000;
 
@@ -94,6 +95,7 @@ function createApp(options = {}) {
   app.use('/api/custom-error-types', customErrorTypesRoutes);
   app.use('/api', searchRoutes);
   app.use('/api/reports/demo-pm', demoReportRoutes);
+  app.use('/', dellDispatchesRoutes);
   app.use('/', sharepointRoutes);
 
   if (!catchAllPath) {

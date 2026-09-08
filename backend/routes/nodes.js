@@ -2,7 +2,10 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 const requireAuth = require('../middleware/auth');
-const { finalizeSessionNodeList } = require('../utils/session-node-list');
+const {
+  finalizeSessionNodeList,
+  normalizeNodeNameKey,
+} = require('../utils/session-node-list');
 const { syncFieldsForInsert } = require('../utils/sync-write-helper');
 
 const ID_WORKSTATION = 1000000;
@@ -475,6 +478,27 @@ async function getSessionExcludedNodeIds(sessionId) {
   return new Set(rows.map((r) => String(r.node_id)));
 }
 
+async function getSessionExcludedNameKeys(sessionId) {
+  const rows = await db.prepare(
+    `SELECT node_name, deleted FROM session_node_maintenance
+     WHERE session_id = ? AND node_name IS NOT NULL AND TRIM(node_name) != ''`
+  ).all([sessionId]);
+  const activeKeys = new Set();
+  const deletedKeys = new Set();
+  for (const row of rows) {
+    const key = normalizeNodeNameKey(row.node_name);
+    if (!key) continue;
+    if (Number(row.deleted) === 1) deletedKeys.add(key);
+    else activeKeys.add(key);
+  }
+  const keys = new Set();
+  for (const key of deletedKeys) {
+    // Keep restored equipment visible when a same-named twin is still active
+    if (!activeKeys.has(key)) keys.add(key);
+  }
+  return keys;
+}
+
 /** Move maintenance from dropped duplicate custom nodes onto the registry node with the same name. */
 async function reconcileDuplicateMaintenance(sessionId, visibleNodes) {
   const rows = await db.prepare(`
@@ -485,23 +509,25 @@ async function reconcileDuplicateMaintenance(sessionId, visibleNodes) {
   const visibleById = new Set(visibleNodes.map((n) => String(n.id)));
   const visibleByName = new Map();
   for (const n of visibleNodes) {
-    const name = String(n.node_name || '').trim().toLowerCase();
-    if (name) visibleByName.set(name, n);
+    const key = normalizeNodeNameKey(n.node_name);
+    if (key) visibleByName.set(key, n);
   }
 
   for (const row of rows) {
     if (visibleById.has(String(row.node_id))) continue;
-    const name = String(row.node_name || '').trim().toLowerCase();
-    if (!name) continue;
-    const target = visibleByName.get(name);
+    const key = normalizeNodeNameKey(row.node_name);
+    if (!key) continue;
+    const target = visibleByName.get(key);
     if (!target) continue;
 
     const targetId = Number(target.id);
     const targetHasMaint = rows.some((r) => String(r.node_id) === String(targetId));
     if (targetHasMaint) {
+      // Drop the hidden duplicate without poisoning name-based exclusion:
+      // clear node_name on the tombstone so active registry sibling stays visible.
       await db.prepare(`
         UPDATE session_node_maintenance
-        SET deleted = 1, synced = 0, updated_at = CURRENT_TIMESTAMP
+        SET deleted = 1, node_name = NULL, synced = 0, updated_at = CURRENT_TIMESTAMP
         WHERE session_id = ? AND node_id = ?
       `).run([sessionId, row.node_id]);
     } else {
@@ -686,30 +712,10 @@ async function loadFullCustomerRegistryNodes(customerId) {
     }
   }
 
-  const ioNodeRows = await db.prepare(
-    `SELECT DISTINCT node FROM sys_io_devices
-     WHERE customer_id = ? AND node IS NOT NULL AND TRIM(node) != ''`
-  ).all([customerId]);
-  const existingNames = new Set(nodes.map((n) => n.node_name));
-  for (const row of ioNodeRows) {
-    const name = String(row.node).trim();
-    if (!name || existingNames.has(name)) continue;
-    const upper = name.toUpperCase();
-    const nodeType = upper.includes('CIOC') || upper.includes('CSLS') ? 'CIOC' : 'Controller';
-    nodes.push({
-      id: `io-${name}`,
-      node_name: name,
-      node_type: nodeType,
-      model: null,
-      serial: null,
-      firmware: null,
-      version: null,
-      status: 'active',
-      customer_id: customerId,
-      node_category: 'io_registry',
-    });
-    existingNames.add(name);
-  }
+  // Do NOT promote distinct sys_io_devices.node values (e.g. DVNET002 DeviceNet
+  // parents) into PM Controllers. Those names are for diagnostics I/O lookup only;
+  // synthesizing them made fake controllers that appear on active sessions, cannot
+  // be deleted (string ids like io-DVNET002), and disappear on session complete.
 
   return nodes;
 }
@@ -742,7 +748,8 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
           const nodes = [...snapshots];
           await mergeMaintenanceNodesIntoList(nodes, customerId, sessionId);
           const excludedIds = await getSessionExcludedNodeIds(sessionId);
-          const finalNodes = finalizeSessionNodeList(nodes, excludedIds);
+          const excludedNameKeys = await getSessionExcludedNameKeys(sessionId);
+          const finalNodes = finalizeSessionNodeList(nodes, excludedIds, excludedNameKeys);
           await reconcileDuplicateMaintenance(sessionId, finalNodes);
           await attachMaintenanceToNodes(finalNodes, sessionId, customerId);
           console.log(`🔍 [NODES] Returning ${finalNodes.length} node(s) (snapshots + maintenance)`);
@@ -758,7 +765,8 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
           console.log(`   🔧 Merged ${customCount} custom node(s) for session ${sessionId}`);
         }
         const excludedIds = await getSessionExcludedNodeIds(sessionId);
-        const finalNodes = finalizeSessionNodeList(nodes, excludedIds);
+        const excludedNameKeys = await getSessionExcludedNameKeys(sessionId);
+        const finalNodes = finalizeSessionNodeList(nodes, excludedIds, excludedNameKeys);
         await reconcileDuplicateMaintenance(sessionId, finalNodes);
         await attachMaintenanceToNodes(finalNodes, sessionId, customerId);
         console.log(`✅ [NODES] Returning ${finalNodes.length} node(s) for active session (customer ${customerId})`);
@@ -772,7 +780,8 @@ router.get('/api/customers/:customerId/nodes', requireAuth, async (req, res) => 
         console.log(`   🔧 Merged ${customCount} custom node(s) for session ${sessionId}`);
       }
       const excludedIds = await getSessionExcludedNodeIds(sessionId);
-      const finalNodes = finalizeSessionNodeList(nodes, excludedIds);
+      const excludedNameKeys = await getSessionExcludedNameKeys(sessionId);
+      const finalNodes = finalizeSessionNodeList(nodes, excludedIds, excludedNameKeys);
       await reconcileDuplicateMaintenance(sessionId, finalNodes);
       await attachMaintenanceToNodes(finalNodes, sessionId, customerId);
       console.log(`✅ [NODES] Returning ${finalNodes.length} session-scoped node(s) for customer ${customerId}`);

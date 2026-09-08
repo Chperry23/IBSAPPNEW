@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import soundSystem from '../utils/sounds';
 
 /** Model values stored for custom workstations (Add Custom Workstation). */
@@ -98,10 +99,27 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
   const [showCustomComputer, setShowCustomComputer] = useState(false);
   const [showCustomSwitch, setShowCustomSwitch] = useState(false);
   const [customNode, setCustomNode] = useState({ node_name: '', node_type: '', model: '', serial: '' });
+  const [removedNodes, setRemovedNodes] = useState([]);
+  const [showRemoved, setShowRemoved] = useState(false);
+  const [restorePickController, setRestorePickController] = useState('');
+  const [restorePickComputer, setRestorePickComputer] = useState('');
+  const [restorePickSwitch, setRestorePickSwitch] = useState('');
 
   useEffect(() => {
     loadData();
   }, [sessionId, customerId]);
+
+  const loadRemovedNodes = async () => {
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/removed-nodes`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setRemovedNodes(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.error('Error loading removed nodes:', e);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -149,6 +167,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
         return n;
       });
       setNodes(filtered);
+      await loadRemovedNodes();
     } catch (error) {
       console.error('Error loading:', error);
     } finally {
@@ -401,26 +420,47 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
   const getMaintenanceForNode = (nodeId) =>
     maintenanceData[nodeId] ?? maintenanceData[String(nodeId)] ?? {};
 
-  const removeSessionNode = async (nodeId) => {
+  const removeSessionNode = async (node) => {
+    const nodeId = typeof node === 'object' ? node.id : node;
+    const nodeName = typeof node === 'object' ? node.node_name : null;
+    const nodeType = typeof node === 'object' ? node.node_type : null;
     if (!confirm('Remove this equipment from the PM session?')) {
       return;
     }
 
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/session-node/${nodeId}`, {
+      const qs = new URLSearchParams();
+      if (nodeName) qs.set('node_name', nodeName);
+      if (nodeType) qs.set('node_type', nodeType);
+      const q = qs.toString() ? `?${qs.toString()}` : '';
+      const response = await fetch(`/api/sessions/${sessionId}/session-node/${nodeId}${q}`, {
         method: 'DELETE',
         credentials: 'include',
       });
 
       if (response.ok) {
-        setNodes((prev) => prev.filter((n) => String(n.id) !== String(nodeId)));
+        const nameKey = String(nodeName || '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '');
+        setNodes((prev) =>
+          prev.filter((n) => {
+            if (String(n.id) === String(nodeId)) return false;
+            if (!nameKey) return true;
+            const nKey = String(n.node_name || '')
+              .trim()
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '');
+            return nKey !== nameKey;
+          })
+        );
         setMaintenanceData((prev) => {
           const updated = { ...prev };
           delete updated[nodeId];
           delete updated[String(nodeId)];
           return updated;
         });
-
+        await loadRemovedNodes();
         soundSystem.playSuccess();
         showMessage('Equipment removed from session', 'success');
       } else {
@@ -431,6 +471,50 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
       console.error('Error removing session node:', error);
       showMessage('Error removing equipment', 'error');
     }
+  };
+
+  const restoreSessionNode = async (removed) => {
+    if (!removed?.node_id && removed?.node_id !== 0) {
+      showMessage('Select equipment to restore', 'error');
+      return;
+    }
+    try {
+      const response = await fetch(
+        `/api/sessions/${sessionId}/session-node/${removed.node_id}/restore`,
+        { method: 'POST', credentials: 'include' }
+      );
+      if (response.ok) {
+        soundSystem.playSuccess();
+        showMessage(`Restored ${removed.node_name || 'equipment'} to session`, 'success');
+        setRestorePickController('');
+        setRestorePickComputer('');
+        setRestorePickSwitch('');
+        setShowCustomController(false);
+        setShowCustomComputer(false);
+        setShowCustomSwitch(false);
+        await loadData();
+        await loadRemovedNodes();
+      } else {
+        const errorData = await response.json();
+        showMessage(errorData.error || 'Failed to restore equipment', 'error');
+      }
+    } catch (error) {
+      console.error('Error restoring session node:', error);
+      showMessage('Error restoring equipment', 'error');
+    }
+  };
+
+  const restoreByPick = async (pickValue) => {
+    if (!pickValue) {
+      showMessage('Select a removed node to restore', 'error');
+      return;
+    }
+    const removed = removedNodes.find((r) => String(r.node_id) === String(pickValue));
+    if (!removed) {
+      showMessage('Removed node not found', 'error');
+      return;
+    }
+    await restoreSessionNode(removed);
   };
 
   const addCustomNode = async (nodeType) => {
@@ -494,6 +578,25 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
   const computers = nodes.filter(isWorkstationNode);
   const switches = nodes.filter((n) => n.node_type === 'Smart Network Devices');
 
+  const removedControllers = removedNodes.filter((r) =>
+    isControllerNode({
+      node_name: r.node_name,
+      node_type: r.node_type || 'Controller',
+      model: '',
+    })
+  );
+  const removedComputers = removedNodes.filter((r) =>
+    isWorkstationNode({
+      node_name: r.node_name,
+      node_type: r.node_type || 'Workstation',
+      model: '',
+      id: r.node_id,
+    })
+  );
+  const removedSwitches = removedNodes.filter(
+    (r) => (r.node_type || '') === 'Smart Network Devices'
+  );
+
   const filteredControllers = controllers.filter((c) =>
     c.node_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -548,7 +651,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
         </div>
       </div>
 
-      {nodes.length === 0 ? (
+      {nodes.length === 0 && isCompleted ? (
         <div className="card">
           <div className="card-body text-center py-12">
             <div className="text-6xl mb-4">🖥️</div>
@@ -558,7 +661,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
       ) : (
         <>
           {/* Controllers Table */}
-          {filteredControllers.length > 0 && (
+          {(filteredControllers.length > 0 || !isCompleted) && (
             <div className="bg-gray-800 rounded-lg border border-gray-700 shadow-xl">
               <div className="flex justify-between items-center px-4 py-3 border-b border-gray-700">
                 <h4 className="text-lg font-semibold text-gray-100">Controllers ({filteredControllers.length})</h4>
@@ -788,7 +891,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                           {!isCompleted && (
                             <td className="px-3 py-2 text-center">
                               <button
-                                onClick={() => removeSessionNode(controller.id)}
+                                onClick={() => removeSessionNode(controller)}
                                 className="text-red-400 hover:text-red-300 text-xs"
                                 title="Remove from session"
                               >
@@ -809,50 +912,85 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                       onClick={() => setShowCustomController(true)}
                       className="btn btn-secondary btn-sm"
                     >
-                      + Add Custom Controller
+                      + Add Controller
                     </button>
                   ) : (
-                    <div className="bg-gray-700 p-4 rounded-lg">
-                      <h5 className="text-sm font-semibold text-gray-200 mb-3">Add Custom Controller</h5>
-                      <div className="grid grid-cols-2 gap-3">
-                        <input
-                          type="text"
-                          placeholder="Controller Name *"
-                          value={customNode.node_name}
-                          onChange={(e) => setCustomNode({...customNode, node_name: e.target.value})}
-                          className="form-input text-sm"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Model"
-                          value={customNode.model}
-                          onChange={(e) => setCustomNode({...customNode, model: e.target.value})}
-                          className="form-input text-sm"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Serial Number"
-                          value={customNode.serial}
-                          onChange={(e) => setCustomNode({...customNode, serial: e.target.value})}
-                          className="form-input text-sm"
-                        />
-                      </div>
-                      <div className="flex gap-2 mt-3">
-                        <button
-                          onClick={() => addCustomNode('Controller')}
-                          className="btn btn-success btn-sm"
-                        >
-                          Add Controller
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowCustomController(false);
-                            setCustomNode({ node_name: '', node_type: '', model: '', serial: '' });
-                          }}
-                          className="btn btn-secondary btn-sm"
-                        >
-                          Cancel
-                        </button>
+                    <div className="bg-gray-700 p-4 rounded-lg space-y-4">
+                      {removedControllers.length > 0 && (
+                        <div>
+                          <h5 className="text-sm font-semibold text-gray-200 mb-2">
+                            Restore removed controller
+                          </h5>
+                          <div className="flex flex-wrap gap-2 items-center">
+                            <select
+                              value={restorePickController}
+                              onChange={(e) => setRestorePickController(e.target.value)}
+                              className="form-select text-sm flex-1 min-w-[12rem]"
+                            >
+                              <option value="">Select removed controller…</option>
+                              {removedControllers.map((r) => (
+                                <option key={r.node_id} value={String(r.node_id)}>
+                                  {r.node_name}
+                                  {r.node_type ? ` (${r.node_type})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => restoreByPick(restorePickController)}
+                              className="btn btn-success btn-sm"
+                              disabled={!restorePickController}
+                            >
+                              Restore
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <div>
+                        <h5 className="text-sm font-semibold text-gray-200 mb-3">
+                          {removedControllers.length > 0 ? 'Or add custom controller' : 'Add custom controller'}
+                        </h5>
+                        <div className="grid grid-cols-2 gap-3">
+                          <input
+                            type="text"
+                            placeholder="Controller Name *"
+                            value={customNode.node_name}
+                            onChange={(e) => setCustomNode({...customNode, node_name: e.target.value})}
+                            className="form-input text-sm"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Model"
+                            value={customNode.model}
+                            onChange={(e) => setCustomNode({...customNode, model: e.target.value})}
+                            className="form-input text-sm"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Serial Number"
+                            value={customNode.serial}
+                            onChange={(e) => setCustomNode({...customNode, serial: e.target.value})}
+                            className="form-input text-sm"
+                          />
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                          <button
+                            onClick={() => addCustomNode('Controller')}
+                            className="btn btn-success btn-sm"
+                          >
+                            Add Custom
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowCustomController(false);
+                              setRestorePickController('');
+                              setCustomNode({ node_name: '', node_type: '', model: '', serial: '' });
+                            }}
+                            className="btn btn-secondary btn-sm"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -862,7 +1000,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
           )}
 
           {/* Computers Table */}
-          {filteredComputers.length > 0 && (
+          {(filteredComputers.length > 0 || !isCompleted) && (
             <div className="bg-gray-800 rounded-lg border border-gray-700 shadow-xl">
               <div className="flex justify-between items-center px-4 py-3 border-b border-gray-700">
                 <h4 className="text-lg font-semibold text-gray-100">Computers & Workstations ({filteredComputers.length})</h4>
@@ -976,19 +1114,30 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                             />
                           </td>
                           <td className="px-3 py-2 text-center">
-                            <input
-                              type="checkbox"
-                              checked={maint.hdd_replaced || false}
-                              onChange={(e) => {
-                                const updated = { ...maintenanceData };
-                                if (!updated[computer.id]) updated[computer.id] = {};
-                                updated[computer.id].hdd_replaced = e.target.checked;
-                                setMaintenanceData(updated);
-                                autoSave(computer.id, 'hdd_replaced', e.target.checked);
-                              }}
-                              disabled={isCompleted}
-                              className="w-4 h-4"
-                            />
+                            <div className="flex flex-col items-center gap-1">
+                              <input
+                                type="checkbox"
+                                checked={maint.hdd_replaced || false}
+                                onChange={(e) => {
+                                  const updated = { ...maintenanceData };
+                                  if (!updated[computer.id]) updated[computer.id] = {};
+                                  updated[computer.id].hdd_replaced = e.target.checked;
+                                  setMaintenanceData(updated);
+                                  autoSave(computer.id, 'hdd_replaced', e.target.checked);
+                                }}
+                                disabled={isCompleted}
+                                className="w-4 h-4"
+                              />
+                              {maint.hdd_replaced && customerId && (
+                                <Link
+                                  to={`/customer/${customerId}?tab=parts&node=${computer.id}`}
+                                  className="text-[10px] text-orange-400 hover:text-orange-300 underline whitespace-nowrap"
+                                  title="Open Dell parts request on customer profile"
+                                >
+                                  Request
+                                </Link>
+                              )}
+                            </div>
                           </td>
                           <td className="px-3 py-2">
                             <input
@@ -1025,7 +1174,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                           {!isCompleted && (
                             <td className="px-3 py-2 text-center">
                               <button
-                                onClick={() => removeSessionNode(computer.id)}
+                                onClick={() => removeSessionNode(computer)}
                                 className="text-red-400 hover:text-red-300 text-xs"
                                 title="Remove from session"
                               >
@@ -1054,83 +1203,118 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                       }}
                       className="btn btn-secondary btn-sm"
                     >
-                      + Add Custom Workstation
+                      + Add Workstation
                     </button>
                   ) : (
-                    <div className="rounded-lg border border-[#3d3d5c] bg-[#252542] p-4 ring-1 ring-[#3d3d5c]/80">
-                      <h5 className="mb-3 text-sm font-semibold text-gray-100">Add Custom Workstation</h5>
-                      <div className="grid grid-cols-2 gap-3">
-                        <input
-                          type="text"
-                          placeholder="Workstation Name *"
-                          value={customNode.node_name}
-                          onChange={(e) => setCustomNode({ ...customNode, node_name: e.target.value })}
-                          className="form-input text-sm"
-                        />
-                        <select
-                          value={customNode.node_type || 'Local Operator'}
-                          onChange={(e) => setCustomNode({ ...customNode, node_type: e.target.value })}
-                          className="form-select text-sm"
-                        >
-                          {[
-                            'Local Operator',
-                            'Local Application',
-                            'Local Professional Plus',
-                            'Local Pro',
-                            'VRTX Chassis (Virtual)',
-                            'Host (Virtual)',
-                            'File Witness (Virtual)',
-                            'Non-DV Node',
-                          ].map((t) => (
-                            <option key={t} value={t}>
-                              {t}
-                            </option>
-                          ))}
-                        </select>
-                        <div className="col-span-2">
-                          <p className="form-label mb-1.5 text-xs uppercase tracking-wide text-gray-400">Workstation model</p>
-                          <div className="flex gap-2 rounded-lg border border-[#3d3d5c] bg-[#1b1b2f] p-1">
+                    <div className="rounded-lg border border-[#3d3d5c] bg-[#252542] p-4 ring-1 ring-[#3d3d5c]/80 space-y-4">
+                      {removedComputers.length > 0 && (
+                        <div>
+                          <h5 className="mb-2 text-sm font-semibold text-gray-100">
+                            Restore removed workstation
+                          </h5>
+                          <div className="flex flex-wrap gap-2 items-center">
+                            <select
+                              value={restorePickComputer}
+                              onChange={(e) => setRestorePickComputer(e.target.value)}
+                              className="form-select text-sm flex-1 min-w-[12rem]"
+                            >
+                              <option value="">Select removed workstation…</option>
+                              {removedComputers.map((r) => (
+                                <option key={r.node_id} value={String(r.node_id)}>
+                                  {r.node_name}
+                                  {r.node_type ? ` (${r.node_type})` : ''}
+                                </option>
+                              ))}
+                            </select>
                             <button
                               type="button"
-                              onClick={() => setCustomNode({ ...customNode, model: CUSTOM_WORKSTATION_MODEL.DELTAV })}
-                              className={`flex-1 rounded-md px-3 py-2.5 text-sm font-semibold transition-all ${
-                                customNode.model === CUSTOM_WORKSTATION_MODEL.DELTAV
-                                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/40 ring-2 ring-blue-400/50'
-                                  : 'text-gray-400 hover:bg-[#252542] hover:text-gray-100'
-                              }`}
+                              onClick={() => restoreByPick(restorePickComputer)}
+                              className="btn btn-success btn-sm"
+                              disabled={!restorePickComputer}
                             >
-                              Deltav Workstation
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setCustomNode({ ...customNode, model: CUSTOM_WORKSTATION_MODEL.NON_DELTAV })}
-                              className={`flex-1 rounded-md px-3 py-2.5 text-sm font-semibold transition-all ${
-                                customNode.model === CUSTOM_WORKSTATION_MODEL.NON_DELTAV
-                                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/40 ring-2 ring-blue-400/50'
-                                  : 'text-gray-400 hover:bg-[#252542] hover:text-gray-100'
-                              }`}
-                            >
-                              Non deltav workstation
+                              Restore
                             </button>
                           </div>
                         </div>
-                      </div>
-                      <div className="mt-3 flex gap-2">
-                        <button
-                          onClick={() => addCustomNode(customNode.node_type || 'Local Operator')}
-                          className="btn btn-success btn-sm"
-                        >
-                          Add Workstation
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowCustomComputer(false);
-                            setCustomNode({ node_name: '', node_type: '', model: '', serial: '' });
-                          }}
-                          className="btn btn-secondary btn-sm"
-                        >
-                          Cancel
-                        </button>
+                      )}
+                      <div>
+                        <h5 className="mb-3 text-sm font-semibold text-gray-100">
+                          {removedComputers.length > 0 ? 'Or add custom workstation' : 'Add custom workstation'}
+                        </h5>
+                        <div className="grid grid-cols-2 gap-3">
+                          <input
+                            type="text"
+                            placeholder="Workstation Name *"
+                            value={customNode.node_name}
+                            onChange={(e) => setCustomNode({ ...customNode, node_name: e.target.value })}
+                            className="form-input text-sm"
+                          />
+                          <select
+                            value={customNode.node_type || 'Local Operator'}
+                            onChange={(e) => setCustomNode({ ...customNode, node_type: e.target.value })}
+                            className="form-select text-sm"
+                          >
+                            {[
+                              'Local Operator',
+                              'Local Application',
+                              'Local Professional Plus',
+                              'Local Pro',
+                              'VRTX Chassis (Virtual)',
+                              'Host (Virtual)',
+                              'File Witness (Virtual)',
+                              'Non-DV Node',
+                            ].map((t) => (
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="col-span-2">
+                            <p className="form-label mb-1.5 text-xs uppercase tracking-wide text-gray-400">Workstation model</p>
+                            <div className="flex gap-2 rounded-lg border border-[#3d3d5c] bg-[#1b1b2f] p-1">
+                              <button
+                                type="button"
+                                onClick={() => setCustomNode({ ...customNode, model: CUSTOM_WORKSTATION_MODEL.DELTAV })}
+                                className={`flex-1 rounded-md px-3 py-2.5 text-sm font-semibold transition-all ${
+                                  customNode.model === CUSTOM_WORKSTATION_MODEL.DELTAV
+                                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/40 ring-2 ring-blue-400/50'
+                                    : 'text-gray-400 hover:bg-[#252542] hover:text-gray-100'
+                                }`}
+                              >
+                                Deltav Workstation
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCustomNode({ ...customNode, model: CUSTOM_WORKSTATION_MODEL.NON_DELTAV })}
+                                className={`flex-1 rounded-md px-3 py-2.5 text-sm font-semibold transition-all ${
+                                  customNode.model === CUSTOM_WORKSTATION_MODEL.NON_DELTAV
+                                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/40 ring-2 ring-blue-400/50'
+                                    : 'text-gray-400 hover:bg-[#252542] hover:text-gray-100'
+                                }`}
+                              >
+                                Non deltav workstation
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            onClick={() => addCustomNode(customNode.node_type || 'Local Operator')}
+                            className="btn btn-success btn-sm"
+                          >
+                            Add Custom
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowCustomComputer(false);
+                              setRestorePickComputer('');
+                              setCustomNode({ node_name: '', node_type: '', model: '', serial: '' });
+                            }}
+                            className="btn btn-secondary btn-sm"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1140,7 +1324,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
           )}
 
           {/* Switches Table */}
-          {filteredSwitches.length > 0 && (
+          {(filteredSwitches.length > 0 || !isCompleted) && (
             <div className="bg-gray-800 rounded-lg border border-gray-700 shadow-xl">
               <div className="flex justify-between items-center px-4 py-3 border-b border-gray-700">
                 <h4 className="text-lg font-semibold text-gray-100">Network Switches ({filteredSwitches.length})</h4>
@@ -1256,7 +1440,7 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                           {!isCompleted && (
                             <td className="px-3 py-2 text-center">
                               <button
-                                onClick={() => removeSessionNode(switchNode.id)}
+                                onClick={() => removeSessionNode(switchNode)}
                                 className="text-red-400 hover:text-red-300 text-xs"
                                 title="Remove from session"
                               >
@@ -1277,46 +1461,130 @@ export default function NodeMaintenance({ sessionId, customerId, isCompleted }) 
                       onClick={() => setShowCustomSwitch(true)}
                       className="btn btn-secondary btn-sm"
                     >
-                      + Add Custom Switch
+                      + Add Switch
                     </button>
                   ) : (
-                    <div className="bg-gray-700 p-4 rounded-lg">
-                      <h5 className="text-sm font-semibold text-gray-200 mb-3">Add Custom Network Switch</h5>
-                      <div className="grid grid-cols-2 gap-3">
-                        <input
-                          type="text"
-                          placeholder="Switch Name *"
-                          value={customNode.node_name}
-                          onChange={(e) => setCustomNode({...customNode, node_name: e.target.value})}
-                          className="form-input text-sm"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Serial Number"
-                          value={customNode.serial}
-                          onChange={(e) => setCustomNode({...customNode, serial: e.target.value})}
-                          className="form-input text-sm"
-                        />
-                      </div>
-                      <div className="flex gap-2 mt-3">
-                        <button
-                          onClick={() => addCustomNode('Smart Network Devices')}
-                          className="btn btn-success btn-sm"
-                        >
-                          Add Switch
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowCustomSwitch(false);
-                            setCustomNode({ node_name: '', node_type: '', model: '', serial: '' });
-                          }}
-                          className="btn btn-secondary btn-sm"
-                        >
-                          Cancel
-                        </button>
+                    <div className="bg-gray-700 p-4 rounded-lg space-y-4">
+                      {removedSwitches.length > 0 && (
+                        <div>
+                          <h5 className="text-sm font-semibold text-gray-200 mb-2">
+                            Restore removed switch
+                          </h5>
+                          <div className="flex flex-wrap gap-2 items-center">
+                            <select
+                              value={restorePickSwitch}
+                              onChange={(e) => setRestorePickSwitch(e.target.value)}
+                              className="form-select text-sm flex-1 min-w-[12rem]"
+                            >
+                              <option value="">Select removed switch…</option>
+                              {removedSwitches.map((r) => (
+                                <option key={r.node_id} value={String(r.node_id)}>
+                                  {r.node_name}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => restoreByPick(restorePickSwitch)}
+                              className="btn btn-success btn-sm"
+                              disabled={!restorePickSwitch}
+                            >
+                              Restore
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <div>
+                        <h5 className="text-sm font-semibold text-gray-200 mb-3">
+                          {removedSwitches.length > 0 ? 'Or add custom switch' : 'Add custom network switch'}
+                        </h5>
+                        <div className="grid grid-cols-2 gap-3">
+                          <input
+                            type="text"
+                            placeholder="Switch Name *"
+                            value={customNode.node_name}
+                            onChange={(e) => setCustomNode({...customNode, node_name: e.target.value})}
+                            className="form-input text-sm"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Serial Number"
+                            value={customNode.serial}
+                            onChange={(e) => setCustomNode({...customNode, serial: e.target.value})}
+                            className="form-input text-sm"
+                          />
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                          <button
+                            onClick={() => addCustomNode('Smart Network Devices')}
+                            className="btn btn-success btn-sm"
+                          >
+                            Add Custom
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowCustomSwitch(false);
+                              setRestorePickSwitch('');
+                              setCustomNode({ node_name: '', node_type: '', model: '', serial: '' });
+                            }}
+                            className="btn btn-secondary btn-sm"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+          )}
+          {removedNodes.length > 0 && (
+            <div className="card mt-4">
+              <div className="card-header flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-gray-200">
+                  Removed from this session ({removedNodes.length})
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setShowRemoved((v) => !v)}
+                  className="btn btn-secondary btn-sm"
+                >
+                  {showRemoved ? 'Hide' : 'Show / Restore'}
+                </button>
+              </div>
+              {showRemoved && (
+                <div className="overflow-auto p-3" style={{ maxHeight: '40vh' }}>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs text-gray-400">
+                        <th className="px-2 py-1 text-left">Name</th>
+                        <th className="px-2 py-1 text-left">Type</th>
+                        <th className="px-2 py-1 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-700">
+                      {removedNodes.map((r) => (
+                        <tr key={`${r.node_id}-${r.node_name}`} className="bg-gray-800/60">
+                          <td className="px-2 py-2 text-gray-200">{r.node_name}</td>
+                          <td className="px-2 py-2 text-gray-400 text-xs">{r.node_type || '—'}</td>
+                          <td className="px-2 py-2 text-center">
+                            {!isCompleted ? (
+                              <button
+                                type="button"
+                                onClick={() => restoreSessionNode(r)}
+                                className="btn btn-success btn-sm text-xs"
+                              >
+                                Restore
+                              </button>
+                            ) : (
+                              <span className="text-xs text-gray-500">Locked</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>

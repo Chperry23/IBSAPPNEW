@@ -9,8 +9,222 @@ const { generateMaintenanceReportPage } = require('../services/pdf/maintenanceRe
 const { generateDiagnosticsSummary, generateControllerBreakdown } = require('../services/pdf/diagnosticsReport');
 const { generateRiskAssessment } = require('../utils/risk-assessment');
 const { getDefaultPerformanceType } = require('../utils/controllerType');
-const { dedupeNodesForReport } = require('../utils/session-node-list');
+const {
+  finalizeNodesForReport,
+  normalizeNodeNameKey,
+} = require('../utils/session-node-list');
 const { syncFieldsForInsert, softDeleteSyncRow } = require('../utils/sync-write-helper');
+
+const ID_WORKSTATION = 1000000;
+const ID_CONTROLLER_BASE = 2000000;
+const ID_SWITCH_BASE = 3000000;
+const ID_CIOC_BASE = 4000000;
+
+async function getSessionExcludedNodeIds(sessionId) {
+  const rows = await db.prepare(
+    `SELECT node_id FROM session_node_maintenance WHERE session_id = ? AND COALESCE(deleted, 0) = 1`
+  ).all([sessionId]);
+  return new Set(rows.map((r) => String(r.node_id)));
+}
+
+/**
+ * Normalized name keys that should stay hidden from the session.
+ * If any sibling with the same name is still active (deleted=0), do NOT exclude —
+ * restore + duplicate-reconcile can leave a custom twin tombstoned while the
+ * registry twin is active; excluding by name would hide the restored node.
+ */
+async function getSessionExcludedNameKeys(sessionId) {
+  const rows = await db.prepare(
+    `SELECT node_id, node_name, deleted FROM session_node_maintenance WHERE session_id = ?`
+  ).all([sessionId]);
+  const activeKeys = new Set();
+  const deletedKeys = new Set();
+  for (const row of rows) {
+    let name = row.node_name;
+    if (!name || !String(name).trim()) {
+      if (Number(row.deleted) === 1) {
+        name = await resolveNodeNameById(row.node_id);
+      } else {
+        continue;
+      }
+    }
+    const key = normalizeNodeNameKey(name);
+    if (!key) continue;
+    if (Number(row.deleted) === 1) deletedKeys.add(key);
+    else activeKeys.add(key);
+  }
+  const keys = new Set();
+  for (const key of deletedKeys) {
+    if (!activeKeys.has(key)) keys.add(key);
+  }
+  return keys;
+}
+
+async function getSessionExcludedControllerNames(sessionId) {
+  const nameKeys = await getSessionExcludedNameKeys(sessionId);
+  const rows = await db.prepare(
+    `SELECT DISTINCT TRIM(node_name) as node_name
+     FROM session_node_maintenance
+     WHERE session_id = ? AND COALESCE(deleted, 0) = 1
+       AND node_name IS NOT NULL AND TRIM(node_name) != ''`
+  ).all([sessionId]);
+  const names = new Set();
+  for (const row of rows) {
+    const raw = String(row.node_name).trim().toLowerCase();
+    const key = normalizeNodeNameKey(row.node_name);
+    // Skip names that still have an active sibling in the session
+    if (key && !nameKeys.has(key)) continue;
+    if (raw) names.add(raw);
+  }
+
+  const idOnly = await db.prepare(
+    `SELECT node_id FROM session_node_maintenance
+     WHERE session_id = ? AND COALESCE(deleted, 0) = 1
+       AND (node_name IS NULL OR TRIM(node_name) = '')`
+  ).all([sessionId]);
+  for (const row of idOnly) {
+    const name = await resolveNodeNameById(row.node_id);
+    if (!name) continue;
+    const key = normalizeNodeNameKey(name);
+    if (key && !nameKeys.has(key)) continue;
+    names.add(name.trim().toLowerCase());
+  }
+  names._keys = nameKeys;
+  return names;
+}
+
+function isControllerNameExcluded(controllerName, excludedNames) {
+  const raw = String(controllerName || '').trim().toLowerCase();
+  if (!raw) return false;
+  if (excludedNames.has(raw)) return true;
+  const key = normalizeNodeNameKey(raw);
+  return Boolean(key && excludedNames._keys?.has(key));
+}
+
+async function resolveNodeNameById(nodeId) {
+  const id = Number(nodeId);
+  if (!Number.isFinite(id)) return null;
+  if (id >= ID_CIOC_BASE) {
+    const r = await db.prepare('SELECT name FROM sys_charms_io_cards WHERE id = ?').get([id - ID_CIOC_BASE]);
+    return r?.name || null;
+  }
+  if (id >= ID_SWITCH_BASE) {
+    const r = await db.prepare('SELECT name FROM sys_smart_switches WHERE id = ?').get([id - ID_SWITCH_BASE]);
+    return r?.name || null;
+  }
+  if (id >= ID_CONTROLLER_BASE) {
+    const r = await db.prepare('SELECT name FROM sys_controllers WHERE id = ?').get([id - ID_CONTROLLER_BASE]);
+    return r?.name || null;
+  }
+  if (id >= ID_WORKSTATION) {
+    const r = await db.prepare('SELECT name FROM sys_workstations WHERE id = ?').get([id - ID_WORKSTATION]);
+    return r?.name || null;
+  }
+  const legacy = await db.prepare('SELECT node_name FROM nodes WHERE id = ?').get([id]);
+  return legacy?.node_name || null;
+}
+
+/** Soft-exclude a node and any same-named siblings (custom ↔ registry duplicates). */
+async function excludeNodeAndNameSiblings(sessionId, nodeId, hint = {}) {
+  const existing = await db.prepare(
+    `SELECT * FROM session_node_maintenance WHERE session_id = ? AND node_id = ?`
+  ).get([sessionId, nodeId]);
+
+  let nodeName =
+    hint.node_name ||
+    existing?.node_name ||
+    (await resolveNodeNameById(nodeId));
+
+  const touch = async (nid, name, type, isCustom) => {
+    const row = await db.prepare(
+      `SELECT id FROM session_node_maintenance WHERE session_id = ? AND node_id = ?`
+    ).get([sessionId, nid]);
+    if (row) {
+      await db.prepare(
+        `UPDATE session_node_maintenance
+         SET deleted = 1, synced = 0, updated_at = CURRENT_TIMESTAMP,
+             node_name = COALESCE(NULLIF(TRIM(node_name), ''), ?),
+             node_type = COALESCE(NULLIF(TRIM(node_type), ''), ?)
+         WHERE session_id = ? AND node_id = ?`
+      ).run([name || null, type || null, sessionId, nid]);
+    } else {
+      await db.prepare(
+        `INSERT INTO session_node_maintenance
+           (session_id, node_id, node_name, node_type, is_custom_node, deleted, uuid, synced)
+         VALUES (?, ?, ?, ?, ?, 1, ?, 0)`
+      ).run([sessionId, nid, name || null, type || null, isCustom ? 1 : 0, uuidv4()]);
+    }
+  };
+
+  await touch(
+    nodeId,
+    nodeName,
+    hint.node_type || existing?.node_type || null,
+    Boolean(hint.is_custom_node ?? existing?.is_custom_node)
+  );
+
+  if (nodeName && String(nodeName).trim()) {
+    const name = String(nodeName).trim();
+    const nameKey = normalizeNodeNameKey(name);
+
+    // Soft-delete any other maintenance rows with the same normalized name
+    const activeRows = await db.prepare(
+      `SELECT node_id, node_name FROM session_node_maintenance
+       WHERE session_id = ? AND COALESCE(deleted, 0) != 1`
+    ).all([sessionId]);
+    for (const row of activeRows) {
+      if (Number(row.node_id) === Number(nodeId)) continue;
+      if (normalizeNodeNameKey(row.node_name) === nameKey) {
+        await touch(
+          row.node_id,
+          row.node_name || name,
+          hint.node_type || existing?.node_type || null,
+          Number(row.node_id) < ID_WORKSTATION
+        );
+      }
+    }
+
+    // Tombstone same-named registry/custom siblings that have no maintenance row yet
+    const siblingIds = new Set();
+    const session = await db.prepare('SELECT customer_id FROM sessions WHERE id = ?').get([sessionId]);
+    const customerId = session?.customer_id;
+    if (customerId) {
+      const ws = await db.prepare(
+        `SELECT id, name FROM sys_workstations WHERE customer_id = ? AND COALESCE(deleted,0)!=1`
+      ).all([customerId]);
+      ws.filter((r) => normalizeNodeNameKey(r.name) === nameKey)
+        .forEach((r) => siblingIds.add(ID_WORKSTATION + r.id));
+      const ctrl = await db.prepare(
+        `SELECT id, name FROM sys_controllers WHERE customer_id = ? AND COALESCE(deleted,0)!=1`
+      ).all([customerId]);
+      ctrl.filter((r) => normalizeNodeNameKey(r.name) === nameKey)
+        .forEach((r) => siblingIds.add(ID_CONTROLLER_BASE + r.id));
+      const sw = await db.prepare(
+        `SELECT id, name FROM sys_smart_switches WHERE customer_id = ? AND COALESCE(deleted,0)!=1`
+      ).all([customerId]);
+      sw.filter((r) => normalizeNodeNameKey(r.name) === nameKey)
+        .forEach((r) => siblingIds.add(ID_SWITCH_BASE + r.id));
+      const cioc = await db.prepare(
+        `SELECT id, name FROM sys_charms_io_cards WHERE customer_id = ? AND COALESCE(deleted,0)!=1`
+      ).all([customerId]);
+      cioc.filter((r) => normalizeNodeNameKey(r.name) === nameKey)
+        .forEach((r) => siblingIds.add(ID_CIOC_BASE + r.id));
+    }
+    const customs = await db.prepare(
+      `SELECT id, node_name FROM nodes WHERE COALESCE(deleted,0)!=1`
+    ).all();
+    customs
+      .filter((r) => normalizeNodeNameKey(r.node_name) === nameKey)
+      .forEach((r) => siblingIds.add(r.id));
+
+    for (const sid of siblingIds) {
+      if (Number(sid) === Number(nodeId)) continue;
+      await touch(sid, name, hint.node_type || existing?.node_type || null, Number(sid) < ID_WORKSTATION);
+    }
+  }
+
+  return { nodeName, existing };
+}
 
 // Helper function to check if session is completed
 async function isSessionCompleted(sessionId) {
@@ -441,7 +655,9 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
         });
         existingIds.add(String(m.node_id));
       }
-      const reportNodes = dedupeNodesForReport(nodes);
+      const excludedIds = await getSessionExcludedNodeIds(sessionId);
+      const excludedNameKeys = await getSessionExcludedNameKeys(sessionId);
+      const reportNodes = finalizeNodesForReport(nodes, excludedIds, excludedNameKeys);
       const maintByNode = {};
       maintenanceRows.forEach(m => { maintByNode[m.node_id] = m; });
       nodeMaintenanceData = reportNodes.map(n => {
@@ -480,10 +696,15 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
       });
     }
 
+    const excludedNames = await getSessionExcludedControllerNames(sessionId);
     const diagnosticsRaw = await db.prepare(`
       SELECT * FROM session_diagnostics WHERE session_id = ? AND (deleted IS NULL OR deleted = 0) ORDER BY controller_name, card_number, channel_number
     `).all([sessionId]);
-    const diagnostics = diagnosticsRaw.filter((d) => d.error_type !== 'io_card_slot');
+    const diagnostics = diagnosticsRaw.filter(
+      (d) =>
+        d.error_type !== 'io_card_slot' &&
+        !isControllerNameExcluded(d.controller_name, excludedNames)
+    );
 
     const pmNotesRow = await db.prepare(`
       SELECT * FROM session_pm_notes WHERE session_id = ? AND (deleted IS NULL OR deleted = 0) LIMIT 1
@@ -719,9 +940,10 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
     });
     log('Browser launched');
     const page = await browser.newPage();
-    page.setDefaultTimeout(120000);
-    log('Setting page content (waitUntil: networkidle0, timeout: 120s)...');
-    await page.setContent(fullHtml, { waitUntil: 'networkidle0', timeout: 120000 });
+    const pdfTimeoutMs = 10 * 60 * 1000; // 10 minutes for large session reports
+    page.setDefaultTimeout(pdfTimeoutMs);
+    log('Setting page content (waitUntil: networkidle0, timeout: 10m)...');
+    await page.setContent(fullHtml, { waitUntil: 'networkidle0', timeout: pdfTimeoutMs });
     log('Page content set');
     // Wait for Chart.js to render (done in Node, not browser context, so pkg serialization is not an issue)
     await new Promise(r => setTimeout(r, 800));
@@ -906,16 +1128,16 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
         });
         const maintenanceRows = await db.prepare(`
           SELECT node_id, dv_checked, os_checked, macafee_checked, free_time, redundancy_checked, cold_restart_checked, has_io_errors, hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked, notes, completed
-          FROM session_node_maintenance WHERE session_id = ?
+          FROM session_node_maintenance WHERE session_id = ? AND COALESCE(deleted, 0) != 1
         `).all([sessionId]);
         const nodes = [];
-        const histWs = await db.prepare('SELECT id, name as node_name, type as node_type, model FROM sys_workstations WHERE customer_id = ?').all([session.customer_id]);
+        const histWs = await db.prepare('SELECT id, name as node_name, type as node_type, model FROM sys_workstations WHERE customer_id = ? AND COALESCE(deleted,0)!=1').all([session.customer_id]);
         histWs.forEach((n) => { n.id = ID_WORKSTATION + n.id; });
-        const histCtrl = await db.prepare("SELECT id, name as node_name, 'Controller' as node_type, model FROM sys_controllers WHERE customer_id = ?").all([session.customer_id]);
+        const histCtrl = await db.prepare("SELECT id, name as node_name, 'Controller' as node_type, model FROM sys_controllers WHERE customer_id = ? AND COALESCE(deleted,0)!=1").all([session.customer_id]);
         histCtrl.forEach((n) => { n.id = ID_CONTROLLER + n.id; });
-        const histSw = await db.prepare("SELECT id, name as node_name, 'Smart Network Devices' as node_type, model FROM sys_smart_switches WHERE customer_id = ?").all([session.customer_id]);
+        const histSw = await db.prepare("SELECT id, name as node_name, 'Smart Network Devices' as node_type, model FROM sys_smart_switches WHERE customer_id = ? AND COALESCE(deleted,0)!=1").all([session.customer_id]);
         histSw.forEach((n) => { n.id = ID_SWITCH + n.id; });
-        const histCioc = await db.prepare("SELECT id, name as node_name, CASE WHEN LOWER(name) LIKE '%csls%' OR LOWER(name) LIKE '%charms logic solver%' OR LOWER(name) LIKE '%smart logic solver%' OR LOWER(model) LIKE '%csls%' OR LOWER(model) LIKE '%logic solver%' THEN 'CSLS' ELSE 'CIOC' END as node_type, model FROM sys_charms_io_cards WHERE customer_id = ?").all([session.customer_id]);
+        const histCioc = await db.prepare("SELECT id, name as node_name, CASE WHEN LOWER(name) LIKE '%csls%' OR LOWER(name) LIKE '%charms logic solver%' OR LOWER(name) LIKE '%smart logic solver%' OR LOWER(model) LIKE '%csls%' OR LOWER(model) LIKE '%logic solver%' THEN 'CSLS' ELSE 'CIOC' END as node_type, model FROM sys_charms_io_cards WHERE customer_id = ? AND COALESCE(deleted,0)!=1").all([session.customer_id]);
         histCioc.forEach((n) => { n.id = ID_CIOC + n.id; });
         nodes.push(...histWs, ...histCtrl, ...histSw, ...histCioc);
         // Include custom nodes from legacy nodes table
@@ -923,15 +1145,18 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
           SELECT n.id, n.node_name, n.node_type, n.model
           FROM nodes n
           INNER JOIN session_node_maintenance m ON m.node_id = n.id
-          WHERE m.session_id = ? AND m.is_custom_node = 1
+          WHERE m.session_id = ? AND m.is_custom_node = 1 AND COALESCE(m.deleted, 0) != 1
         `).all([sessionId]);
         const histExistingIds = new Set(nodes.map(n => String(n.id)));
         for (const cn of histCustomNodes) {
           if (!histExistingIds.has(String(cn.id))) nodes.push(cn);
         }
+        const excludedIds = await getSessionExcludedNodeIds(sessionId);
+        const excludedNameKeys = await getSessionExcludedNameKeys(sessionId);
+        const reportNodes = finalizeNodesForReport(nodes, excludedIds, excludedNameKeys);
         const maintByNode = {};
         maintenanceRows.forEach((m) => { maintByNode[m.node_id] = m; });
-        const nodeMaintenanceData = nodes.map((n) => {
+        const nodeMaintenanceData = reportNodes.map((n) => {
           const storedType = maintByNode[n.id]?.performance_type || null;
           const storedValue = maintByNode[n.id]?.performance_value ?? null;
           let performance_type = storedType || 'free_time';
@@ -963,9 +1188,15 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
           };
         });
         const riskResult = generateRiskAssessment(cabinets, nodeMaintenanceData);
-        const diagCount = await db.prepare(
-          'SELECT COUNT(*) as c FROM session_diagnostics WHERE session_id = ? AND (deleted IS NULL OR deleted = 0)'
-        ).get([sessionId]);
+        const excludedNamesHist = await getSessionExcludedControllerNames(sessionId);
+        const diagRows = await db.prepare(
+          'SELECT controller_name FROM session_diagnostics WHERE session_id = ? AND (deleted IS NULL OR deleted = 0)'
+        ).all([sessionId]);
+        const diagCount = {
+          c: diagRows.filter(
+            (d) => !isControllerNameExcluded(d.controller_name, excludedNamesHist)
+          ).length,
+        };
         const metricUuid = syncFieldsForInsert('customer_metric_history').uuid;
         await db.prepare(`
           INSERT INTO customer_metric_history (customer_id, session_id, session_name, recorded_at, error_count, risk_score, risk_level, total_components, failed_components, cabinet_count, domain_scores, coverage_completed, coverage_total, uuid, synced)
@@ -1419,8 +1650,50 @@ router.post('/:sessionId/custom-node', requireAuth, async (req, res) => {
   }
 });
 
-// Remove a node from this PM session (registry or custom). Soft-deletes maintenance row.
-router.delete('/:sessionId/session-node/:nodeId', requireAuth, async (req, res) => {
+// List equipment removed from this PM session (for restore UI)
+router.get('/:sessionId/removed-nodes', requireAuth, async (req, res) => {
+  const { sessionId } = req.params;
+  try {
+    const rows = await db.prepare(`
+      SELECT node_id, node_name, node_type, is_custom_node, updated_at
+      FROM session_node_maintenance
+      WHERE session_id = ? AND COALESCE(deleted, 0) = 1
+      ORDER BY COALESCE(node_name, ''), node_id
+    `).all([sessionId]);
+
+    const byName = new Map();
+    for (const row of rows) {
+      let name = row.node_name;
+      if (!name || !String(name).trim()) {
+        name = (await resolveNodeNameById(row.node_id)) || `Node ${row.node_id}`;
+      }
+      const key = normalizeNodeNameKey(name) || String(name).trim().toLowerCase();
+      const candidate = {
+        node_id: row.node_id,
+        node_name: name,
+        node_type: row.node_type || null,
+        is_custom_node: Boolean(row.is_custom_node),
+        updated_at: row.updated_at,
+      };
+      const prev = byName.get(key);
+      if (!prev) {
+        byName.set(key, candidate);
+        continue;
+      }
+      // Prefer registry (non-custom / higher synthetic id) so restore brings back the real node
+      const prevScore = (prev.is_custom_node ? 0 : 2) + (Number(prev.node_id) >= ID_WORKSTATION ? 1 : 0);
+      const nextScore = (candidate.is_custom_node ? 0 : 2) + (Number(candidate.node_id) >= ID_WORKSTATION ? 1 : 0);
+      if (nextScore > prevScore) byName.set(key, candidate);
+    }
+    res.json([...byName.values()]);
+  } catch (error) {
+    console.error('List removed session nodes error:', error);
+    res.status(500).json({ error: 'Failed to list removed nodes' });
+  }
+});
+
+// Restore equipment previously removed from this PM session
+router.post('/:sessionId/session-node/:nodeId/restore', requireAuth, async (req, res) => {
   const { sessionId, nodeId } = req.params;
   const nid = parseInt(nodeId, 10);
   if (Number.isNaN(nid)) {
@@ -1436,20 +1709,109 @@ router.delete('/:sessionId/session-node/:nodeId', requireAuth, async (req, res) 
       SELECT * FROM session_node_maintenance WHERE session_id = ? AND node_id = ?
     `).get([sessionId, nid]);
 
-    if (existing) {
-      await db.prepare(`
-        UPDATE session_node_maintenance
-        SET deleted = 1, synced = 0, updated_at = CURRENT_TIMESTAMP
-        WHERE session_id = ? AND node_id = ?
-      `).run([sessionId, nid]);
-    } else {
-      await db.prepare(`
-        INSERT INTO session_node_maintenance (session_id, node_id, deleted, uuid, synced)
-        VALUES (?, ?, 1, ?, 0)
-      `).run([sessionId, nid, uuidv4()]);
+    if (!existing || Number(existing.deleted) !== 1) {
+      return res.status(404).json({ error: 'Removed node not found for this session' });
     }
 
-    if (existing?.is_custom_node) {
+    let nodeName = existing.node_name || (await resolveNodeNameById(nid));
+
+    // Restore this node and any same-named tombstones (custom ↔ registry twins)
+    if (nodeName && String(nodeName).trim()) {
+      const nameKey = normalizeNodeNameKey(nodeName);
+      const tombstones = await db.prepare(`
+        SELECT node_id, node_name FROM session_node_maintenance
+        WHERE session_id = ? AND COALESCE(deleted, 0) = 1
+      `).all([sessionId]);
+      for (const row of tombstones) {
+        const matchId = Number(row.node_id) === nid;
+        const matchName = normalizeNodeNameKey(row.node_name) === nameKey;
+        if (!matchId && !matchName) continue;
+        await db.prepare(`
+          UPDATE session_node_maintenance
+          SET deleted = 0, synced = 0, updated_at = CURRENT_TIMESTAMP
+          WHERE session_id = ? AND node_id = ?
+        `).run([sessionId, row.node_id]);
+      }
+    } else {
+      await db.prepare(`
+        UPDATE session_node_maintenance
+        SET deleted = 0, synced = 0, updated_at = CURRENT_TIMESTAMP
+        WHERE session_id = ? AND node_id = ?
+      `).run([sessionId, nid]);
+    }
+
+    // If it was a soft-deleted custom nodes row, revive it
+    if (existing.is_custom_node || nid < ID_WORKSTATION) {
+      await db.prepare(`
+        UPDATE nodes SET deleted = 0, synced = 0, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND COALESCE(deleted, 0) = 1
+      `).run([nid]);
+    }
+
+    res.json({
+      success: true,
+      message: 'Equipment restored to session',
+      node_id: nid,
+      node_name: nodeName || null,
+    });
+  } catch (error) {
+    console.error('Restore session node error:', error);
+    res.status(500).json({ error: 'Failed to restore node to session' });
+  }
+});
+
+// Remove a node from this PM session (registry or custom). Soft-deletes maintenance row
+// and same-named siblings so custom/registry duplicates do not bounce back.
+router.delete('/:sessionId/session-node/:nodeId', requireAuth, async (req, res) => {
+  const { sessionId, nodeId } = req.params;
+  const nid = parseInt(nodeId, 10);
+  const hint = {
+    node_name: req.body?.node_name || req.query?.node_name || null,
+    node_type: req.body?.node_type || req.query?.node_type || null,
+    is_custom_node: req.body?.is_custom_node,
+  };
+
+  // Legacy synthetic ids (e.g. io-DVNET002) are not numeric — exclude by name only
+  if (Number.isNaN(nid)) {
+    const name = hint.node_name || String(nodeId).replace(/^io-/i, '');
+    if (!name) {
+      return res.status(400).json({ error: 'Invalid node id' });
+    }
+    try {
+      if (await isSessionCompleted(sessionId)) {
+        return res.status(403).json({ error: 'Cannot modify nodes — PM session is completed' });
+      }
+      // Create a name tombstone so report/diagnostics stay filtered even if a synthetic returns
+      const existing = await db.prepare(
+        `SELECT * FROM session_node_maintenance WHERE session_id = ? AND LOWER(TRIM(COALESCE(node_name,''))) = LOWER(?)`
+      ).get([sessionId, name]);
+      if (existing) {
+        await excludeNodeAndNameSiblings(sessionId, existing.node_id, {
+          node_name: name,
+          node_type: hint.node_type || existing.node_type,
+        });
+      } else {
+        await db.prepare(`
+          INSERT INTO session_node_maintenance
+            (session_id, node_id, node_name, node_type, is_custom_node, deleted, uuid, synced)
+          VALUES (?, ?, ?, ?, 0, 1, ?, 0)
+        `).run([sessionId, -Math.abs(Date.now() % 1e9), name, hint.node_type || 'Controller', uuidv4()]);
+      }
+      return res.json({ success: true, message: 'Node removed from session' });
+    } catch (error) {
+      console.error('Remove session node error:', error);
+      return res.status(500).json({ error: 'Failed to remove node from session' });
+    }
+  }
+
+  try {
+    if (await isSessionCompleted(sessionId)) {
+      return res.status(403).json({ error: 'Cannot modify nodes — PM session is completed' });
+    }
+
+    const { existing } = await excludeNodeAndNameSiblings(sessionId, nid, hint);
+
+    if (existing?.is_custom_node || nid < ID_WORKSTATION) {
       const others = await db.prepare(`
         SELECT COUNT(*) as count FROM session_node_maintenance
         WHERE node_id = ? AND session_id != ? AND COALESCE(deleted, 0) != 1
@@ -1466,7 +1828,7 @@ router.delete('/:sessionId/session-node/:nodeId', requireAuth, async (req, res) 
   }
 });
 
-// Delete custom node from session
+// Delete custom node from session (same exclusion rules as session-node)
 router.delete('/:sessionId/custom-node/:nodeId', requireAuth, async (req, res) => {
   const { sessionId, nodeId } = req.params;
   const nid = parseInt(nodeId, 10);
@@ -1476,7 +1838,7 @@ router.delete('/:sessionId/custom-node/:nodeId', requireAuth, async (req, res) =
 
   try {
     const maintenance = await db.prepare(`
-      SELECT is_custom_node FROM session_node_maintenance
+      SELECT is_custom_node, node_name, node_type FROM session_node_maintenance
       WHERE session_id = ? AND node_id = ? AND COALESCE(deleted, 0) != 1
     `).get([sessionId, nid]);
 
@@ -1491,11 +1853,11 @@ router.delete('/:sessionId/custom-node/:nodeId', requireAuth, async (req, res) =
       return res.status(403).json({ error: 'Cannot modify nodes — PM session is completed' });
     }
 
-    await db.prepare(`
-      UPDATE session_node_maintenance
-      SET deleted = 1, synced = 0, updated_at = CURRENT_TIMESTAMP
-      WHERE session_id = ? AND node_id = ?
-    `).run([sessionId, nid]);
+    await excludeNodeAndNameSiblings(sessionId, nid, {
+      node_name: maintenance.node_name,
+      node_type: maintenance.node_type,
+      is_custom_node: true,
+    });
 
     const others = await db.prepare(`
       SELECT COUNT(*) as count FROM session_node_maintenance

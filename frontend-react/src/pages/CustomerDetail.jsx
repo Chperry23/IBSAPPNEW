@@ -1,18 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import api from '../services/api';
 import soundSystem from '../utils/sounds';
 import { formatSessionNameWithLabel } from '../utils/sessionName';
+import DellPartsPanel from '../components/DellPartsPanel';
 
 export default function CustomerDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [customer, setCustomer] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
-  const [activeTab, setActiveTab] = useState('active');
+  const [activeTab, setActiveTab] = useState(() =>
+    searchParams.get('tab') === 'parts' || searchParams.get('tab') === 'hdd' ? 'parts' : 'active'
+  );
   const [notes, setNotes] = useState([]);
   const [notesLoading, setNotesLoading] = useState(false);
   const [newNote, setNewNote] = useState('');
@@ -44,13 +48,79 @@ export default function CustomerDetail() {
   const [systemRegStats, setSystemRegStats] = useState(null);
   const [spSyncing, setSpSyncing] = useState(false);
   const [spLastSync, setSpLastSync] = useState(null);
+  const [wsWarranty, setWsWarranty] = useState(null);
+  const [wsWarrantyLoading, setWsWarrantyLoading] = useState(false);
+  const [wsWarrantyError, setWsWarrantyError] = useState(null);
+  const partsNodeId = searchParams.get('node') ? Number(searchParams.get('node')) : null;
+
+  const loadHddHistory = async () => {
+    if (hddHistory.length > 0 && !hddLoading) return;
+    setHddLoading(true);
+    try {
+      const data = await fetch(`/api/customers/${id}/hdd-replacements`, { credentials: 'include' }).then((r) => r.json());
+      setHddHistory(Array.isArray(data) ? data : []);
+    } catch {
+      setHddHistory([]);
+    } finally {
+      setHddLoading(false);
+    }
+  };
+
+  const openPartsTab = () => {
+    setActiveTab('parts');
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', 'parts');
+      return next;
+    });
+    loadHddHistory();
+  };
+
+  const loadWorkstationWarranties = async (refresh = false) => {
+    if (!id) return;
+    setWsWarrantyLoading(true);
+    setWsWarrantyError(null);
+    try {
+      const url = refresh
+        ? `/api/customers/${id}/dell-warranty/workstations/refresh`
+        : `/api/customers/${id}/dell-warranty/workstations`;
+      const data = await fetch(url, {
+        method: refresh ? 'POST' : 'GET',
+        credentials: 'include',
+      }).then((r) => r.json());
+      if (data.error) {
+        setWsWarrantyError(data.error);
+        if (!refresh) setWsWarranty(null);
+      } else {
+        setWsWarranty(data);
+        if (data.warranty_error) setWsWarrantyError(data.warranty_error);
+        if (refresh && data.message) {
+          showMessage(data.message, 'success');
+        }
+      }
+    } catch (e) {
+      setWsWarrantyError(e.message || 'Failed to load warranties');
+      if (!refresh) setWsWarranty(null);
+    } finally {
+      setWsWarrantyLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadCustomerData();
     loadSystemRegSummary();
     loadSystemRegStats();
     loadNotes();
+    loadWorkstationWarranties();
   }, [id]);
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'parts' || tab === 'hdd') {
+      setActiveTab('parts');
+      loadHddHistory();
+    }
+  }, [searchParams, id]);
 
   const loadCustomerData = async () => {
     try {
@@ -922,6 +992,137 @@ export default function CustomerDetail() {
         </div>
       </div>
 
+      {/* Workstations + live Dell warranty */}
+      <div className="card mb-8">
+        <div className="card-header flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-100">🖥️ Workstations &amp; Dell warranty</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Registry workstations · cached Dell warranty (Refresh pulls live from TechDirect)
+              {wsWarranty?.checked_at && (
+                <span> · last checked {new Date(wsWarranty.checked_at).toLocaleString()}</span>
+              )}
+              {wsWarranty?.from_cache && (wsWarranty.unchecked_count > 0) && (
+                <span className="text-yellow-500"> · {wsWarranty.unchecked_count} not checked yet</span>
+              )}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary text-sm"
+            onClick={() => loadWorkstationWarranties(true)}
+            disabled={wsWarrantyLoading}
+          >
+            {wsWarrantyLoading ? 'Checking Dell…' : 'Refresh warranties'}
+          </button>
+        </div>
+        <div className="card-body p-0">
+          {wsWarrantyLoading && !wsWarranty ? (
+            <div className="flex justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400" />
+            </div>
+          ) : !wsWarranty?.workstations?.length ? (
+            <div className="text-center py-10 text-gray-400 text-sm">
+              No workstations in system registry for this customer.
+            </div>
+          ) : (
+            <>
+              {wsWarrantyError && (
+                <div className="mx-4 mt-4 p-2.5 rounded-lg bg-yellow-900/30 border border-yellow-700/40 text-yellow-300 text-xs">
+                  Warranty API: {wsWarrantyError}
+                </div>
+              )}
+              <div className="overflow-x-auto">
+                <table className="table-dark">
+                  <thead>
+                    <tr>
+                      <th>Workstation</th>
+                      <th>Type</th>
+                      <th>Model</th>
+                      <th>Service tag</th>
+                      <th>Warranty</th>
+                      <th>Expires</th>
+                      <th>Support</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {wsWarranty.workstations.map((w) => {
+                      const ends = w.warranty?.warrantyEnds
+                        ? new Date(w.warranty.warrantyEnds)
+                        : null;
+                      return (
+                        <tr key={w.id}>
+                          <td className="font-medium text-gray-200">{w.name}</td>
+                          <td className="text-xs text-gray-400">{w.type || '—'}</td>
+                          <td className="text-xs text-gray-400">
+                            {w.warranty?.product || w.model || '—'}
+                          </td>
+                          <td className="font-mono text-sm text-cyan-400">
+                            {w.service_tag || <span className="text-gray-600">—</span>}
+                          </td>
+                          <td>
+                            {!w.dell_capable ? (
+                              <span className="text-xs text-gray-500">No Dell tag</span>
+                            ) : w.warranty?.invalid ? (
+                              <span className="px-2 py-0.5 rounded text-xs border bg-gray-600/40 text-gray-300 border-gray-500/30">
+                                Invalid tag
+                              </span>
+                            ) : w.warranty?.inCoverage ? (
+                              <span className="px-2 py-0.5 rounded text-xs border bg-green-500/20 text-green-300 border-green-500/30">
+                                In warranty
+                              </span>
+                            ) : w.warranty ? (
+                              <span className="px-2 py-0.5 rounded text-xs border bg-red-500/20 text-red-300 border-red-500/30">
+                                Expired
+                              </span>
+                            ) : (
+                              <span className="text-xs text-yellow-500">Not checked — hit Refresh</span>
+                            )}
+                          </td>
+                          <td className="text-sm text-gray-300 whitespace-nowrap">
+                            {ends ? ends.toLocaleDateString() : '—'}
+                          </td>
+                          <td className="text-xs text-gray-400 max-w-[12rem] truncate" title={w.warranty?.serviceLevel || ''}>
+                            {w.warranty?.serviceLevel || '—'}
+                          </td>
+                          <td>
+                            {w.dell_capable && (
+                              <button
+                                type="button"
+                                className="px-2 py-0.5 rounded text-[10px] bg-orange-600 hover:bg-orange-500 text-white"
+                                onClick={() => {
+                                  setSearchParams((prev) => {
+                                    const next = new URLSearchParams(prev);
+                                    next.set('tab', 'parts');
+                                    next.set('node', String(w.node_id));
+                                    return next;
+                                  });
+                                  setActiveTab('parts');
+                                  loadHddHistory();
+                                }}
+                              >
+                                Request part
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="px-4 py-3 text-xs text-gray-500 border-t border-gray-700">
+                {wsWarranty.workstations.length} workstation
+                {wsWarranty.workstations.length !== 1 ? 's' : ''} · {wsWarranty.tag_count || 0} Dell
+                tag{(wsWarranty.tag_count || 0) !== 1 ? 's' : ''}
+                {wsWarranty.from_cache ? ' (from cache)' : ' (just refreshed from Dell)'}
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+
       {/* Sessions / Notes Tabs */}
       <div className="card">
         <div className="card-header">
@@ -957,24 +1158,14 @@ export default function CustomerDetail() {
               📋 Site Notes ({notes.length})
             </button>
             <button
-              onClick={async () => {
-                setActiveTab('hdd');
-                if (hddHistory.length === 0) {
-                  setHddLoading(true);
-                  try {
-                    const data = await fetch(`/api/customers/${id}/hdd-replacements`, { credentials: 'include' }).then(r => r.json());
-                    setHddHistory(Array.isArray(data) ? data : []);
-                  } catch { setHddHistory([]); }
-                  finally { setHddLoading(false); }
-                }
-              }}
+              onClick={openPartsTab}
               className={`pb-2 px-4 font-medium transition-colors ${
-                activeTab === 'hdd'
+                activeTab === 'parts'
                   ? 'text-orange-400 border-b-2 border-orange-400'
                   : 'text-gray-400 hover:text-gray-200'
               }`}
             >
-              💾 Drive History
+              💾 Dell Parts
             </button>
           </div>
         </div>
@@ -1106,61 +1297,18 @@ export default function CustomerDetail() {
           </div>
         )}
 
-        {/* Drive History Panel */}
-        {activeTab === 'hdd' && (
-          <div className="p-6">
-            {hddLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-400"></div>
-              </div>
-            ) : hddHistory.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">
-                <div className="text-4xl mb-3">💾</div>
-                <p className="text-sm">No HDD replacements recorded for this customer.</p>
-                <p className="text-xs text-gray-500 mt-1">HDD replacements are logged in the node maintenance section of each PM session.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="table-dark">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Session</th>
-                      <th>Node</th>
-                      <th>Type</th>
-                      <th>Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {hddHistory.map((row, i) => (
-                      <tr key={i}>
-                        <td className="text-gray-300 whitespace-nowrap">
-                          {new Date(row.session_date).toLocaleDateString()}
-                        </td>
-                        <td>
-                          <Link
-                            to={`/session/${row.session_id}`}
-                            className="text-blue-400 hover:text-blue-300 hover:underline"
-                          >
-                            {row.session_name}
-                          </Link>
-                        </td>
-                        <td className="font-medium text-gray-200">{row.node_name}</td>
-                        <td>
-                          <span className="badge badge-blue text-xs">{row.node_type}</span>
-                        </td>
-                        <td className="text-gray-400 text-sm">{row.notes || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <p className="text-xs text-gray-500 mt-3">{hddHistory.length} replacement{hddHistory.length !== 1 ? 's' : ''} recorded</p>
-              </div>
-            )}
-          </div>
+        {/* Dell Parts Panel */}
+        {activeTab === 'parts' && (
+          <DellPartsPanel
+            customerId={id}
+            initialNodeId={partsNodeId}
+            hddHistory={hddHistory}
+            hddLoading={hddLoading}
+            showMessage={showMessage}
+          />
         )}
 
-        <div className="overflow-x-auto" style={{ display: (activeTab === 'notes' || activeTab === 'hdd') ? 'none' : undefined }}>
+        <div className="overflow-x-auto" style={{ display: (activeTab === 'notes' || activeTab === 'parts') ? 'none' : undefined }}>
           <table className="table-dark">
             <thead>
               <tr>

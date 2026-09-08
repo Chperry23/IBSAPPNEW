@@ -111,8 +111,8 @@ router.post('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
           dv_checked, os_checked, macafee_checked,
           free_time, redundancy_checked, cold_restart_checked, has_io_errors,
           hdd_replaced, performance_type, performance_value, hf_updated, firmware_updated_checked,
-          notes, is_custom_node, completed, uuid, synced
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+          notes, is_custom_node, completed, uuid, synced, deleted
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
         ON CONFLICT(session_id, node_id) DO UPDATE SET
           node_name=COALESCE(excluded.node_name, session_node_maintenance.node_name),
           node_type=COALESCE(excluded.node_type, session_node_maintenance.node_type),
@@ -123,6 +123,7 @@ router.post('/:sessionId/node-maintenance', requireAuth, async (req, res) => {
           hf_updated=excluded.hf_updated, firmware_updated_checked=excluded.firmware_updated_checked,
           notes=excluded.notes, is_custom_node=excluded.is_custom_node, completed=excluded.completed,
           uuid=COALESCE(session_node_maintenance.uuid, excluded.uuid),
+          deleted=0,
           synced=0, updated_at=CURRENT_TIMESTAMP
       `).run([
         sessionId, nid, nodeName, nodeType,

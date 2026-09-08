@@ -208,6 +208,11 @@ const INSPECTION_CHECK_KEYS = Object.keys(RISK_CHECKS).filter(
 
 const DOMAINS = ['controllers', 'network', 'power', 'cabinet_condition', 'environmental', 'node_maintenance'];
 
+/** PSU Dead/Failed checkbox only — not derived status from grounding/voltage readings. */
+function isPsuMarkedDead(ps) {
+  return ps.psu_dead === true || ps.psu_dead === 1 || ps.psu_dead === '1';
+}
+
 function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
   // bad_i / applicable_i counters for every defined check
   const tally = {};
@@ -329,11 +334,12 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
       }
     });
 
-    // Power supplies
+    // Power supplies — "failed or dead" only when PSU Dead/Failed is checked.
+    // Out-of-range readings (e.g. neutral_ground) stay as slight AC/DC advisories, not PSU failure.
     if (cabinet.power_supplies) {
       cabinet.power_supplies.forEach((ps, psIndex) => {
         totalComponents++;
-        const isPsuDead = ps.psu_dead === true || ps.status === 'fail';
+        const isPsuDead = isPsuMarkedDead(ps);
 
         observe('power_supply_fail', isPsuDead);
         coverageCompleted++;
@@ -344,7 +350,7 @@ function generateRiskAssessment(cabinets, nodeMaintenanceData = []) {
           addIssue('power_supply_fail', `${cabinetName}: Power Supply ${psIndex + 1} (${ps.voltage_type}) failed or dead`);
         }
 
-        // DC voltage range — SLIGHT advisory only; skip if PSU already marked dead/failed
+        // DC voltage range — SLIGHT advisory only; skip if PSU marked dead/failed
         if (!isPsuDead && ps.dc_reading !== undefined && ps.dc_reading !== '') {
           const voltageCheck = checkVoltageInRange(ps.dc_reading, ps.voltage_type);
           observe('voltage_out_of_range', !voltageCheck.inRange);

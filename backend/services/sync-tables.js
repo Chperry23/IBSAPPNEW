@@ -27,6 +27,7 @@ const SYNC_TABLES = [
   'sys_ams_systems',
   'customer_metric_history',
   'customer_notes',
+  'dell_dispatches',
 ];
 
 const REGISTRY_TABLES = [
@@ -65,6 +66,7 @@ const MODEL_MAP = {
   sys_ams_systems: models.SysAMSSystem,
   customer_metric_history: models.CustomerMetricHistory,
   customer_notes: models.CustomerNote,
+  dell_dispatches: models.DellDispatch,
 };
 
 /** Tables keyed by UUID string _id in Mongo */
