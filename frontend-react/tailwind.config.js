@@ -4,10 +4,23 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
-  darkMode: 'class', // Enable dark mode with class strategy
+  darkMode: 'class',
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+      },
       colors: {
+        app: {
+          bg: 'var(--app-bg)',
+          surface: 'var(--surface)',
+          elevated: 'var(--surface-elevated)',
+          hover: 'var(--surface-hover)',
+          inset: 'var(--surface-inset)',
+          border: 'var(--border-subtle)',
+          'border-strong': 'var(--border-strong)',
+          accent: 'var(--accent)',
+        },
         primary: {
           50: '#eff6ff',
           100: '#dbeafe',
@@ -20,24 +33,6 @@ export default {
           800: '#1e40af',
           900: '#1e3a8a',
         },
-        dark: {
-          50: '#f9fafb',
-          100: '#f3f4f6',
-          200: '#e5e7eb',
-          300: '#d1d5db',
-          400: '#9ca3af',
-          500: '#6b7280',
-          600: '#4b5563',
-          700: '#374151',
-          800: '#1f2937',
-          900: '#111827',
-          950: '#030712',
-        },
-      },
-      backgroundColor: {
-        'dark-primary': '#0f172a',
-        'dark-secondary': '#1e293b',
-        'dark-tertiary': '#334155',
       },
     },
   },

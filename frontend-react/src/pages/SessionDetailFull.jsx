@@ -1,11 +1,27 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import {
+  FileText,
+  Upload,
+  Plus,
+  Box,
+  MapPin,
+  Check,
+  CheckCircle2,
+  Clock,
+  Cpu,
+  ArrowLeft,
+  ArrowRight,
+  Trash2,
+  Columns2,
+} from 'lucide-react';
 import Layout from '../components/Layout';
 import api from '../services/api';
 import soundSystem from '../utils/sounds';
 import PMNotes from '../components/PMNotes';
 import NodeMaintenance from '../components/NodeMaintenance';
 import DiagnosticsAdvanced from '../components/DiagnosticsAdvanced';
+import SessionLaborTimer from '../components/SessionLaborTimer';
 
 export default function SessionDetailFull() {
   const { id } = useParams();
@@ -29,6 +45,12 @@ export default function SessionDetailFull() {
   const [showAssignLocationModal, setShowAssignLocationModal] = useState(false);
   const [assigningCabinetId, setAssigningCabinetId] = useState(null);
   const [selectedLocationId, setSelectedLocationId] = useState('');
+  const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
+  const [bulkAssignCabinetIds, setBulkAssignCabinetIds] = useState([]);
+  const [bulkAssignLocationId, setBulkAssignLocationId] = useState('');
+  const [bulkAssignCabinetFilter, setBulkAssignCabinetFilter] = useState('');
+  const [bulkAssignBusy, setBulkAssignBusy] = useState(false);
+  const [showManageLocationsModal, setShowManageLocationsModal] = useState(false);
   const [showCompleteSessionModal, setShowCompleteSessionModal] = useState(false);
   const [completeSaveToHistory, setCompleteSaveToHistory] = useState(true);
   const [completionWarnings, setCompletionWarnings] = useState([]);
@@ -285,6 +307,61 @@ export default function SessionDetailFull() {
     }
   };
 
+  const openBulkAssignModal = () => {
+    setBulkAssignCabinetIds([]);
+    setBulkAssignLocationId(locations[0]?.id || '');
+    setBulkAssignCabinetFilter('');
+    setShowBulkAssignModal(true);
+  };
+
+  const toggleBulkCabinet = (cabinetId) => {
+    setBulkAssignCabinetIds((prev) =>
+      prev.includes(cabinetId) ? prev.filter((id) => id !== cabinetId) : [...prev, cabinetId]
+    );
+  };
+
+  const handleBulkAssignCabinets = async () => {
+    if (!bulkAssignCabinetIds.length) {
+      showMessage('Select at least one cabinet on the left', 'error');
+      return;
+    }
+    setBulkAssignBusy(true);
+    try {
+      const locationId = bulkAssignLocationId || null;
+      const results = await Promise.all(
+        bulkAssignCabinetIds.map((cabinetId) =>
+          api.request(`/api/cabinets/${cabinetId}/assign-location`, {
+            method: 'POST',
+            body: JSON.stringify({ location_id: locationId }),
+          })
+        )
+      );
+      const failed = results.filter((r) => !r?.success);
+      if (failed.length) {
+        soundSystem.playError();
+        showMessage(`Assigned some cabinets; ${failed.length} failed`, 'error');
+      } else {
+        soundSystem.playSuccess();
+        showMessage(
+          `Moved ${bulkAssignCabinetIds.length} cabinet${bulkAssignCabinetIds.length !== 1 ? 's' : ''} to ${
+            locationId
+              ? locations.find((l) => l.id === locationId)?.location_name || 'location'
+              : 'Unassigned'
+          }`,
+          'success'
+        );
+      }
+      setShowBulkAssignModal(false);
+      setBulkAssignCabinetIds([]);
+      loadSessionData();
+    } catch (error) {
+      soundSystem.playError();
+      showMessage('Error assigning cabinets', 'error');
+    } finally {
+      setBulkAssignBusy(false);
+    }
+  };
+
   const openAssignLocationModal = (cabinetId, currentLocationId) => {
     setAssigningCabinetId(cabinetId);
     setSelectedLocationId(currentLocationId || '');
@@ -459,247 +536,325 @@ export default function SessionDetailFull() {
 
   return (
     <Layout>
-      {/* Breadcrumb */}
-      <div className="mb-6 text-sm text-gray-400">
+      <div className="breadcrumb">
         {customer && (
           <>
-            <Link to="/customers" className="hover:text-gray-200">Customers</Link>
+            <Link to="/customers">Customers</Link>
             <span className="mx-2">›</span>
-            <Link to={`/customer/${customer.id}`} className="hover:text-gray-200">{customer.name}</Link>
+            <Link to={`/customer/${customer.id}`}>{customer.name}</Link>
             <span className="mx-2">›</span>
           </>
         )}
-        <Link to="/sessions" className="hover:text-gray-200">PM Sessions</Link>
+        <Link to="/sessions">PM Sessions</Link>
         <span className="mx-2">›</span>
         <span className="text-gray-200">{session.session_name}</span>
       </div>
 
-      {/* View-only banner for completed sessions */}
       {session.status === 'completed' && (
-        <div className="mb-6 px-4 py-3 rounded-lg bg-green-900/30 text-green-200 border border-green-600">
-          ✅ This session is completed. You can view cabinets, diagnostics, and PM notes but cannot make changes.
+        <div className="alert alert-success mb-6">
+          This session is completed. You can view cabinets, equipment, I/O errors, and PM notes but cannot make changes.
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex justify-between items-start mb-8 animate-fadeIn">
-        <div>
-          <h1 className="text-4xl font-bold gradient-text mb-2">{session.session_name}</h1>
-          {customer && <p className="text-gray-400 text-lg">{customer.name}</p>}
-          <span className={`badge ${session.status === 'completed' ? 'badge-green' : 'badge-blue'} mt-2`}>
-            {(session.status || 'ACTIVE').toUpperCase()}
-          </span>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          {activeTab === 'cabinets' && (
-            <>
-              <button onClick={handleExportAllPDFs} className="btn btn-warning" title="Download full session report (cabinets, diagnostics, node maintenance, PM notes)">
-                📄 PM REPORT PDF
-              </button>
-              {session.status !== 'completed' && (
-                <>
-                  <button onClick={() => setShowBulkImportModal(true)} className="btn btn-success">
-                    📤 Bulk Import
-                  </button>
-                  <button onClick={() => setShowNewCabinetModal(true)} className="btn btn-primary">
-                    📦 Add Cabinet
-                  </button>
-                  <button onClick={() => setShowAddRackModal(true)} className="btn btn-primary">
-                    🗄️ Add Rack
-                  </button>
-                  <button onClick={() => setShowNewLocationModal(true)} className="btn btn-secondary">
-                    📍 Add Location
-                  </button>
-                </>
-              )}
-            </>
-          )}
-          {session.status !== 'completed' && cabinets.some(c => c.status !== 'completed') && (
+      <div className="page-header !flex-col !items-stretch gap-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="page-header-text min-w-0">
+            <h1 className="page-title break-words">{session.session_name}</h1>
+            {customer && (
+              <p className="page-subtitle">
+                <Link to={`/customer/${customer.id}`} className="hover:text-blue-300">
+                  {customer.name}
+                </Link>
+              </p>
+            )}
+            <span className={`badge mt-2 ${session.status === 'completed' ? 'badge-green' : 'badge-blue'}`}>
+              {(session.status || 'ACTIVE').toUpperCase()}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end lg:shrink-0">
             <button
-              onClick={async () => {
-                const pending = cabinets.filter(c => c.status !== 'completed').length;
-                if (!confirm(`Mark all ${pending} pending cabinet${pending !== 1 ? 's' : ''} as complete?`)) return;
-                try {
-                  const result = await api.bulkCompleteCabinets(id);
-                  if (result.success) {
-                    soundSystem.playSuccess();
-                    loadSessionData();
-                    showMessage(`${result.count} cabinet${result.count !== 1 ? 's' : ''} marked complete`, 'success');
-                  } else {
-                    soundSystem.playError();
-                    showMessage(result.error || 'Error completing cabinets', 'error');
-                  }
-                } catch {
-                  soundSystem.playError();
-                  showMessage('Error completing cabinets', 'error');
-                }
-              }}
+              type="button"
+              onClick={() => navigate('/sessions')}
               className="btn btn-secondary"
-              title="Mark all pending cabinets as complete at once"
             >
-              ✓ Mark all complete
+              <ArrowLeft className="h-4 w-4" aria-hidden />
+              Sessions
             </button>
-          )}
-          {session.status !== 'completed' && (
-            <button onClick={handleCompleteSession} className="btn btn-success" title="Lock session and create node snapshot">
-              ✅ Complete session
+            {customer && (
+              <button
+                type="button"
+                onClick={() => navigate(`/customer/${customer.id}`)}
+                className="btn btn-secondary"
+              >
+                <ArrowLeft className="h-4 w-4" aria-hidden />
+                Customer
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleExportAllPDFs}
+              className="btn btn-secondary"
+              title="Download full session report"
+            >
+              <FileText className="h-4 w-4" aria-hidden />
+              Report PDF
             </button>
-          )}
-          {showCompleteSessionModal && (
-            <div className="modal-backdrop">
-              <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 max-w-md w-full p-6">
-                <h3 className="text-lg font-semibold text-gray-100 mb-2">Complete PM Session</h3>
-                <p className="text-gray-300 text-sm mb-4">
-                  Mark &quot;{session.session_name}&quot; as completed? This will lock the session and create a snapshot of nodes.
-                </p>
-                {completionWarnings.length > 0 && (
-                  <div className="mb-4 p-3 rounded-lg bg-amber-900/30 border border-amber-600 text-amber-200 text-sm">
-                    <p className="font-medium mb-1">You didn&apos;t fill out: {completionWarnings.join(', ')}.</p>
-                    <p className="text-amber-200/90 text-xs">Are you sure you want to continue?</p>
-                  </div>
-                )}
-                <div className="mb-4 p-3 rounded-lg bg-gray-700/50 border border-gray-600">
-                  <p className="text-xs text-gray-400 mb-3">
-                    <strong className="text-gray-300">Optional:</strong> Save this session&apos;s metrics (error count, risk score, cabinet count, etc.) to this customer&apos;s history so you can view trends over time on the customer profile. You can choose to skip this.
-                  </p>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={completeSaveToHistory}
-                      onChange={(e) => setCompleteSaveToHistory(e.target.checked)}
-                      className="w-4 h-4 rounded border-gray-500"
-                    />
-                    <span className="text-sm text-gray-200">Save to customer history (for trend over time)</span>
-                  </label>
-                </div>
-                <div className="flex gap-3 justify-end">
-                  <button onClick={() => { setShowCompleteSessionModal(false); setCompletionWarnings([]); }} className="btn btn-secondary">Cancel</button>
-                  <button onClick={confirmCompleteSession} className="btn btn-success">{completionWarnings.length > 0 ? 'Continue anyway' : 'Complete session'}</button>
-                </div>
-              </div>
-            </div>
-          )}
-          {customer && (
-            <button onClick={() => navigate(`/customer/${customer.id}`)} className="btn btn-secondary">
-              ← Back to Customer Profile
-            </button>
-          )}
+            {session.status !== 'completed' && (
+              <button
+                type="button"
+                onClick={handleCompleteSession}
+                className="btn btn-success"
+                title="Lock session and create node snapshot"
+              >
+                <CheckCircle2 className="h-4 w-4" aria-hidden />
+                Complete session
+              </button>
+            )}
+          </div>
         </div>
+
+        {activeTab === 'cabinets' && session.status !== 'completed' && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 py-2.5">
+            <span className="mr-1 hidden text-xs font-semibold uppercase tracking-wide text-gray-500 sm:inline">
+              Cabinets
+            </span>
+            <button type="button" onClick={() => setShowNewCabinetModal(true)} className="btn btn-primary btn-sm">
+              <Plus className="h-4 w-4" aria-hidden />
+              Add cabinet
+            </button>
+            <button type="button" onClick={() => setShowAddRackModal(true)} className="btn btn-primary btn-sm">
+              <Box className="h-4 w-4" aria-hidden />
+              Add rack
+            </button>
+            <span className="mx-1 hidden h-5 w-px bg-[var(--border-strong)] sm:block" aria-hidden />
+            <button type="button" onClick={() => setShowBulkImportModal(true)} className="btn btn-secondary btn-sm">
+              <Upload className="h-4 w-4" aria-hidden />
+              Bulk import
+            </button>
+            <button
+              type="button"
+              onClick={openBulkAssignModal}
+              className="btn btn-secondary btn-sm"
+              title="Select cabinets and push them to a location"
+            >
+              <Columns2 className="h-4 w-4" aria-hidden />
+              Assign to location
+            </button>
+            <button type="button" onClick={() => setShowNewLocationModal(true)} className="btn btn-secondary btn-sm">
+              <MapPin className="h-4 w-4" aria-hidden />
+              Add location
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowManageLocationsModal(true)}
+              className="btn btn-secondary btn-sm"
+              title="Delete or review locations"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden />
+              Manage locations
+            </button>
+            {cabinets.some((c) => c.status !== 'completed') && (
+              <>
+                <span className="mx-1 hidden h-5 w-px bg-[var(--border-strong)] sm:block" aria-hidden />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const pending = cabinets.filter((c) => c.status !== 'completed').length;
+                    if (!confirm(`Mark all ${pending} pending cabinet${pending !== 1 ? 's' : ''} as complete?`)) return;
+                    try {
+                      const result = await api.bulkCompleteCabinets(id);
+                      if (result.success) {
+                        soundSystem.playSuccess();
+                        loadSessionData();
+                        showMessage(
+                          `${result.count} cabinet${result.count !== 1 ? 's' : ''} marked complete`,
+                          'success'
+                        );
+                      } else {
+                        soundSystem.playError();
+                        showMessage(result.error || 'Error completing cabinets', 'error');
+                      }
+                    } catch {
+                      soundSystem.playError();
+                      showMessage('Error completing cabinets', 'error');
+                    }
+                  }}
+                  className="btn btn-secondary btn-sm"
+                  title="Mark all pending cabinets as complete at once"
+                >
+                  <Check className="h-4 w-4" aria-hidden />
+                  Mark all complete
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'cabinets' && session.status === 'completed' && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 py-2.5">
+            <span className="text-xs text-gray-500">Session locked — cabinets are view-only.</span>
+          </div>
+        )}
+
+        <SessionLaborTimer
+          session={session}
+          disabled={session.status === 'completed'}
+          showMessage={showMessage}
+          onUpdated={(updated) => {
+            if (!updated) return;
+            setSession((prev) => ({ ...prev, ...updated }));
+          }}
+        />
       </div>
 
-      {/* Message */}
+      {showCompleteSessionModal && (
+        <div className="modal-backdrop">
+          <div className="modal-panel max-w-md w-full p-6">
+            <h3 className="mb-2 text-lg font-semibold text-gray-100">Complete PM session</h3>
+            <p className="mb-4 text-sm text-gray-300">
+              Mark &quot;{session.session_name}&quot; as completed? This will lock the session and create a snapshot of nodes.
+            </p>
+            {completionWarnings.length > 0 && (
+              <div className="mb-4 rounded-lg border border-amber-600 bg-amber-900/30 p-3 text-sm text-amber-200">
+                <p className="mb-1 font-medium">You didn&apos;t fill out: {completionWarnings.join(', ')}.</p>
+                <p className="text-xs text-amber-200/90">Are you sure you want to continue?</p>
+              </div>
+            )}
+            <div className="mb-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] p-3">
+              <p className="mb-3 text-xs text-gray-400">
+                <strong className="text-gray-300">Optional:</strong> Save this session&apos;s metrics to customer history for trends.
+              </p>
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={completeSaveToHistory}
+                  onChange={(e) => setCompleteSaveToHistory(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-500"
+                />
+                <span className="text-sm text-gray-200">Save to customer history</span>
+              </label>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCompleteSessionModal(false);
+                  setCompletionWarnings([]);
+                }}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button type="button" onClick={confirmCompleteSession} className="btn btn-success">
+                {completionWarnings.length > 0 ? 'Continue anyway' : 'Complete session'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {message && (
         <div
-          className={`mb-6 px-4 py-3 rounded-lg ${
-            message.type === 'success'
-              ? 'bg-green-900/50 text-green-200 border border-green-500'
-              : message.type === 'error'
-              ? 'bg-red-900/50 text-red-200 border border-red-500'
-              : 'bg-blue-900/50 text-blue-200 border border-blue-500'
+          className={`alert ${
+            message.type === 'success' ? 'alert-success' : message.type === 'error' ? 'alert-error' : 'alert-info'
           }`}
         >
           {message.text}
         </div>
       )}
 
-      {/* Session Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-4">
         <div className="stats-card">
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between">
             <div>
-              <div className="text-3xl font-bold text-blue-400">{cabinets.length}</div>
-              <div className="text-sm text-gray-400">Total Cabinets</div>
+              <div className="text-3xl font-bold text-white">{cabinets.length}</div>
+              <div className="mt-1 text-sm text-gray-400">Total cabinets</div>
             </div>
-            <div className="text-4xl">🗄️</div>
+            <div className="rounded-lg bg-blue-600/15 p-2 text-blue-400">
+              <Box className="h-5 w-5" aria-hidden />
+            </div>
           </div>
         </div>
         <div className="stats-card">
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between">
             <div>
-              <div className="text-3xl font-bold text-green-400">
+              <div className="text-3xl font-bold text-white">
                 {cabinets.filter((c) => c.status === 'completed').length}
               </div>
-              <div className="text-sm text-gray-400">Completed</div>
+              <div className="mt-1 text-sm text-gray-400">Completed</div>
             </div>
-            <div className="text-4xl">✅</div>
+            <div className="rounded-lg bg-blue-600/15 p-2 text-blue-400">
+              <CheckCircle2 className="h-5 w-5" aria-hidden />
+            </div>
           </div>
         </div>
         <div className="stats-card">
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between">
             <div>
-              <div className="text-3xl font-bold text-yellow-400">
+              <div className="text-3xl font-bold text-white">
                 {cabinets.filter((c) => c.status !== 'completed').length}
               </div>
-              <div className="text-sm text-gray-400">Pending</div>
+              <div className="mt-1 text-sm text-gray-400">Pending</div>
             </div>
-            <div className="text-4xl">⏳</div>
+            <div className="rounded-lg bg-blue-600/15 p-2 text-blue-400">
+              <Clock className="h-5 w-5" aria-hidden />
+            </div>
           </div>
         </div>
         <div className="stats-card" title="Controllers/CIOCs assigned to cabinets in this session">
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between">
             <div>
-              <div className="text-3xl font-bold text-purple-400">
+              <div className="text-3xl font-bold text-white">
                 {session.controllerAssignmentStats
                   ? `${session.controllerAssignmentStats.assigned} / ${session.controllerAssignmentStats.total}`
                   : '—'}
               </div>
-              <div className="text-sm text-gray-400">Controllers assigned</div>
+              <div className="mt-1 text-sm text-gray-400">Controllers assigned</div>
             </div>
-            <div className="text-4xl">🎛️</div>
+            <div className="rounded-lg bg-blue-600/15 p-2 text-blue-400">
+              <Cpu className="h-5 w-5" aria-hidden />
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Pending vs Completed cabinets explainer (only when session has cabinets and is not completed) */}
       {session.status !== 'completed' && cabinets.length > 0 && (
-        <div className="mb-6 px-4 py-3 rounded-lg bg-gray-700/40 text-gray-300 text-sm border border-gray-600">
-          <strong className="text-gray-200">Cabinets:</strong> <strong>Pending</strong> = cabinet not yet marked done (open Inspect, fill the form, then click <strong>Mark cabinet complete</strong>). <strong>Completed</strong> = cabinet marked complete for this PM. When all cabinets are done, click <strong>Complete session</strong> below to lock the session.
+        <div className="mb-6 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)] px-4 py-3 text-sm text-gray-300">
+          <strong className="text-gray-200">Cabinets:</strong> <strong>Pending</strong> = not yet marked done.
+          <strong> Completed</strong> = marked complete for this PM. When all are done, click <strong>Complete session</strong>.
         </div>
       )}
 
-      {/* Tabs */}
       <div className="card mb-6">
-        <div className="card-header">
-          <div className="flex gap-2 border-b border-gray-700 -mb-4">
+        <div className="card-header !pb-0">
+          <div className="tabs border-0">
             <button
+              type="button"
               onClick={() => setActiveTab('cabinets')}
-              className={`pb-4 px-4 font-medium transition-all ${
-                activeTab === 'cabinets'
-                  ? 'text-blue-400 border-b-2 border-blue-400'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
+              className={`tab ${activeTab === 'cabinets' ? 'tab-active' : ''}`}
             >
-              🏗️ Cabinets ({cabinets.length})
+              Cabinets ({cabinets.length})
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('nodes')}
-              className={`pb-4 px-4 font-medium transition-all ${
-                activeTab === 'nodes'
-                  ? 'text-blue-400 border-b-2 border-blue-400'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
+              className={`tab ${activeTab === 'nodes' ? 'tab-active' : ''}`}
             >
-              🖥️ Diagnostics
+              Equipment
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('diagnostics')}
-              className={`pb-4 px-4 font-medium transition-all ${
-                activeTab === 'diagnostics'
-                  ? 'text-blue-400 border-b-2 border-blue-400'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
+              className={`tab ${activeTab === 'diagnostics' ? 'tab-active' : ''}`}
             >
-              🔧 I/O Errors
+              I/O errors
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('pm-notes')}
-              className={`pb-4 px-4 font-medium transition-all ${
-                activeTab === 'pm-notes'
-                  ? 'text-blue-400 border-b-2 border-blue-400'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
+              className={`tab ${activeTab === 'pm-notes' ? 'tab-active' : ''}`}
             >
-              📝 PM Notes
+              PM notes
             </button>
           </div>
         </div>
@@ -786,8 +941,9 @@ export default function SessionDetailFull() {
                   return (c.cabinet_name || '').toLowerCase().includes(searchFilter);
                 });
                 
-                // Skip empty location groups when searching or when a named location is empty
-                if (locationCabinets.length === 0 && (loc.id || searchFilter)) return null;
+                // Hide groups with no matches while searching; keep empty named locations visible otherwise
+                if (locationCabinets.length === 0 && searchFilter) return null;
+                if (locationCabinets.length === 0 && !loc.id) return null;
                 
                 return (
                   <div key={loc.id || 'unassigned'} className="rounded-lg border border-gray-600 bg-gray-800/30">
@@ -803,10 +959,11 @@ export default function SessionDetailFull() {
                       {loc.id && session.status !== 'completed' && (
                         <button
                           onClick={() => handleDeleteLocation(loc.id, loc.location_name)}
-                          className="text-red-400 hover:text-red-300 text-sm px-2 py-1 rounded hover:bg-red-900/20"
+                          className="inline-flex items-center gap-1 text-red-400 hover:text-red-300 text-sm px-2 py-1 rounded hover:bg-red-900/20"
                           title="Delete location"
                         >
-                          Delete
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                          Delete location
                         </button>
                       )}
                     </div>
@@ -814,7 +971,7 @@ export default function SessionDetailFull() {
                     {/* Cabinets in this location */}
                     {locationCabinets.length === 0 ? (
                       <div className="px-4 py-8 text-center text-gray-500 text-sm">
-                        No cabinets assigned to this location yet. Use the 📍 button on a cabinet to assign it here.
+                        No cabinets in this location yet. Use <strong className="text-gray-400">Assign cabinets</strong> or the map-pin on a cabinet card.
                       </div>
                     ) : (
                       <div className="p-4">
@@ -1088,11 +1245,21 @@ export default function SessionDetailFull() {
                 {locations.length > 0 && (
                   <div className="bg-gray-700/50 rounded-lg p-3 border border-gray-600">
                     <p className="text-xs text-gray-400 mb-2">Existing locations:</p>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="space-y-2">
                       {locations.map((loc) => (
-                        <span key={loc.id} className="text-xs bg-gray-600 text-gray-300 px-2 py-1 rounded">
-                          {loc.location_name}
-                        </span>
+                        <div
+                          key={loc.id}
+                          className="flex items-center justify-between gap-2 rounded border border-gray-600 bg-gray-800/60 px-2 py-1.5"
+                        >
+                          <span className="text-sm text-gray-200">{loc.location_name}</span>
+                          <button
+                            type="button"
+                            className="text-xs text-red-400 hover:text-red-300"
+                            onClick={() => handleDeleteLocation(loc.id, loc.location_name)}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -1111,6 +1278,271 @@ export default function SessionDetailFull() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Manage / delete locations */}
+      {showManageLocationsModal && (
+        <div className="modal-backdrop">
+          <div className="modal-panel max-w-md w-full mx-4">
+            <div className="modal-panel-header">
+              <h3 className="text-lg font-semibold text-gray-100">Locations</h3>
+              <button
+                type="button"
+                onClick={() => setShowManageLocationsModal(false)}
+                className="btn-icon"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-panel-body space-y-3">
+              <p className="text-sm text-gray-400">
+                Deleting a location leaves its cabinets unassigned.
+              </p>
+              {locations.length === 0 ? (
+                <p className="py-4 text-center text-sm text-gray-500">No locations yet. Use Add location first.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {locations.map((loc) => {
+                    const count = cabinets.filter((c) => c.location_id === loc.id).length;
+                    return (
+                      <li
+                        key={loc.id}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border)] px-3 py-2"
+                      >
+                        <div>
+                          <div className="font-medium text-gray-100">{loc.location_name}</div>
+                          <div className="text-xs text-gray-500">
+                            {count} cabinet{count !== 1 ? 's' : ''}
+                            {loc.description ? ` · ${loc.description}` : ''}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-sm"
+                          onClick={() => handleDeleteLocation(loc.id, loc.location_name)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                          Delete
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            <div className="modal-panel-footer">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setShowManageLocationsModal(false)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setShowManageLocationsModal(false);
+                  setShowNewLocationModal(true);
+                }}
+              >
+                Add location
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk assign cabinets → location (two-pane) */}
+      {showBulkAssignModal && (
+        <div className="modal-backdrop">
+          <div className="modal-panel max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="modal-panel-header">
+              <h3 className="text-lg font-semibold text-gray-100">Assign cabinets to location</h3>
+              <button
+                type="button"
+                onClick={() => setShowBulkAssignModal(false)}
+                className="btn-icon"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-panel-body flex-1 overflow-hidden">
+              <p className="mb-3 text-sm text-gray-400">
+                Select cabinets on the left, pick a location on the right, then push them over.
+              </p>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_auto_1fr] md:items-stretch">
+                {/* Left: cabinets */}
+                <div className="flex min-h-[20rem] flex-col rounded-lg border border-[var(--border-strong)] bg-[var(--surface)]">
+                  <div className="border-b border-[var(--border)] px-3 py-2">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                        Cabinets ({bulkAssignCabinetIds.length} selected)
+                      </h4>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="text-xs text-blue-400 hover:text-blue-300"
+                          onClick={() => {
+                            const q = bulkAssignCabinetFilter.trim().toLowerCase();
+                            const ids = cabinets
+                              .filter((c) => !q || (c.cabinet_name || '').toLowerCase().includes(q))
+                              .map((c) => c.id);
+                            setBulkAssignCabinetIds(ids);
+                          }}
+                        >
+                          Select all
+                        </button>
+                        <button
+                          type="button"
+                          className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-40"
+                          disabled={!bulkAssignCabinetIds.length}
+                          onClick={() => setBulkAssignCabinetIds([])}
+                        >
+                          Unselect
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      type="search"
+                      className="form-input"
+                      placeholder="Filter cabinets…"
+                      value={bulkAssignCabinetFilter}
+                      onChange={(e) => setBulkAssignCabinetFilter(e.target.value)}
+                    />
+                  </div>
+                  <ul className="flex-1 overflow-y-auto p-2 space-y-0.5">
+                    {cabinets
+                      .filter((c) => {
+                        const q = bulkAssignCabinetFilter.trim().toLowerCase();
+                        if (!q) return true;
+                        return (c.cabinet_name || '').toLowerCase().includes(q);
+                      })
+                      .map((c) => {
+                        const locName =
+                          locations.find((l) => l.id === c.location_id)?.location_name || 'Unassigned';
+                        const checked = bulkAssignCabinetIds.includes(c.id);
+                        return (
+                          <li key={c.id}>
+                            <label
+                              className={`flex cursor-pointer items-start gap-2 rounded px-2 py-1.5 text-sm hover:bg-[var(--surface-hover)] ${
+                                checked ? 'bg-blue-950/40' : ''
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="mt-1"
+                                checked={checked}
+                                onChange={() => toggleBulkCabinet(c.id)}
+                              />
+                              <span className="min-w-0">
+                                <span className="block truncate font-medium text-gray-100">
+                                  {c.cabinet_name}
+                                </span>
+                                <span className="block truncate text-xs text-gray-500">{locName}</span>
+                              </span>
+                            </label>
+                          </li>
+                        );
+                      })}
+                  </ul>
+                </div>
+
+                {/* Middle: push */}
+                <div className="flex flex-col items-center justify-center gap-2 py-2 md:py-0">
+                  <ArrowRight className="hidden h-6 w-6 text-gray-500 md:block" aria-hidden />
+                  <button
+                    type="button"
+                    className="btn btn-primary whitespace-nowrap"
+                    disabled={bulkAssignBusy || !bulkAssignCabinetIds.length}
+                    onClick={handleBulkAssignCabinets}
+                  >
+                    {bulkAssignBusy
+                      ? 'Assigning…'
+                      : `Push ${bulkAssignCabinetIds.length || ''} →`}
+                  </button>
+                </div>
+
+                {/* Right: locations */}
+                <div className="flex min-h-[20rem] flex-col rounded-lg border border-[var(--border-strong)] bg-[var(--surface)]">
+                  <div className="border-b border-[var(--border)] px-3 py-2">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                      Destination location
+                    </h4>
+                  </div>
+                  <ul className="flex-1 overflow-y-auto p-2 space-y-1">
+                    <li>
+                      <label
+                        className={`flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-[var(--surface-hover)] ${
+                          bulkAssignLocationId === '' ? 'bg-blue-950/40 ring-1 ring-blue-500/40' : ''
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="bulk-assign-loc"
+                          checked={bulkAssignLocationId === ''}
+                          onChange={() => setBulkAssignLocationId('')}
+                        />
+                        <span className="text-gray-200">Unassigned</span>
+                      </label>
+                    </li>
+                    {locations.map((loc) => {
+                      const count = cabinets.filter((c) => c.location_id === loc.id).length;
+                      return (
+                        <li key={loc.id}>
+                          <label
+                            className={`flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-[var(--surface-hover)] ${
+                              bulkAssignLocationId === loc.id
+                                ? 'bg-blue-950/40 ring-1 ring-blue-500/40'
+                                : ''
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="bulk-assign-loc"
+                              checked={bulkAssignLocationId === loc.id}
+                              onChange={() => setBulkAssignLocationId(loc.id)}
+                            />
+                            <span className="min-w-0">
+                              <span className="block font-medium text-gray-100">{loc.location_name}</span>
+                              <span className="block text-xs text-gray-500">
+                                {count} cabinet{count !== 1 ? 's' : ''} now
+                              </span>
+                            </span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                    {locations.length === 0 && (
+                      <li className="px-2 py-4 text-center text-xs text-gray-500">
+                        No locations yet — add one first, or push to Unassigned.
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div className="modal-panel-footer">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setShowBulkAssignModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={bulkAssignBusy || !bulkAssignCabinetIds.length}
+                onClick={handleBulkAssignCabinets}
+              >
+                {bulkAssignBusy ? 'Assigning…' : 'Assign selected'}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -67,6 +67,11 @@ const sessionSchema = new mongoose.Schema({
   session_name: { type: String, required: true },
   session_type: { type: String, default: 'pm' },
   status: { type: String, default: 'active' },
+  node_scope: { type: String, default: 'all' }, // 'all' | 'selected'
+  active_seconds: { type: Number, default: 0 },
+  timer_started_at: { type: Date },
+  timer_running: { type: Number, default: 0 },
+  crew_count: { type: Number, default: 1 },
   uuid: { type: String },
   synced: { type: Number, default: 0 },
   device_id: { type: String },

@@ -679,7 +679,7 @@ router.post('/:cabinetId/assign-location', requireAuth, async (req, res) => {
   
   try {
     const result = await db.prepare(`
-      UPDATE cabinets SET location_id = ?, updated_at = CURRENT_TIMESTAMP
+      UPDATE cabinets SET location_id = ?, synced = 0, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run([location_id, cabinetId]);
     

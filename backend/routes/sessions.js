@@ -14,6 +14,40 @@ const {
   normalizeNodeNameKey,
 } = require('../utils/session-node-list');
 const { syncFieldsForInsert, softDeleteSyncRow } = require('../utils/sync-write-helper');
+const {
+  applySelectedNodeScope,
+  copySessionExclusionTombstones,
+  setSessionNodeScope,
+} = require('../utils/session-node-scope');
+const {
+  computeElapsedSeconds,
+  parseSqliteDate,
+} = require('../utils/session-timer');
+
+async function flushSessionTimer(sessionId) {
+  const session = await db.prepare('SELECT * FROM sessions WHERE id = ?').get([sessionId]);
+  if (!session) return null;
+  let active = Math.max(0, Number(session.active_seconds) || 0);
+  if (Number(session.timer_running) === 1 && session.timer_started_at) {
+    const start = parseSqliteDate(session.timer_started_at);
+    if (start) {
+      active += Math.max(0, Math.floor((Date.now() - start.getTime()) / 1000));
+    }
+  }
+  try {
+    await db
+      .prepare(
+        `UPDATE sessions
+         SET active_seconds = ?, timer_running = 0, timer_started_at = NULL,
+             synced = 0, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`
+      )
+      .run([active, sessionId]);
+  } catch (e) {
+    if (!/no such column/i.test(String(e.message || e))) throw e;
+  }
+  return { ...session, active_seconds: active, timer_running: 0, timer_started_at: null };
+}
 
 const ID_WORKSTATION = 1000000;
 const ID_CONTROLLER_BASE = 2000000;
@@ -282,7 +316,9 @@ router.get('/all', requireAuth, async (req, res) => {
              s.customer_id,
              u.username,
              (SELECT COUNT(*) FROM cabinets cab WHERE cab.pm_session_id = s.id AND COALESCE(cab.deleted, 0) = 0) as cabinet_count,
-             (SELECT COUNT(*) FROM cabinets cab WHERE cab.pm_session_id = s.id AND COALESCE(cab.deleted, 0) = 0 AND cab.status = 'completed') as completed_cabinet_count
+             (SELECT COUNT(*) FROM cabinets cab WHERE cab.pm_session_id = s.id AND COALESCE(cab.deleted, 0) = 0 AND cab.status = 'completed') as completed_cabinet_count,
+             (SELECT COUNT(*) FROM cabinet_locations loc WHERE loc.session_id = s.id AND COALESCE(loc.deleted, 0) = 0) as location_count,
+             (SELECT COUNT(*) FROM customer_notes cn WHERE cn.customer_id = s.customer_id AND COALESCE(cn.deleted, 0) = 0) as site_notes_count
       FROM sessions s
       LEFT JOIN customers c ON s.customer_id = c.id
       LEFT JOIN users u ON s.user_id = u.id
@@ -299,27 +335,67 @@ router.get('/all', requireAuth, async (req, res) => {
 
 // Create new session (PM or I&I)
 router.post('/', requireAuth, async (req, res) => {
-  const { customer_id, session_name, session_type = 'pm' } = req.body;
+  const {
+    customer_id,
+    session_name,
+    session_type = 'pm',
+    node_scope = 'all',
+    node_ids,
+  } = req.body;
   const sessionId = uuidv4();
   const sessionUuid = uuidv4();
-  
+  const scopeMode = String(node_scope || 'all').toLowerCase() === 'selected' ? 'selected' : 'all';
+  const selectedIds = Array.isArray(node_ids) ? node_ids : [];
+
+  if (scopeMode === 'selected' && selectedIds.length === 0) {
+    return res.status(400).json({
+      error: 'Select at least one controller, workstation, or other node for a custom-scope session',
+    });
+  }
+
   try {
-    await db.prepare('INSERT INTO sessions (id, customer_id, user_id, session_name, session_type, status, uuid, synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run([sessionId, parseInt(customer_id), req.session.userId, session_name, session_type, 'active', sessionUuid, 0]);
-    
+    await db
+      .prepare(
+        'INSERT INTO sessions (id, customer_id, user_id, session_name, session_type, status, uuid, synced) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      )
+      .run([
+        sessionId,
+        parseInt(customer_id, 10),
+        req.session.userId,
+        session_name,
+        session_type,
+        'active',
+        sessionUuid,
+        0,
+      ]);
+
+    let scopeStats = null;
+    if (scopeMode === 'selected') {
+      scopeStats = await applySelectedNodeScope(
+        sessionId,
+        parseInt(customer_id, 10),
+        selectedIds
+      );
+      await setSessionNodeScope(sessionId, 'selected');
+    } else {
+      await setSessionNodeScope(sessionId, 'all');
+    }
+
     const session = {
       id: sessionId,
-      customer_id: parseInt(customer_id),
+      customer_id: parseInt(customer_id, 10),
       user_id: req.session.userId,
       session_name,
       session_type,
       status: 'active',
+      node_scope: scopeMode,
       uuid: sessionUuid,
       synced: 0,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     };
-    
-    res.json({ success: true, session });
+
+    res.json({ success: true, session, nodeScopeStats: scopeStats });
   } catch (error) {
     console.error('Create session error:', error);
     res.status(500).json({ error: 'Database error' });
@@ -432,15 +508,15 @@ router.get('/:sessionId', requireAuth, async (req, res) => {
     const sessionCabinets = await db.prepare(`
       SELECT c.*, cl.location_name, cl.id as location_id
       FROM cabinets c
-      LEFT JOIN cabinet_names cl ON c.location_id = cl.id
+      LEFT JOIN cabinet_locations cl ON c.location_id = cl.id AND COALESCE(cl.deleted, 0) = 0
       WHERE c.pm_session_id = ? 
       ORDER BY cl.sort_order, cl.location_name, c.created_at
     `).all([sessionId]);
     
-    // Get all locations for this session
+    // Get all locations for this session (synced cabinet_locations table)
     const locations = await db.prepare(`
-      SELECT * FROM cabinet_names 
-      WHERE session_id = ? 
+      SELECT * FROM cabinet_locations 
+      WHERE session_id = ? AND COALESCE(deleted, 0) = 0
       ORDER BY sort_order, location_name
     `).all([sessionId]);
     
@@ -976,6 +1052,85 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
   }
 });
 
+// Labor timer + crew count for PM analytics
+router.post('/:sessionId/timer', requireAuth, async (req, res) => {
+  const sessionId = req.params.sessionId;
+  const action = String(req.body?.action || '').toLowerCase();
+  const crewRaw = req.body?.crew_count;
+
+  try {
+    const session = await db.prepare('SELECT * FROM sessions WHERE id = ?').get([sessionId]);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    if (session.status === 'completed') {
+      return res.status(400).json({ error: 'Cannot change timer on a completed session' });
+    }
+
+    let crew = Math.max(1, Math.min(50, parseInt(crewRaw != null ? crewRaw : session.crew_count, 10) || 1));
+
+    if (action === 'set_crew') {
+      await db
+        .prepare(
+          `UPDATE sessions SET crew_count = ?, synced = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+        )
+        .run([crew, sessionId]);
+    } else if (action === 'start') {
+      let active = Math.max(0, Number(session.active_seconds) || 0);
+      if (Number(session.timer_running) === 1) {
+        // already running — just update crew if provided
+        if (crewRaw != null) {
+          await db
+            .prepare(
+              `UPDATE sessions SET crew_count = ?, synced = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+            )
+            .run([crew, sessionId]);
+        }
+      } else {
+        await db
+          .prepare(
+            `UPDATE sessions
+             SET active_seconds = ?, timer_running = 1, timer_started_at = CURRENT_TIMESTAMP,
+                 crew_count = ?, synced = 0, updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`
+          )
+          .run([active, crew, sessionId]);
+      }
+    } else if (action === 'pause') {
+      await flushSessionTimer(sessionId);
+      if (crewRaw != null) {
+        await db
+          .prepare(
+            `UPDATE sessions SET crew_count = ?, synced = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+          )
+          .run([crew, sessionId]);
+      }
+    } else if (action === 'reset') {
+      await db
+        .prepare(
+          `UPDATE sessions
+           SET active_seconds = 0, timer_running = 0, timer_started_at = NULL,
+               synced = 0, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`
+        )
+        .run([sessionId]);
+    } else {
+      return res.status(400).json({ error: 'action must be start, pause, set_crew, or reset' });
+    }
+
+    const updated = await db.prepare('SELECT * FROM sessions WHERE id = ?').get([sessionId]);
+    const elapsed_seconds = computeElapsedSeconds(updated);
+    res.json({
+      success: true,
+      session: updated,
+      elapsed_seconds,
+      timer_running: Number(updated.timer_running) === 1,
+      crew_count: Math.max(1, Number(updated.crew_count) || 1),
+    });
+  } catch (error) {
+    console.error('Session timer error:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 // Complete PM session (optional body: { saveHistory: true } to record metrics for customer trend)
 router.put('/:sessionId/complete', requireAuth, async (req, res) => {
   const sessionId = req.params.sessionId;
@@ -1091,7 +1246,8 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
       }
     }
     
-    // Mark the session as completed and mark as unsynced so it syncs to other devices
+    // Stop labor timer and mark the session completed
+    await flushSessionTimer(sessionId);
     const result = await db.prepare('UPDATE sessions SET status = ?, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP, synced = 0 WHERE id = ?').run(['completed', sessionId]);
     
     if (result.changes === 0) {
@@ -1231,8 +1387,18 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
 // Duplicate PM session
 router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
   const sourceSessionId = req.params.sessionId;
-  let { session_name } = req.body;
+  let { session_name, node_scope, node_ids } = req.body;
   const newSessionId = uuidv4();
+  // all = same visible set as source (copy exclusions); selected = subset via node_ids
+  const scopeMode =
+    String(node_scope || 'all').toLowerCase() === 'selected' ? 'selected' : 'all';
+  const selectedIds = Array.isArray(node_ids) ? node_ids : [];
+
+  if (scopeMode === 'selected' && selectedIds.length === 0) {
+    return res.status(400).json({
+      error: 'Select at least one node to include in the duplicated session',
+    });
+  }
   
   try {
     console.log('🔄 DUPLICATE SESSION DEBUG - Starting duplication');
@@ -1269,43 +1435,55 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
     
     console.log('📋 New Session Name:', session_name);
     console.log('📋 New Session ID:', newSessionId);
+    console.log('📋 Node scope mode:', scopeMode);
     
     const newSessionUuid = uuidv4();
+    const sessionType = sourceSession.session_type || 'pm';
     
     // Create new session (uuid + synced=0 required for cloud push)
     await db.prepare(
-      'INSERT INTO sessions (id, customer_id, user_id, session_name, status, uuid, synced) VALUES (?, ?, ?, ?, ?, ?, 0)'
+      'INSERT INTO sessions (id, customer_id, user_id, session_name, session_type, status, uuid, synced) VALUES (?, ?, ?, ?, ?, ?, ?, 0)'
     ).run([
       newSessionId,
       sourceSession.customer_id,
       req.session.userId,
       session_name,
+      sessionType,
       'active',
       newSessionUuid,
     ]);
     
     console.log('✅ New session created');
     
-    // Duplicate locations (cabinet_names) for the new session and build a remap
+    // Duplicate locations (cabinet_locations — synced) for the new session and build a remap
     let sourceLocations = [];
     try {
-      sourceLocations = await db.prepare('SELECT * FROM cabinet_names WHERE session_id = ? AND (deleted = 0 OR deleted IS NULL) ORDER BY sort_order, location_name').all([sourceSessionId]);
+      sourceLocations = await db.prepare(
+        `SELECT * FROM cabinet_locations WHERE session_id = ? AND COALESCE(deleted, 0) = 0 ORDER BY sort_order, location_name`
+      ).all([sourceSessionId]);
     } catch (e) {
-      // Fallback if deleted column doesn't exist
-      try {
-        sourceLocations = await db.prepare('SELECT * FROM cabinet_names WHERE session_id = ? ORDER BY sort_order, location_name').all([sourceSessionId]);
-      } catch (e2) { console.error('Error loading locations:', e2.message); }
+      console.error('Error loading locations:', e.message);
     }
     const locationIdMap = {}; // old location ID -> new location ID
     
     for (const loc of sourceLocations) {
       const newLocationId = uuidv4();
+      const newLocUuid = uuidv4();
       locationIdMap[loc.id] = newLocationId;
       
       await db.prepare(`
-        INSERT INTO cabinet_names (id, session_id, location_name, description, is_collapsed, sort_order, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      `).run([newLocationId, newSessionId, loc.location_name, loc.description || '', loc.is_collapsed || 0, loc.sort_order || 0]);
+        INSERT INTO cabinet_locations
+          (id, session_id, location_name, description, is_collapsed, sort_order, uuid, synced, deleted, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `).run([
+        newLocationId,
+        newSessionId,
+        loc.location_name,
+        loc.description || '',
+        loc.is_collapsed || 0,
+        loc.sort_order || 0,
+        newLocUuid,
+      ]);
     }
     
     console.log('📍 Duplicated', sourceLocations.length, 'locations');
@@ -1547,10 +1725,27 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
       }
     }
     
-    // Clear all node maintenance / troubleshooting data (DO NOT copy)
-    // Diagnostics (I/O errors) are also NOT copied - start fresh
-    // Node maintenance will be created fresh when the user opens nodes in the new session
-    console.log('🧹 Skipping node maintenance and diagnostics copy (cleared for new session)');
+    // Clear checklist / diagnostics (DO NOT copy answers). Apply node scope:
+    // - all: copy source exclusion tombstones so custom-scoped sessions stay scoped
+    // - selected: keep only chosen node_ids from the full customer registry
+    console.log('🧹 Skipping checklist/diagnostics copy; applying node scope:', scopeMode);
+    let nodeScopeStats = null;
+    if (scopeMode === 'selected') {
+      nodeScopeStats = await applySelectedNodeScope(
+        newSessionId,
+        sourceSession.customer_id,
+        selectedIds
+      );
+      await setSessionNodeScope(newSessionId, 'selected');
+    } else {
+      nodeScopeStats = await copySessionExclusionTombstones(sourceSessionId, newSessionId);
+      const inheritedScope =
+        sourceSession.node_scope === 'selected' || (nodeScopeStats.copied || 0) > 0
+          ? 'selected'
+          : 'all';
+      await setSessionNodeScope(newSessionId, inheritedScope);
+      nodeScopeStats = { ...nodeScopeStats, inheritedScope };
+    }
     
     // Get the new session data and compute controller assignment stats (so UI shows correct count)
     const newSession = await db.prepare(`
@@ -1583,6 +1778,7 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
     res.json({ 
       success: true, 
       session: { ...newSession, controllerAssignmentStats },
+      nodeScopeStats,
       message: 'Session duplicated successfully'
     });
   } catch (error) {

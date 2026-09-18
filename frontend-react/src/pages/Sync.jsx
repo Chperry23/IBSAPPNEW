@@ -94,9 +94,10 @@ export default function Sync() {
 
   const showMessage = (text, type = 'info') => {
     setMessage({ text, type });
-    if (type !== 'info' || !text.includes('...')) {
-      setTimeout(() => setMessage(null), 5000);
-    }
+    const isProgress = type === 'info' && text.includes('...');
+    if (isProgress) return;
+    const ms = type === 'error' ? 12000 : type === 'success' ? 8000 : 5000;
+    setTimeout(() => setMessage((cur) => (cur?.text === text ? null : cur)), ms);
   };
 
   // Call this instead of an admin action directly — shows password gate if not yet verified
@@ -139,24 +140,35 @@ export default function Sync() {
 
   const downloadFromCloud = async () => {
     if (!(await ensureConnected())) return;
+    const pending = calculateTotalUnsynced();
+    if (pending > 0) {
+      const ok = window.confirm(
+        `This device has ${pending} unsynced change(s).\n\n` +
+          'Download keeps your local edits, but they stay pending until you Upload.\n\n' +
+          'Tip: Upload first if you want the cloud to receive your work before pulling others\' changes.\n\n' +
+          'Continue with Download?'
+      );
+      if (!ok) return;
+    }
     setSyncing(true);
     showMessage('Downloading latest data from cloud...', 'info');
     try {
       const result = await api.request('/api/sync/enhanced-merge/pull', { method: 'POST' });
       if (result.success) {
-        const conflictMsg = result.totalConflicts > 0 
-          ? ` (${result.totalConflicts} conflicts - your changes preserved)` 
+        const conflicts = result.totalConflicts ?? result.data?.conflicts ?? 0;
+        const conflictMsg = conflicts > 0
+          ? ` — ${conflicts} conflict(s): your local edits were kept and still need Upload`
           : '';
         soundSystem.playSuccess();
-        showMessage(`✅ Downloaded ${result.totalPulled} records${conflictMsg}`, 'success');
-        refreshStatus();
+        showMessage(`Downloaded ${result.totalPulled ?? 0} records${conflictMsg}. Refresh status below.`, 'success');
+        await refreshStatus();
       } else {
         soundSystem.playError();
-        showMessage(`❌ Download failed: ${result.error}`, 'error');
+        showMessage(`Download failed: ${result.error || 'unknown error'}`, 'error');
       }
     } catch (error) {
       soundSystem.playError();
-      showMessage('Download failed!', 'error');
+      showMessage(`Download failed: ${error.message || 'network error'}`, 'error');
     } finally {
       setSyncing(false);
     }
@@ -194,7 +206,18 @@ export default function Sync() {
 
   /** Download from cloud and remove local records that no longer exist on cloud (match counts). */
   const downloadAndMatchCloud = async () => {
-    if (!confirm('This will make this device match the cloud: local-only records not on the cloud will be removed. Continue?')) {
+    const pending = calculateTotalUnsynced();
+    if (pending > 0) {
+      showMessage(
+        `Cannot Download & Match while ${pending} change(s) are waiting to Upload — that would delete local-only work that never reached the cloud.`,
+        'error'
+      );
+      return;
+    }
+    if (!confirm(
+      'This will make this device match the cloud: local-only records not on the cloud will be removed.\n\n' +
+        'Only use this when you are sure this tablet should fully mirror the cloud.\n\nContinue?'
+    )) {
       return;
     }
     if (!(await ensureConnected())) return;
@@ -207,15 +230,16 @@ export default function Sync() {
         const pulled = data.pulled ?? data.pullResults?.totalPulled ?? 0;
         const removed = data.orphansRemoved ?? data.orphanResults?.totalOrphansRemoved ?? 0;
         soundSystem.playSuccess();
-        showMessage(`✅ Done. Downloaded ${pulled} records, removed ${removed} local-only records.`, 'success');
-        refreshStatus();
+        showMessage(`Matched cloud. Downloaded ${pulled}, removed ${removed} local-only records.`, 'success');
+        await refreshStatus();
       } else {
         soundSystem.playError();
-        showMessage(`❌ Failed: ${result.error}`, 'error');
+        showMessage(`Download & Match failed: ${result.error || 'unknown error'}`, 'error');
+        await refreshStatus();
       }
     } catch (error) {
       soundSystem.playError();
-      showMessage('Download & match failed!', 'error');
+      showMessage(`Download & Match failed: ${error.message || 'network error'}`, 'error');
     } finally {
       setSyncing(false);
     }
@@ -232,15 +256,21 @@ export default function Sync() {
       const result = await api.request('/api/sync/enhanced-merge/push', { method: 'POST' });
       if (result.success) {
         soundSystem.playSuccess();
-        showMessage(`✅ Uploaded ${result.totalPushed} records`, 'success');
-        refreshStatus();
+        const warn = result.warnings?.length ? ` (warnings: ${result.warnings.join('; ')})` : '';
+        showMessage(`Uploaded ${result.totalPushed ?? 0} records${warn}`, 'success');
+        await refreshStatus();
       } else {
         soundSystem.playError();
-        showMessage(`❌ Upload failed: ${result.error}`, 'error');
+        showMessage(
+          `Upload incomplete — local data was NOT fully marked as pushed. ${result.error || result.message || ''}`,
+          'error'
+        );
+        await refreshStatus();
       }
     } catch (error) {
       soundSystem.playError();
-      showMessage('Upload failed!', 'error');
+      showMessage(`Upload failed: ${error.message || 'network error'}. Nothing was marked as pushed.`, 'error');
+      await refreshStatus();
     } finally {
       setSyncing(false);
     }
@@ -248,21 +278,34 @@ export default function Sync() {
 
   const syncAll = async () => {
     if (!(await ensureConnected())) return;
+    const pending = calculateTotalUnsynced();
     setSyncing(true);
-    showMessage('Syncing all data with cloud...', 'info');
+    showMessage(
+      pending > 0
+        ? `Sync All: uploading ${pending} pending change(s) first, then downloading...`
+        : 'Sync All: downloading latest, then uploading any leftovers...',
+      'info'
+    );
     try {
       const result = await api.request('/api/sync/enhanced-merge/full', { method: 'POST' });
       if (result.success) {
         soundSystem.playSuccess();
-        showMessage(`✅ Sync complete!`, 'success');
-        refreshStatus();
+        const order = result.order || result.data?.order;
+        showMessage(
+          `Sync complete — uploaded ${result.totalPushed ?? 0}, downloaded ${result.totalPulled ?? 0}` +
+            (order ? ` (${order})` : ''),
+          'success'
+        );
+        await refreshStatus();
       } else {
         soundSystem.playError();
-        showMessage(`❌ Sync failed: ${result.error}`, 'error');
+        showMessage(`Sync incomplete: ${result.error || result.message || 'see Data Status'}`, 'error');
+        await refreshStatus();
       }
     } catch (error) {
       soundSystem.playError();
-      showMessage('Sync failed!', 'error');
+      showMessage(`Sync failed: ${error.message || 'network error'}`, 'error');
+      await refreshStatus();
     } finally {
       setSyncing(false);
     }
@@ -298,6 +341,47 @@ export default function Sync() {
       (sum, count) => sum + (typeof count === 'number' ? count : 0),
       0
     );
+  };
+
+  const hasUnsyncedCountErrors = () => {
+    if (!syncStatus?.unsyncedCounts) return false;
+    return Object.values(syncStatus.unsyncedCounts).some((c) => c === null || typeof c === 'string');
+  };
+
+  const tableDisplayNames = {
+    users: 'Users',
+    customers: 'Customers',
+    sessions: 'Sessions',
+    cabinets: 'Cabinets',
+    nodes: 'Nodes',
+    session_node_maintenance: 'Node Maintenance',
+    cabinet_locations: 'Cabinet Locations',
+    session_pm_notes: 'PM Notes',
+    session_diagnostics: 'Session Diagnostics',
+    session_ii_documents: 'I&I Documents',
+    session_ii_equipment: 'I&I Equipment',
+    session_ii_checklist: 'I&I Checklist',
+    session_ii_equipment_used: 'I&I Equipment Used',
+    sys_workstations: 'Sys Workstations',
+    sys_smart_switches: 'Sys Smart Switches',
+    sys_io_devices: 'Sys IO Devices',
+    sys_controllers: 'Sys Controllers',
+    sys_charms_io_cards: 'Sys Charms IO Cards',
+    sys_charms: 'Sys Charms',
+    sys_ams_systems: 'Sys AMS Systems',
+    customer_metric_history: 'Customer Metrics',
+    customer_notes: 'Customer Notes',
+    dell_dispatches: 'Dell Dispatches',
+  };
+
+  const sortedSyncTables = () => {
+    const keys = Object.keys(syncStatus?.localCounts || {});
+    return keys.sort((a, b) => {
+      const ua = typeof syncStatus.unsyncedCounts?.[a] === 'number' ? syncStatus.unsyncedCounts[a] : -1;
+      const ub = typeof syncStatus.unsyncedCounts?.[b] === 'number' ? syncStatus.unsyncedCounts[b] : -1;
+      if (ub !== ua) return ub - ua;
+      return a.localeCompare(b);
+    });
   };
 
   return (
@@ -345,6 +429,21 @@ export default function Sync() {
             <span>{message.text}</span>
           </div>
           <button onClick={() => setMessage(null)} className="text-2xl font-bold hover:opacity-75 ml-4">&times;</button>
+        </div>
+      )}
+
+      {/* Pending upload callout — most relevant signal for field users */}
+      {syncStatus && (calculateTotalUnsynced() > 0 || hasUnsyncedCountErrors()) && (
+        <div className="mb-6 rounded-lg border border-yellow-600/50 bg-yellow-950/30 px-4 py-3">
+          <div className="text-yellow-200 font-semibold mb-1">
+            {hasUnsyncedCountErrors()
+              ? 'Some pending counts could not be read — do not assume everything is synced'
+              : `${calculateTotalUnsynced()} change(s) waiting to Upload`}
+          </div>
+          <p className="text-sm text-yellow-100/85">
+            Use <strong>Upload</strong> to send this tablet&apos;s work to the cloud. Download alone does not push your edits.
+            If Upload fails, records stay marked unsynced — that is intentional so nothing looks &quot;pushed&quot; when it wasn&apos;t.
+          </p>
         </div>
       )}
 
@@ -434,11 +533,16 @@ export default function Sync() {
               <button
                 onClick={uploadToCloud}
                 disabled={syncing}
-                className="btn btn-success h-28 flex flex-col items-center justify-center disabled:opacity-50 text-white"
+                className="btn btn-success h-28 flex flex-col items-center justify-center disabled:opacity-50 text-white relative"
               >
                 <div className="text-3xl mb-1">⬆️</div>
                 <div className="text-lg font-semibold">Upload</div>
                 <div className="text-xs opacity-75 mt-1">Send your changes</div>
+                {calculateTotalUnsynced() > 0 && (
+                  <span className="absolute top-2 right-2 text-xs bg-yellow-500 text-gray-900 font-bold px-2 py-0.5 rounded">
+                    {calculateTotalUnsynced()}
+                  </span>
+                )}
               </button>
             </div>
 
@@ -475,24 +579,33 @@ export default function Sync() {
               >
                 <div className="text-3xl mb-1">🔄</div>
                 <div className="text-lg font-semibold">Sync All</div>
-                <div className="text-xs opacity-75 mt-1">Upload &amp; Download</div>
+                <div className="text-xs opacity-75 mt-1">Upload first if pending, then Download</div>
                 {!adminVerified && <div className="text-xs mt-1 opacity-60">🔒 Admin required</div>}
               </button>
               <button
                 onClick={() => requireAdmin(downloadAndMatchCloud)}
-                disabled={syncing}
+                disabled={syncing || calculateTotalUnsynced() > 0}
                 className="h-28 flex flex-col items-center justify-center rounded-lg border-2 border-red-700 bg-red-900/30 hover:bg-red-900/50 text-red-300 hover:text-white transition-colors disabled:opacity-50"
               >
                 <div className="text-3xl mb-1">⬇️✨</div>
                 <div className="text-lg font-semibold">Download &amp; Match Cloud</div>
-                <div className="text-xs opacity-75 mt-1">Removes local-only records</div>
+                <div className="text-xs opacity-75 mt-1">
+                  {calculateTotalUnsynced() > 0 ? 'Blocked until Upload clears pending' : 'Removes local-only records'}
+                </div>
                 {!adminVerified && <div className="text-xs mt-1 opacity-60">🔒 Admin required</div>}
               </button>
             </div>
           </div>
 
-          <div className="p-3 bg-gray-700/30 rounded-lg text-sm text-gray-300">
-            <strong className="text-gray-200">How sync works:</strong> <strong>Download</strong> pulls the latest from cloud but keeps records that exist only on this device. <strong>Upload</strong> sends your local changes to the cloud. <strong>Sync All</strong> does both. <strong>Download &amp; Match Cloud</strong> also removes local records not on the cloud — use only when this device should fully mirror the cloud.
+          <div className="p-3 bg-gray-700/30 rounded-lg text-sm text-gray-300 space-y-1">
+            <p>
+              <strong className="text-gray-200">How sync works:</strong>{' '}
+              <strong>Upload</strong> sends this tablet&apos;s changes. <strong>Download</strong> pulls cloud updates but keeps your local edits (they stay pending until Upload).
+            </p>
+            <p>
+              <strong>Sync All</strong> uploads first when anything is pending, then downloads — so local work is not treated as &quot;already pushed.&quot;
+              <strong> Download &amp; Match</strong> also deletes local-only rows not on the cloud; it is blocked while you have pending uploads.
+            </p>
           </div>
         </div>
       </div>
@@ -514,12 +627,22 @@ export default function Sync() {
             <>
               {/* Summary */}
               <div className="mb-6 bg-gray-700/30 rounded-lg p-4 text-center">
-                <div className="text-sm text-gray-400 mb-1">Unsynced Changes</div>
-                <div className={`text-4xl font-bold ${calculateTotalUnsynced() > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
-                  {calculateTotalUnsynced()}
+                <div className="text-sm text-gray-400 mb-1">Waiting to Upload</div>
+                <div className={`text-4xl font-bold ${
+                  hasUnsyncedCountErrors()
+                    ? 'text-red-400'
+                    : calculateTotalUnsynced() > 0
+                      ? 'text-yellow-400'
+                      : 'text-green-400'
+                }`}>
+                  {hasUnsyncedCountErrors() ? '?' : calculateTotalUnsynced()}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
-                  {calculateTotalUnsynced() > 0 ? 'Records waiting to sync' : 'Everything is synced'}
+                  {hasUnsyncedCountErrors()
+                    ? 'Could not read some pending counts — refresh or check logs'
+                    : calculateTotalUnsynced() > 0
+                      ? 'Records on this tablet not yet on the cloud'
+                      : 'Nothing pending — safe to Download or Match'}
                 </div>
               </div>
 
@@ -531,12 +654,12 @@ export default function Sync() {
                       <th className="px-4 py-3 text-left text-gray-300 font-semibold">Data Type</th>
                       <th className="px-4 py-3 text-center text-gray-300 font-semibold">Local</th>
                       <th className="px-4 py-3 text-center text-gray-300 font-semibold">Cloud</th>
-                      <th className="px-4 py-3 text-center text-gray-300 font-semibold">Unsynced</th>
+                      <th className="px-4 py-3 text-center text-gray-300 font-semibold">Pending Upload</th>
                       <th className="px-4 py-3 text-center text-gray-300 font-semibold">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700">
-                    {Object.keys(syncStatus.localCounts || {}).map((table) => {
+                    {sortedSyncTables().map((table) => {
                       const localCount = syncStatus.localCounts[table];
                       const masterCount = syncStatus.masterCounts[table];
                       const unsyncedCount = syncStatus.unsyncedCounts[table];
@@ -546,30 +669,8 @@ export default function Sync() {
                       
                       const isMatch = typeof localCount === 'number' && typeof masterCount === 'number' && localCount === masterCount;
                       const hasUnsynced = unsyncedNum > 0;
+                      const countError = unsyncedCount === null || typeof unsyncedCount === 'string';
                       
-                      // Friendly display names for sync tables
-                      const tableDisplayNames = {
-                        users: 'Users',
-                        customers: 'Customers',
-                        sessions: 'Sessions',
-                        cabinets: 'Cabinets',
-                        nodes: 'Nodes',
-                        session_node_maintenance: 'Node Maintenance',
-                        cabinet_locations: 'Cabinet Locations',
-                        session_pm_notes: 'PM Notes',
-                        session_diagnostics: 'Session Diagnostics',
-                        session_ii_documents: 'I&I Documents',
-                        session_ii_equipment: 'I&I Equipment',
-                        session_ii_checklist: 'I&I Checklist',
-                        session_ii_equipment_used: 'I&I Equipment Used',
-                        sys_workstations: 'Sys Workstations',
-                        sys_smart_switches: 'Sys Smart Switches',
-                        sys_io_devices: 'Sys IO Devices',
-                        sys_controllers: 'Sys Controllers',
-                        sys_charms_io_cards: 'Sys Charms IO Cards',
-                        sys_charms: 'Sys Charms',
-                        sys_ams_systems: 'Sys AMS Systems',
-                      };
                       const displayName = tableDisplayNames[table] ?? table
                         .replace(/_/g, ' ')
                         .replace(/\b\w/g, c => c.toUpperCase())
@@ -578,27 +679,33 @@ export default function Sync() {
                         .replace('Pm', 'PM');
                       
                       let statusClass, statusText, statusIcon;
-                      if (hasUnsynced) {
+                      if (countError) {
+                        statusClass = 'text-red-400 font-semibold';
+                        statusText = 'Count error';
+                        statusIcon = '❗';
+                      } else if (hasUnsynced) {
                         statusClass = 'text-yellow-400 font-semibold';
-                        statusText = 'Needs Sync';
+                        statusText = 'Needs Upload';
                         statusIcon = '⚠️';
                       } else if (isMatch) {
                         statusClass = 'text-green-400 font-semibold';
-                        statusText = 'Synced';
+                        statusText = 'In sync';
                         statusIcon = '✅';
                       } else {
                         statusClass = 'text-gray-400';
-                        statusText = 'Different';
+                        statusText = 'Counts differ';
                         statusIcon = '⚡';
                       }
                       
                       return (
-                        <tr key={table} className="hover:bg-gray-700/20">
+                        <tr key={table} className={`hover:bg-gray-700/20 ${hasUnsynced || countError ? 'bg-yellow-950/10' : ''}`}>
                           <td className="px-4 py-3 text-gray-200">{displayName}</td>
                           <td className="px-4 py-3 text-center text-gray-300">{typeof localCount === 'string' ? <span className="text-red-400 text-xs" title={localCount}>{localCount}</span> : localNum}</td>
                           <td className="px-4 py-3 text-center text-gray-300">{typeof masterCount === 'string' ? <span className="text-red-400 text-xs">{masterCount}</span> : masterNum}</td>
-                          <td className={`px-4 py-3 text-center ${hasUnsynced ? 'text-yellow-400 font-bold' : 'text-gray-400'}`}>
-                            {typeof unsyncedCount === 'string' ? <span className="text-red-400 text-xs">{unsyncedCount}</span> : unsyncedNum}
+                          <td className={`px-4 py-3 text-center ${hasUnsynced || countError ? 'text-yellow-400 font-bold' : 'text-gray-400'}`}>
+                            {unsyncedCount === null || typeof unsyncedCount === 'string'
+                              ? <span className="text-red-400 text-xs" title={String(unsyncedCount ?? 'error')}>?</span>
+                              : unsyncedNum}
                           </td>
                           <td className={`px-4 py-3 text-center ${statusClass}`}>
                             {statusIcon} {statusText}

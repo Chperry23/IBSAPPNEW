@@ -42,6 +42,12 @@ function toMongoDoc(tableName, row) {
   if (doc.updated_at && typeof doc.updated_at === 'string') {
     doc.updated_at = new Date(doc.updated_at);
   }
+  if (doc.completed_at && typeof doc.completed_at === 'string') {
+    doc.completed_at = new Date(doc.completed_at);
+  }
+  if (doc.timer_started_at && typeof doc.timer_started_at === 'string') {
+    doc.timer_started_at = new Date(doc.timer_started_at);
+  }
   doc.uuid = uuid;
   return doc;
 }

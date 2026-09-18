@@ -17,6 +17,7 @@ import SystemRegistry from './pages/SystemRegistry';
 import Sync from './pages/Sync';
 import CSVTracking from './pages/CSVTracking';
 import DellDispatches from './pages/DellDispatches';
+import Analytics from './pages/Analytics';
 
 function App() {
   return (
@@ -129,6 +130,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <DellDispatches />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute>
+                <Analytics />
               </ProtectedRoute>
             }
           />

@@ -7,7 +7,6 @@ const { promisify } = require('util');
 const { SYNC_TABLES, REGISTRY_TABLES, PUSH_SKIP_TABLES } = require('./sync-tables');
 const {
   markChangesSynced,
-  markAllPendingJournalSynced,
   pruneStaleChangeLog,
   getSyncCursor,
   setSyncCursor,
@@ -343,10 +342,7 @@ class SyncClient {
       }
     }
     if (journalIds.length) await markChangesSynced(this.localDb, journalIds);
-    const journalCleared = await markAllPendingJournalSynced(this.localDb);
-    if (journalCleared > 0) {
-      console.log(`🔧 Cleared ${journalCleared.toLocaleString()} remaining change_log entry(ies) after push`);
-    }
+    // Do NOT markAllPendingJournalSynced — that cleared journal for rows never uploaded.
 
     return {
       success: true,
@@ -726,15 +722,53 @@ class SyncClient {
   }
 
   async fullSync(onProgress) {
-    const pullResult = await this.pull(onProgress);
-    const pushResult = await this.push(onProgress);
+    // Prefer upload-first when local work is pending so a pull cannot mark
+    // local-wins conflicts as "synced" without ever uploading them.
+    let pending = 0;
+    if (this.legacy?.countTotalUnsynced) {
+      try {
+        pending = await this.legacy.countTotalUnsynced();
+      } catch (_) {
+        pending = 0;
+      }
+    } else {
+      try {
+        for (const tableName of SYNC_TABLES) {
+          const rows = await this.localDb
+            .prepare(`SELECT COUNT(*) AS c FROM ${tableName} WHERE synced = 0 OR synced IS NULL`)
+            .get([]);
+          pending += rows?.c || 0;
+        }
+      } catch (_) {
+        pending = 0;
+      }
+    }
+
+    let pushResult;
+    let pullResult;
+    if (pending > 0) {
+      console.log(`🔄 Full sync: ${pending} pending — Upload first, then Download`);
+      pushResult = await this.push(onProgress);
+      pullResult = await this.pull(onProgress);
+    } else {
+      console.log('🔄 Full sync: nothing pending — Download first, then Upload');
+      pullResult = await this.pull(onProgress);
+      pushResult = await this.push(onProgress);
+    }
+
     return {
-      success: pullResult.success && pushResult.success,
+      success: !!(pullResult.success && pushResult.success),
       totalPulled: pullResult.totalPulled ?? 0,
       totalPushed: pushResult.totalPushed ?? 0,
-      message: 'Sync complete',
+      order: pending > 0 ? 'push-then-pull' : 'pull-then-push',
+      message: pushResult.success && pullResult.success
+        ? `Sync complete (↑${pushResult.totalPushed ?? 0} ↓${pullResult.totalPulled ?? 0})`
+        : `Sync incomplete: ${[pushResult.error, pullResult.error].filter(Boolean).join('; ') || 'see details'}`,
       pull: pullResult,
       push: pushResult,
+      error: pushResult.success && pullResult.success
+        ? undefined
+        : [pushResult.error, pullResult.error].filter(Boolean).join('; ') || 'Sync incomplete',
     };
   }
 }

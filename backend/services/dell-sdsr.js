@@ -1,47 +1,56 @@
 /**
- * Dell SDSR (self-dispatch) SOAP client — sandbox by default via DELL.env.
- * CreateDispatch is only called when CheckLogin succeeds.
+ * Dell Self-Dispatch REST client (TechDirect SDSR REST API v1.2).
+ * Auth: OAuth Bearer + TDUser header (sandbox User ID from TechDirect).
+ * See DELL HELP/Self-Dispatch_REST_API_Version_1.2/
  */
 const { loadDellEnv } = require('../utils/dell-env');
 
-function xmlEscape(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+let cachedToken = null;
+let cachedTokenExpiresAt = 0;
+
+function isSandboxEnv(env = loadDellEnv()) {
+  const rest = String(env.DELL_DISPATCH_REST_BASE || '');
+  const api = String(env.DELL_DISPATCH_API_URL || '');
+  const token = String(env.DELL_DISPATCH_TOKEN_URL || '');
+  return (
+    /sandbox/i.test(rest) ||
+    /sandbox/i.test(api) ||
+    /apigtwb2cnp/i.test(token) ||
+    /apigtwb2cnp/i.test(api)
+  );
 }
 
-function envelope(inner) {
-  return `<?xml version="1.0" encoding="utf-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:api="http://api.dell.com">
-  <soapenv:Header/>
-  <soapenv:Body>
-    ${inner}
-  </soapenv:Body>
-</soapenv:Envelope>`;
+/** REST base without trailing slash */
+function restBase(env = loadDellEnv()) {
+  if (env.DELL_DISPATCH_REST_BASE) {
+    return String(env.DELL_DISPATCH_REST_BASE).replace(/\/$/, '');
+  }
+  if (isSandboxEnv(env)) {
+    return 'https://apigtwb2cnp.us.dell.com/td/sandbox/dispatch/services/selfdispatch';
+  }
+  return 'https://apigtwb2c.us.dell.com/td/PROD/dispatch/services/selfdispatch';
 }
 
-function parseFault(text) {
-  const fault = text.match(/<faultstring[^>]*>([\s\S]*?)<\/faultstring>/i);
-  return fault ? fault[1].trim() : null;
+/** TDUser header — sandbox requires TechDirect sandbox User ID, not email. */
+function tdUser(env = loadDellEnv()) {
+  const id = String(env.DELL_DISPATCH_USER_ID || '').trim();
+  if (!id) throw new Error('DELL.env missing DELL_DISPATCH_USER_ID (required as REST TDUser)');
+  return id;
 }
 
-function textOf(xml, tag) {
-  const re = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i');
-  const m = xml.match(re);
-  return m ? m[1].trim() : null;
+function countryIso(value) {
+  const v = String(value || 'US').trim();
+  if (/^united states$/i.test(v) || /^usa$/i.test(v)) return 'US';
+  if (v.length === 2) return v.toUpperCase();
+  return 'US';
 }
 
-function allBlocks(xml, tag) {
-  const re = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'gi');
-  const out = [];
-  let m;
-  while ((m = re.exec(xml))) out.push(m[1]);
-  return out;
-}
+async function getDispatchToken(force = false) {
+  const now = Date.now();
+  if (!force && cachedToken && now < cachedTokenExpiresAt - 30_000) {
+    return cachedToken;
+  }
 
-async function getDispatchToken() {
   const env = loadDellEnv();
   const tokenUrl = env.DELL_DISPATCH_TOKEN_URL;
   const clientId = env.DELL_DISPATCH_CLIENT_ID;
@@ -49,6 +58,7 @@ async function getDispatchToken() {
   if (!tokenUrl || !clientId || !clientSecret) {
     throw new Error('DELL.env missing dispatch OAuth credentials');
   }
+
   const res = await fetch(tokenUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
@@ -62,233 +72,288 @@ async function getDispatchToken() {
   if (!res.ok || !json.access_token) {
     throw new Error(`Dispatch token failed (${res.status}): ${JSON.stringify(json)}`);
   }
-  return json.access_token;
+
+  const expiresIn = Number(json.expires_in) || 3600;
+  cachedToken = json.access_token;
+  cachedTokenExpiresAt = now + expiresIn * 1000;
+  return cachedToken;
 }
 
-async function soapCall(action, inner) {
+async function restFetch(pathAndQuery, { method = 'GET', body = null } = {}) {
   const env = loadDellEnv();
-  const url = env.DELL_DISPATCH_API_URL;
-  if (!url) throw new Error('DELL.env missing DELL_DISPATCH_API_URL');
-
   const token = await getDispatchToken();
+  const url = `${restBase(env)}${pathAndQuery.startsWith('/') ? '' : '/'}${pathAndQuery}`;
   const res = await fetch(url, {
-    method: 'POST',
+    method,
     headers: {
       Authorization: `Bearer ${token}`,
-      SOAPAction: `"${action}"`,
-      'Content-Type': 'text/xml; charset=utf-8',
-      Accept: 'text/xml',
+      TDUser: tdUser(env),
+      Accept: 'application/json',
+      ...(body != null ? { 'Content-Type': 'application/json' } : {}),
     },
-    body: envelope(inner),
+    body: body != null ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
-  const fault = parseFault(text);
-  return {
-    ok: res.ok && !fault,
-    status: res.status,
-    fault,
-    body: text,
-  };
-}
-
-function techCreds() {
-  const env = loadDellEnv();
-  const user = env.DELL_DISPATCH_TECH_EMAIL || env.DELL_DISPATCH_USER_ID;
-  const pass = env.DELL_DISPATCH_TECH_PASSWORD || '';
-  if (!user) throw new Error('DELL.env missing DELL_DISPATCH_TECH_EMAIL');
-  return { user, pass, env };
+  let json = null;
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch (_) {
+      json = null;
+    }
+  }
+  return { ok: res.ok, status: res.status, text, json, url };
 }
 
 /**
- * CheckLogin — returns technician info / groups / certs, or { ok:false, error }.
+ * company-info — replaces SOAP CheckLogin as the "ready" probe.
  */
 async function checkLogin() {
-  const { user, pass } = techCreds();
-  const result = await soapCall(
-    'http://api.dell.com/IDispatchService/CheckLogin',
-    `<api:CheckLogin><api:Username>${xmlEscape(user)}</api:Username><api:Password>${xmlEscape(pass)}</api:Password></api:CheckLogin>`
-  );
-  if (!result.ok) {
+  try {
+    const result = await restFetch('/company-info');
+    if (!result.ok) {
+      const msg =
+        result.json?.message ||
+        result.json?.error ||
+        result.text?.slice(0, 300) ||
+        `HTTP ${result.status}`;
+      return {
+        ok: false,
+        ready: false,
+        status: result.status,
+        error: msg,
+        mode: 'rest',
+        sandbox: isSandboxEnv(),
+      };
+    }
+
+    const relationships = Array.isArray(result.json?.relationships)
+      ? result.json.relationships.map((r) => ({
+          branchName: r.branch_description || r.branch_id,
+          customerName: r.customer_name || r.customer_id,
+          track: r.track || 'Tier 1',
+          branchId: r.branch_id,
+          customerId: r.customer_id,
+        }))
+      : [];
+
     return {
-      ok: false,
-      status: result.status,
-      error: result.fault || `HTTP ${result.status}`,
-      ready: false,
+      ok: true,
+      ready: true,
+      mode: 'rest',
+      sandbox: isSandboxEnv(),
+      companyId: result.json?.company_id || null,
+      fullName: null,
+      role: 'REST TDUser',
+      relationships,
+      certificates: [],
+      tdUser: tdUser(),
     };
+  } catch (e) {
+    return { ok: false, ready: false, error: e.message, mode: 'rest' };
   }
-  const body = result.body;
-  const relationships = allBlocks(body, 'RelationshipInfo').map((block) => ({
-    branchName: textOf(block, 'BranchName'),
-    customerName: textOf(block, 'CustomerName'),
-    track: textOf(block, 'Track'),
-  }));
-  const certificates = allBlocks(body, 'CertificateInfo').map((block) => ({
-    certificate: textOf(block, 'certificate') || textOf(block, 'Certificate'),
-    expirationDate: textOf(block, 'ExpirationDate'),
-  }));
-  return {
-    ok: true,
-    ready: true,
-    fullName: textOf(body, 'FullName'),
-    role: textOf(body, 'Role'),
-    relationships,
-    certificates,
-  };
 }
 
 async function getPartsByServiceTag(serviceTag) {
-  const { user, pass } = techCreds();
-  const result = await soapCall(
-    'http://api.dell.com/IDispatchService/GetPartsbyServiceTag',
-    `<api:GetPartsbyServiceTag><api:Username>${xmlEscape(user)}</api:Username><api:Password>${xmlEscape(pass)}</api:Password><api:ServiceTag>${xmlEscape(serviceTag)}</api:ServiceTag></api:GetPartsbyServiceTag>`
-  );
-  if (!result.ok) {
-    return { ok: false, error: result.fault || `HTTP ${result.status}`, parts: [] };
+  const tag = String(serviceTag || '').trim().toUpperCase();
+  if (!tag) return { ok: false, error: 'Service tag required', parts: [] };
+
+  try {
+    const result = await restFetch(`/parts?service_tag=${encodeURIComponent(tag)}`);
+
+    // Sandbox often returns 204 for real production tags
+    if (result.status === 204) {
+      return {
+        ok: true,
+        parts: [],
+        model: null,
+        modelDescription: null,
+        empty: true,
+        sandbox: isSandboxEnv(),
+        hint: isSandboxEnv()
+          ? 'Sandbox returned no parts for this service tag (normal for real tags until Dell promotes the API key to production). Try a sandbox test tag such as CARV005, or enter the part number manually.'
+          : 'No replaceable parts returned for this service tag.',
+      };
+    }
+
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: result.json?.message || result.text?.slice(0, 300) || `HTTP ${result.status}`,
+        parts: [],
+        authFailed: result.status === 401,
+      };
+    }
+
+    const parts = Array.isArray(result.json?.parts)
+      ? result.json.parts.map((p) => ({
+          partTypeCode: p.part_type_code || '',
+          partNumber: p.part_number || '',
+          partDescription: p.part_description || '',
+          serializable: Boolean(p.serializable),
+        }))
+      : [];
+
+    return {
+      ok: true,
+      model: result.json?.model_code || null,
+      modelDescription: result.json?.model_description || null,
+      lineOfBusiness: result.json?.line_of_business || null,
+      parts,
+      sandbox: isSandboxEnv(),
+    };
+  } catch (e) {
+    return { ok: false, error: e.message, parts: [] };
   }
-  const body = result.body;
-  const parts = allBlocks(body, 'PartInformation').map((block) => ({
-    partTypeCode: textOf(block, 'PartTypeCode'),
-    partNumber: textOf(block, 'PartNumber'),
-    partDescription: textOf(block, 'PartDescription'),
-  }));
-  return {
-    ok: true,
-    model: textOf(body, 'Model'),
-    modelDescription: textOf(body, 'ModelDescription'),
-    parts,
-  };
 }
 
 /**
- * CreateDispatch — returns work order / DPS on success.
+ * Create dispatch via REST POST /dispatches
  */
 async function createDispatch(payload) {
-  const { user, pass, env } = techCreds();
+  const env = loadDellEnv();
+  const sandbox = isSandboxEnv(env);
+
+  // Sandbox testing notes: branch/customer = Group/Customer name; tech_email = User ID
   const branch = payload.branchName || env.DELL_DISPATCH_GROUP_NAME || '';
   const customer = payload.dellCustomerName || env.DELL_DISPATCH_CUSTOMER_NAME || '';
   const track = payload.track || 'Tier 1';
-  const techEmail = payload.techEmail || user;
-  const note = String(payload.troubleshootingNote || '').slice(0, 1000);
+  const techEmail = sandbox
+    ? env.DELL_DISPATCH_USER_ID || payload.techEmail
+    : payload.techEmail || env.DELL_DISPATCH_TECH_EMAIL || '';
 
-  let partsXml = '';
-  const parts = Array.isArray(payload.parts) ? payload.parts.slice(0, 4) : [];
-  if (parts.length) {
-    partsXml = '<api:Parts>' + parts.map((p) => `
-      <api:Part>
-        <api:PartNumber>${xmlEscape(p.partNumber)}</api:PartNumber>
-        <api:PPID>${xmlEscape(p.ppid || '')}</api:PPID>
-        <api:Quantity>${Number(p.quantity) || 1}</api:Quantity>
-      </api:Part>`).join('') + '</api:Parts>';
-  } else {
-    partsXml = '<api:Parts/>';
-  }
+  const parts = Array.isArray(payload.parts)
+    ? payload.parts.slice(0, 4).map((p) => ({
+        part_number: p.partNumber || p.part_number,
+        ppid: p.ppid || p.part_ppid || '',
+        quantity: Number(p.quantity || p.part_qty) || 1,
+      }))
+    : [];
 
-  let attachmentsXml = '<api:Attachments/>';
-  if (Array.isArray(payload.attachments) && payload.attachments.length) {
-    attachmentsXml =
-      '<api:Attachments>' +
-      payload.attachments
-        .map(
-          (a) => `
-      <api:Attachment>
-        <api:Description>${xmlEscape(a.description || a.filename)}</api:Description>
-        <api:FileName>${xmlEscape(a.filename)}</api:FileName>
-        <api:MIMEType>${xmlEscape(a.mimeType || 'application/octet-stream')}</api:MIMEType>
-        <api:FileData>${a.base64 || ''}</api:FileData>
-      </api:Attachment>`
-        )
-        .join('') +
-      '</api:Attachments>';
-  }
+  const attachments = Array.isArray(payload.attachments)
+    ? payload.attachments.slice(0, 8).map((a) => ({
+        description: a.description || a.filename,
+        file_name: a.filename || a.file_name,
+        mime_type: a.mimeType || a.mime_type || 'application/octet-stream',
+        data: a.base64 || a.data || '',
+      }))
+    : [];
 
-  const alt =
-    payload.alternateContactName
-      ? `<api:AlternateContactName>${xmlEscape(payload.alternateContactName)}</api:AlternateContactName>
-         <api:AlternateContactPhone>${xmlEscape(payload.alternateContactPhone || '')}</api:AlternateContactPhone>`
-      : '<api:AlternateContactName/><api:AlternateContactPhone/>';
-
-  const inner = `
-    <api:CreateDispatch>
-      <api:Username>${xmlEscape(user)}</api:Username>
-      <api:Password>${xmlEscape(pass)}</api:Password>
-      <api:TechEmail>${xmlEscape(techEmail)}</api:TechEmail>
-      <api:Branch>${xmlEscape(branch)}</api:Branch>
-      <api:Customer>${xmlEscape(customer)}</api:Customer>
-      <api:Track>${xmlEscape(track)}</api:Track>
-      <api:ServiceTag>${xmlEscape(payload.serviceTag)}</api:ServiceTag>
-      <api:PrimaryContactName>${xmlEscape(payload.primaryContactName)}</api:PrimaryContactName>
-      <api:PrimaryContactPhone>${xmlEscape(payload.primaryContactPhone)}</api:PrimaryContactPhone>
-      <api:PrimaryContactEmail>${xmlEscape(payload.primaryContactEmail)}</api:PrimaryContactEmail>
-      ${alt}
-      <api:CountryISOCode>${xmlEscape(payload.countryIsoCode || 'US')}</api:CountryISOCode>
-      <api:City>${xmlEscape(payload.city)}</api:City>
-      <api:State>${xmlEscape(payload.state)}</api:State>
-      <api:ZipCode>${xmlEscape(payload.zip)}</api:ZipCode>
-      <api:AddressLine1>${xmlEscape(payload.addressLine1)}</api:AddressLine1>
-      <api:AddressLine2>${xmlEscape(payload.addressLine2 || '')}</api:AddressLine2>
-      <api:AddressLine3>${xmlEscape(payload.addressLine3 || '')}</api:AddressLine3>
-      <api:TimeZone>${xmlEscape(payload.timezone || 'US/Eastern')}</api:TimeZone>
-      <api:ReferencePONumber>${xmlEscape(payload.referencePo || '')}</api:ReferencePONumber>
-      <api:RequestCompleteCare>${payload.requestCompleteCare ? 'true' : 'false'}</api:RequestCompleteCare>
-      <api:RequestReturnToDepot>${payload.requestReturnToDepot ? 'true' : 'false'}</api:RequestReturnToDepot>
-      <api:RequestOnSiteTechnician>${payload.requestOnsiteTechnician ? 'true' : 'false'}</api:RequestOnSiteTechnician>
-      <api:TroubleshootingNote>${xmlEscape(note)}</api:TroubleshootingNote>
-      ${partsXml}
-      ${attachmentsXml}
-    </api:CreateDispatch>`;
-
-  const result = await soapCall('http://api.dell.com/IDispatchService/CreateDispatch', inner);
-  if (!result.ok) {
-    return { ok: false, error: result.fault || `HTTP ${result.status}`, raw: result.body.slice(0, 2000) };
-  }
-  return {
-    ok: true,
-    workOrder: textOf(result.body, 'WorkOrder') || textOf(result.body, 'DispatchCode'),
-    dpsNumber: textOf(result.body, 'DPSNumber'),
-    dispatchCode: textOf(result.body, 'DispatchCode'),
-    result: textOf(result.body, 'Result'),
-    raw: result.body.slice(0, 2000),
+  const body = {
+    service_tag: String(payload.serviceTag || '').trim().toUpperCase(),
+    customer,
+    branch,
+    track,
+    tech_email: techEmail,
+    primary_contact_name: payload.primaryContactName || '',
+    primary_contact_phone: payload.primaryContactPhone || '',
+    primary_contact_email: payload.primaryContactEmail || '',
+    primary_contact_phone_ext: null,
+    alternative_contact_name: payload.alternateContactName || null,
+    alternative_contact_phone: payload.alternateContactPhone || null,
+    alternative_contact_email: payload.alternateContactEmail || null,
+    alternative_contact_phone_ext: null,
+    ship_to_address: {
+      address_book_name: null,
+      country_iso_code: countryIso(payload.countryIsoCode),
+      city: payload.city || '',
+      state: payload.state || '',
+      zip_postal_code: payload.zip || '',
+      address_line_1: payload.addressLine1 || '',
+      address_line_2: payload.addressLine2 || '',
+      address_line_3: payload.addressLine3 || '',
+      address_line_4: null,
+      time_zone: payload.timezone || 'US/Eastern',
+    },
+    request_complete_care: Boolean(payload.requestCompleteCare),
+    request_return_to_depot: Boolean(payload.requestReturnToDepot),
+    request_on_site_technician: Boolean(payload.requestOnsiteTechnician),
+    reference_po_number: payload.referencePo || '',
+    parts,
+    attachments,
+    epsa_validation_code: null,
+    epsa_code: null,
+    problem_description: String(payload.problemDescription || payload.troubleshootingNote || '').slice(0, 1000),
+    troubleshooting_note: String(payload.troubleshootingNote || '').slice(0, 1000),
+    on_site_note: payload.onSiteNote || '',
+    federal_specialized_services: false,
+    customer_arranged_date: null,
   };
+
+  try {
+    const result = await restFetch('/dispatches', { method: 'POST', body });
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: result.json?.message || result.text?.slice(0, 500) || `HTTP ${result.status}`,
+        raw: (result.text || '').slice(0, 2000),
+      };
+    }
+
+    const json = result.json || {};
+    return {
+      ok: true,
+      workOrder: json.code || json.work_order || null,
+      dpsNumber: json.dps_number || json.dell_dispatch_number || null,
+      dispatchCode: json.code || null,
+      result: json.status || json.message || null,
+      id: json.id || null,
+      raw: JSON.stringify(json).slice(0, 2000),
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
 }
 
 async function getDispatchStatus(code) {
-  const { user, pass } = techCreds();
-  const result = await soapCall(
-    'http://api.dell.com/IDispatchService/GetDispatchStatus',
-    `<api:GetDispatchStatus><api:Username>${xmlEscape(user)}</api:Username><api:Password>${xmlEscape(pass)}</api:Password><api:Code>${xmlEscape(code)}</api:Code></api:GetDispatchStatus>`
-  );
-  if (!result.ok) {
-    return { ok: false, error: result.fault || `HTTP ${result.status}` };
+  try {
+    const result = await restFetch('/inquiry', {
+      method: 'POST',
+      body: {
+        offset: '0',
+        page_size: '10',
+        code: String(code || ''),
+        additional_fields: [
+          'CreateTimestamp',
+          'Customer.FullName',
+          'Description',
+          'Group.Description',
+          'ScheduledEmployeeFullName',
+          'StatusDescription',
+          'Unit.Serial',
+          'UpdateTimeLocal',
+        ],
+      },
+    });
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: result.json?.message || result.text?.slice(0, 300) || `HTTP ${result.status}`,
+      };
+    }
+    const row = Array.isArray(result.json) ? result.json[0] : result.json;
+    return {
+      ok: true,
+      result: row?.status || row?.StatusDescription || null,
+      status: row?.status || row?.StatusDescription || null,
+      dpsNumber: row?.dps_number || row?.dell_dispatch_number || null,
+      dispatchCode: row?.code || code,
+      orderDeniedReason: row?.order_denied_reason || null,
+      raw: row,
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
   }
-  return {
-    ok: true,
-    result: textOf(result.body, 'Result'),
-    status: textOf(result.body, 'Status'),
-    dpsNumber: textOf(result.body, 'DPSNumber'),
-    dispatchCode: textOf(result.body, 'DispatchCode'),
-    orderDeniedReason: textOf(result.body, 'OrderDeniedReason'),
-  };
 }
 
+/** REST has no separate Resubmit — return clear error. */
 async function resubmitDispatch(code) {
-  const { user, pass } = techCreds();
-  const result = await soapCall(
-    'http://api.dell.com/IDispatchService/ResubmitDispatch',
-    `<api:ResubmitDispatch><api:Username>${xmlEscape(user)}</api:Username><api:Password>${xmlEscape(pass)}</api:Password><api:Code>${xmlEscape(code)}</api:Code></api:ResubmitDispatch>`
-  );
-  if (!result.ok) {
-    return { ok: false, error: result.fault || `HTTP ${result.status}` };
-  }
   return {
-    ok: true,
-    result: textOf(result.body, 'Result'),
-    status: textOf(result.body, 'Status'),
-    dpsNumber: textOf(result.body, 'DPSNumber'),
-    dispatchCode: textOf(result.body, 'DispatchCode'),
+    ok: false,
+    error: `REST Self-Dispatch has no Resubmit API. Create a new dispatch if work order ${code} was denied.`,
   };
 }
 
-/** Map Dell status strings into our local status enum. */
 function mapDellStatus(rawStatus) {
   const s = String(rawStatus || '').toLowerCase();
   if (!s) return null;
@@ -308,4 +373,7 @@ module.exports = {
   resubmitDispatch,
   mapDellStatus,
   getDispatchToken,
+  restBase,
+  isSandboxEnv,
+  tdUser,
 };

@@ -131,6 +131,7 @@ function initializeDatabase() {
         session_name TEXT NOT NULL,
         session_type TEXT DEFAULT 'pm',
         status TEXT DEFAULT 'active',
+        node_scope TEXT DEFAULT 'all',
         uuid TEXT,
         synced INTEGER DEFAULT 0,
         device_id TEXT,
@@ -174,6 +175,20 @@ function initializeDatabase() {
           // Column already exists, ignore error
         }
       );
+
+      // Node scope: 'all' (full registry) or 'selected' (subset via maintenance tombstones)
+      db.run(
+        `ALTER TABLE sessions ADD COLUMN node_scope TEXT DEFAULT 'all'`,
+        (err) => {
+          // Column already exists, ignore error
+        }
+      );
+
+      // PM labor tracking (pause/resume accumulates into active_seconds)
+      db.run(`ALTER TABLE sessions ADD COLUMN active_seconds INTEGER DEFAULT 0`, () => {});
+      db.run(`ALTER TABLE sessions ADD COLUMN timer_started_at DATETIME`, () => {});
+      db.run(`ALTER TABLE sessions ADD COLUMN timer_running INTEGER DEFAULT 0`, () => {});
+      db.run(`ALTER TABLE sessions ADD COLUMN crew_count INTEGER DEFAULT 1`, () => {});
 
       // Cabinets table
       db.run(`CREATE TABLE IF NOT EXISTS cabinets (
@@ -828,6 +843,13 @@ function initializeDatabase() {
       addColumnIfNotExists('sessions', 'synced', 'INTEGER DEFAULT 0');
       addColumnIfNotExists('sessions', 'device_id', 'TEXT');
       addColumnIfNotExists('sessions', 'deleted', 'INTEGER DEFAULT 0');
+      addColumnIfNotExists('sessions', 'completed_at', 'DATETIME');
+      addColumnIfNotExists('sessions', 'session_type', "TEXT DEFAULT 'pm'");
+      addColumnIfNotExists('sessions', 'node_scope', "TEXT DEFAULT 'all'");
+      addColumnIfNotExists('sessions', 'active_seconds', 'INTEGER DEFAULT 0');
+      addColumnIfNotExists('sessions', 'timer_started_at', 'DATETIME');
+      addColumnIfNotExists('sessions', 'timer_running', 'INTEGER DEFAULT 0');
+      addColumnIfNotExists('sessions', 'crew_count', 'INTEGER DEFAULT 1');
 
       // Cabinets table
       addColumnIfNotExists('cabinets', 'uuid', 'TEXT');
@@ -1561,6 +1583,7 @@ function initializeDatabase() {
 
       installChangeLogTriggers()
         .then(() => migrateSessionNodeMaintenanceHasIoErrors())
+        .then(() => migrateCabinetNamesIntoLocations())
         .then(() => backfillMissingSyncUuids())
         .then(() => createDefaultUser())
         .then(() => {
@@ -1574,13 +1597,70 @@ function initializeDatabase() {
 
 /** Assign UUIDs to legacy rows that were saved before sync columns were wired up */
 async function backfillMissingSyncUuids() {
+  const { backfillStringIdTableUuids } = require('../utils/ensure-row-uuid');
   const maint = await backfillTableUuids(db, 'session_node_maintenance');
   const diag = await backfillTableUuids(db, 'session_diagnostics');
-  const total = maint + diag;
+  const locs = await backfillStringIdTableUuids(db, 'cabinet_locations');
+  const sess = await backfillStringIdTableUuids(db, 'sessions');
+  const total = maint + diag + locs + sess;
   if (total > 0) {
     console.log(
-      `🔑 Backfilled ${total} missing UUID(s) (session_node_maintenance: ${maint}, session_diagnostics: ${diag})`
+      `🔑 Backfilled ${total} missing UUID(s) (maintenance: ${maint}, diagnostics: ${diag}, locations: ${locs}, sessions: ${sess})`
     );
+  }
+}
+
+/**
+ * Legacy UI wrote locations to cabinet_names (not synced).
+ * Copy any missing rows into cabinet_locations so push/pull includes them.
+ */
+async function migrateCabinetNamesIntoLocations() {
+  try {
+    const names = await db
+      .prepare(
+        `SELECT id, session_id, location_name, description, is_collapsed, sort_order, created_at, updated_at, deleted
+         FROM cabinet_names`
+      )
+      .all([]);
+    if (!names.length) return;
+
+    let copied = 0;
+    for (const row of names) {
+      const exists = await db
+        .prepare(`SELECT id FROM cabinet_locations WHERE id = ?`)
+        .get([row.id]);
+      if (exists) continue;
+
+      const uuid = String(row.id);
+      await db
+        .prepare(
+          `INSERT INTO cabinet_locations
+             (id, session_id, location_name, description, is_collapsed, sort_order,
+              uuid, synced, deleted, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
+        )
+        .run([
+          row.id,
+          row.session_id,
+          row.location_name,
+          row.description || '',
+          row.is_collapsed || 0,
+          row.sort_order || 0,
+          uuid,
+          row.deleted || 0,
+          row.created_at || null,
+          row.updated_at || null,
+        ]);
+      copied += 1;
+    }
+    if (copied > 0) {
+      console.log(`📍 Migrated ${copied} location(s) from cabinet_names → cabinet_locations (pending sync)`);
+    }
+  } catch (e) {
+    // cabinet_names may not exist on fresh DBs
+    if (!/no such table/i.test(String(e.message || e))) {
+      console.warn('migrateCabinetNamesIntoLocations:', e.message || e);
+    }
   }
 }
 

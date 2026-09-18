@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Plus, Upload, Pencil, Trash2, MapPin, X, LayoutGrid, List } from 'lucide-react';
 import Layout from '../components/Layout';
 import api from '../services/api';
 import soundSystem from '../utils/sounds';
+import { useSettings } from '../contexts/SettingsContext';
 
 export default function Customers() {
+  const { customersView, setCustomersView } = useSettings();
   const [customers, setCustomers] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -152,8 +155,8 @@ export default function Customers() {
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="flex h-64 items-center justify-center">
+          <div className="spinner h-12 w-12" />
         </div>
       </Layout>
     );
@@ -161,92 +164,187 @@ export default function Customers() {
 
   return (
     <Layout>
-      {/* Header */}
-      <div className="flex justify-between items-center mb-8 animate-fadeIn">
-        <div>
-          <h1 className="text-4xl font-bold gradient-text mb-2">👥 Customers</h1>
-          <p className="text-gray-400">Manage your customer database and access their PM sessions</p>
+      <div className="page-header">
+        <div className="page-header-text">
+          <h1 className="page-title">Customers</h1>
+          <p className="page-subtitle">Customer database and PM session access</p>
         </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => setShowBulkImportModal(true)}
-            className="btn btn-success"
-          >
-            📤 Bulk Import
+        <div className="page-actions">
+          <div className="inline-flex rounded-lg border border-[var(--border-strong)] bg-[var(--surface-inset)] p-0.5">
+            <button
+              type="button"
+              onClick={() => setCustomersView('cards')}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-all min-h-9 ${
+                customersView === 'cards'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+              title="Card view"
+              aria-pressed={customersView === 'cards'}
+            >
+              <LayoutGrid className="h-4 w-4" aria-hidden />
+              Cards
+            </button>
+            <button
+              type="button"
+              onClick={() => setCustomersView('list')}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-all min-h-9 ${
+                customersView === 'list'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+              title="List view"
+              aria-pressed={customersView === 'list'}
+            >
+              <List className="h-4 w-4" aria-hidden />
+              List
+            </button>
+          </div>
+          <button type="button" onClick={() => setShowBulkImportModal(true)} className="btn btn-secondary">
+            <Upload className="h-4 w-4" aria-hidden />
+            Bulk import
           </button>
           <button
+            type="button"
             onClick={() => {
               setEditingCustomer(null);
               setShowModal(true);
             }}
             className="btn btn-primary"
           >
-            ➕ Add Customer
+            <Plus className="h-4 w-4" aria-hidden />
+            Add customer
           </button>
         </div>
       </div>
 
-      {/* Search and Filter */}
       <div className="card mb-6">
         <div className="card-body">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
+          <div className="toolbar">
+            <div className="toolbar-filters flex-1">
               <input
                 type="text"
-                placeholder="🔍 Search customers by name, alias, location, contact..."
+                placeholder="Search by name, alias, location, contact…"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="form-input"
+                className="form-input max-w-xl"
               />
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setSearchTerm('')}
-                className="btn btn-secondary text-sm"
-              >
+              <button type="button" onClick={() => setSearchTerm('')} className="btn btn-secondary btn-sm">
                 Clear
               </button>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="form-select"
-              >
-                <option value="activity">Sort by PM Activity</option>
-                <option value="name">Sort by Name</option>
-                <option value="location">Sort by Location</option>
-                <option value="sessions">Sort by Session Count</option>
-                <option value="created">Sort by Created Date</option>
+              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="form-select max-w-xs">
+                <option value="activity">Sort by PM activity</option>
+                <option value="name">Sort by name</option>
+                <option value="location">Sort by location</option>
+                <option value="sessions">Sort by session count</option>
+                <option value="created">Sort by created date</option>
               </select>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Message */}
       {message && (
         <div
-          className={`mb-6 px-4 py-3 rounded-lg ${
-            message.type === 'success'
-              ? 'bg-green-900/50 text-green-200 border border-green-500'
-              : message.type === 'error'
-              ? 'bg-red-900/50 text-red-200 border border-red-500'
-              : 'bg-blue-900/50 text-blue-200 border border-blue-500'
+          className={`alert ${
+            message.type === 'success' ? 'alert-success' : message.type === 'error' ? 'alert-error' : 'alert-info'
           }`}
         >
           {message.text}
         </div>
       )}
 
-      {/* Customers Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredCustomers.length === 0 ? (
-          <div className="col-span-full text-center py-12">
-            <p className="text-gray-400">
-              {searchTerm ? 'No customers match your search.' : 'No customers yet. Add your first customer to get started.'}
-            </p>
+      {/* Customers Grid / List */}
+      {filteredCustomers.length === 0 ? (
+        <div className="card">
+          <div className="card-body py-12 text-center text-gray-400">
+            {searchTerm ? 'No customers match your search.' : 'No customers yet. Add your first customer to get started.'}
           </div>
-        ) : (
-          filteredCustomers.map((customer) => {
+        </div>
+      ) : customersView === 'list' ? (
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="table-dark">
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Location</th>
+                  <th>Contact</th>
+                  <th>Sessions</th>
+                  <th>Last PM</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCustomers.map((customer) => {
+                  const stats = getCustomerStats(customer.id);
+                  const keyName = customer.dongle_id || null;
+                  const friendlyName = customer.name;
+                  return (
+                    <tr
+                      key={customer.id}
+                      className="cursor-pointer"
+                      onClick={() => navigate(`/customer/${customer.id}`)}
+                    >
+                      <td>
+                        <div className="font-medium text-gray-100">{keyName || friendlyName}</div>
+                        <div className="mt-0.5 flex flex-wrap gap-1">
+                          {keyName && <span className="badge badge-blue">{friendlyName}</span>}
+                          {customer.alias && <span className="badge badge-gray">{customer.alias}</span>}
+                        </div>
+                      </td>
+                      <td className="max-w-[14rem] truncate text-gray-400">
+                        {customer.location || '—'}
+                      </td>
+                      <td className="text-gray-400">
+                        {customer.contact_person || customer.email || '—'}
+                      </td>
+                      <td>
+                        <span className={`badge ${stats.totalSessions > 0 ? 'badge-green' : 'badge-gray'}`}>
+                          {stats.totalSessions} total · {stats.activeSessions} active
+                        </span>
+                      </td>
+                      <td className="text-gray-400 whitespace-nowrap">
+                        {stats.lastSession
+                          ? new Date(stats.lastSession.created_at).toLocaleDateString()
+                          : '—'}
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <div className="row-actions">
+                          <Link to={`/customer/${customer.id}`} className="btn btn-primary btn-sm">
+                            Open
+                          </Link>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            title="Edit"
+                            onClick={() => {
+                              setEditingCustomer(customer);
+                              setShowModal(true);
+                            }}
+                          >
+                            <Pencil className="h-4 w-4" aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm"
+                            title="Delete"
+                            onClick={() => handleDelete(customer.id)}
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredCustomers.map((customer) => {
             const stats = getCustomerStats(customer.id);
             const hasSessions = stats.totalSessions > 0;
             // When dongle_id is the key, name is the friendly/display name
@@ -268,141 +366,119 @@ export default function Customers() {
                     </h3>
                     {/* PM activity indicator */}
                     {hasSessions ? (
-                      <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-green-900/60 text-green-300 border border-green-700 font-medium whitespace-nowrap">
+                      <span className="badge badge-green shrink-0 whitespace-nowrap">
                         {stats.totalSessions} PM{stats.totalSessions !== 1 ? 's' : ''}
                       </span>
                     ) : (
-                      <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-500 border border-gray-600 font-medium whitespace-nowrap">
-                        No PMs
-                      </span>
+                      <span className="badge badge-gray shrink-0 whitespace-nowrap">No PMs</span>
                     )}
                   </div>
-                  {/* Badge row — friendly name + alias */}
-                  <div className="flex flex-wrap gap-1.5 mt-1.5">
-                    {keyName && (
-                      <span className="text-xs px-2 py-0.5 rounded bg-indigo-900/50 text-indigo-300 border border-indigo-700/50">
-                        {friendlyName}
-                      </span>
-                    )}
-                    {customer.alias && (
-                      <span className="text-xs px-2 py-0.5 rounded bg-blue-900/50 text-blue-300 border border-blue-700/50">
-                        {customer.alias}
-                      </span>
-                    )}
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {keyName && <span className="badge badge-blue">{friendlyName}</span>}
+                    {customer.alias && <span className="badge badge-blue">{customer.alias}</span>}
                   </div>
                 </div>
                 <div className="card-body">
-                  {/* Customer Info */}
-                  <div className="space-y-1.5 mb-4 text-sm">
+                  <div className="mb-4 space-y-1.5 text-sm">
                     {customer.location && (
-                      <p className="text-gray-400">
-                        <strong className="text-gray-300">Location:</strong> {customer.location}
+                      <p className="flex items-start gap-1.5 text-gray-400">
+                        <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden />
+                        {customer.location}
                       </p>
                     )}
                     {customer.company_name && (
                       <p className="text-gray-400">
-                        <strong className="text-gray-300">Company:</strong> {customer.company_name}
+                        <span className="text-gray-500">Company:</span> {customer.company_name}
                       </p>
                     )}
                     {customer.contact_person && (
                       <p className="text-gray-400">
-                        <strong className="text-gray-300">Contact:</strong> {customer.contact_person}
-                      </p>
-                    )}
-                    {customer.email && (
-                      <p className="text-gray-400">
-                        <strong className="text-gray-300">Email:</strong> {customer.email}
-                      </p>
-                    )}
-                    {customer.phone && (
-                      <p className="text-gray-400">
-                        <strong className="text-gray-300">Phone:</strong> {customer.phone}
+                        <span className="text-gray-500">Contact:</span> {customer.contact_person}
                       </p>
                     )}
                   </div>
 
-                  {/* Session Stats */}
-                  <div className="grid grid-cols-2 gap-3 mb-3 pt-3 border-t border-gray-700">
-                    <div className="text-center bg-gray-700/50 rounded-lg p-2.5">
-                      <div className="text-2xl font-bold text-blue-400">{stats.totalSessions}</div>
-                      <div className="text-xs text-gray-400">Total Sessions</div>
+                  <div className="mb-3 grid grid-cols-2 gap-3 border-t border-[var(--border-subtle)] pt-3">
+                    <div className="rounded-lg bg-[var(--surface-inset)] p-2.5 text-center">
+                      <div className="text-2xl font-bold text-white">{stats.totalSessions}</div>
+                      <div className="text-xs text-gray-500">Sessions</div>
                     </div>
-                    <div className="text-center bg-gray-700/50 rounded-lg p-2.5">
-                      <div className="text-2xl font-bold text-green-400">{stats.activeSessions}</div>
-                      <div className="text-xs text-gray-400">Active</div>
+                    <div className="rounded-lg bg-[var(--surface-inset)] p-2.5 text-center">
+                      <div className="text-2xl font-bold text-white">{stats.activeSessions}</div>
+                      <div className="text-xs text-gray-500">Active</div>
                     </div>
                   </div>
 
-                  {/* Last PM row */}
                   {stats.lastSession ? (
-                    <div className="mb-3 px-3 py-2 rounded-lg bg-gray-700/30 border border-gray-700 text-xs text-gray-400">
+                    <div className="mb-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-inset)]/60 px-3 py-2 text-xs text-gray-400">
                       <span className="text-gray-500">Last PM: </span>
-                      <span className="text-gray-300 font-medium truncate">{stats.lastSession.session_name}</span>
-                      <span className="text-gray-500 ml-1">· {new Date(stats.lastSession.created_at).toLocaleDateString()}</span>
+                      <span className="font-medium text-gray-300">{stats.lastSession.session_name}</span>
+                      <span className="ml-1 text-gray-500">
+                        · {new Date(stats.lastSession.created_at).toLocaleDateString()}
+                      </span>
                     </div>
                   ) : (
-                    <div className="mb-3 px-3 py-2 rounded-lg bg-gray-700/20 border border-gray-700/50 text-xs text-gray-500 text-center">
+                    <div className="mb-3 rounded-lg border border-[var(--border-subtle)] px-3 py-2 text-center text-xs text-gray-500">
                       No PM sessions yet
                     </div>
                   )}
 
-                  {/* Action Buttons */}
                   <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                    <Link
-                      to={`/customer/${customer.id}`}
-                      className="flex-1 btn btn-primary text-sm py-2"
-                    >
-                      View Sessions
+                    <Link to={`/customer/${customer.id}`} className="btn btn-primary btn-sm flex-1">
+                      Open
                     </Link>
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         setEditingCustomer(customer);
                         setShowModal(true);
                       }}
-                      className="btn btn-secondary text-sm py-2"
-                      title="Edit Customer"
+                      className="btn btn-secondary btn-sm"
+                      title="Edit customer"
                     >
-                      ⚙️
+                      <Pencil className="h-4 w-4" aria-hidden />
                     </button>
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDelete(customer.id);
                       }}
-                      className="btn btn-danger text-sm py-2"
-                      title="Delete Customer"
+                      className="btn btn-danger btn-sm"
+                      title="Delete customer"
                     >
-                      🗑️
+                      <Trash2 className="h-4 w-4" aria-hidden />
                     </button>
                   </div>
                 </div>
               </div>
             );
-          })
-        )}
+          })}
       </div>
+      )}
 
-      {/* Customer Modal */}
       {showModal && (
         <div className="modal-backdrop">
-          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-md w-full mx-4 border border-gray-700">
-            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
+          <div className="modal-panel max-w-md w-full mx-4">
+            <div className="modal-panel-header">
               <h3 className="text-lg font-semibold text-gray-100">
-                {editingCustomer ? 'Edit Customer' : 'New Customer'}
+                {editingCustomer ? 'Edit customer' : 'New customer'}
               </h3>
               <button
+                type="button"
                 onClick={() => {
                   setShowModal(false);
                   setEditingCustomer(null);
                 }}
-                className="text-gray-400 hover:text-gray-200 text-2xl"
+                className="btn-icon"
+                aria-label="Close"
               >
-                ×
+                <X className="h-4 w-4" />
               </button>
             </div>
             <form onSubmit={handleSubmit}>
-              <div className="px-6 py-4 space-y-4">
+              <div className="modal-panel-body space-y-4">
                 <div>
                   <label className="form-label">Customer Name *</label>
                   <input
@@ -481,7 +557,7 @@ export default function Customers() {
                   ></textarea>
                 </div>
               </div>
-              <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
+              <div className="modal-panel-footer">
                 <button
                   type="button"
                   onClick={() => {
@@ -501,46 +577,49 @@ export default function Customers() {
         </div>
       )}
 
-      {/* Bulk Import Customers Modal */}
       {showBulkImportModal && (
         <div className="modal-backdrop">
-          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-2xl w-full mx-4 border border-gray-700">
-            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-100">📤 Bulk Import Customers</h3>
+          <div className="modal-panel max-w-2xl w-full mx-4">
+            <div className="modal-panel-header">
+              <h3 className="text-lg font-semibold text-gray-100">Bulk import customers</h3>
               <button
+                type="button"
                 onClick={() => setShowBulkImportModal(false)}
-                className="text-gray-400 hover:text-gray-200 text-2xl"
+                className="btn-icon"
+                aria-label="Close"
               >
-                ×
+                <X className="h-4 w-4" />
               </button>
             </div>
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
                 const csvData = e.target.csv_data.value;
-                
-                // Parse CSV
+
                 const lines = csvData.split('\n').filter((l) => l.trim());
                 if (lines.length < 2) {
                   showMessage('CSV must have header and at least one row', 'error');
                   return;
                 }
 
-                const customers = lines.slice(1).map((line) => {
-                  const [name, location, contact_info] = line.split(',').map((v) => v.trim());
-                  return { name, location: location || '', contact_info: contact_info || '' };
-                }).filter((c) => c.name);
+                const customers = lines
+                  .slice(1)
+                  .map((line) => {
+                    const [name, location, contact_info] = line.split(',').map((v) => v.trim());
+                    return { name, location: location || '', contact_info: contact_info || '' };
+                  })
+                  .filter((c) => c.name);
 
                 try {
                   soundSystem.playSuccess();
                   showMessage(`Importing ${customers.length} customers...`, 'info');
-                  
+
                   let successCount = 0;
                   for (const customer of customers) {
                     const result = await api.createCustomer(customer);
                     if (result.success) successCount++;
                   }
-                  
+
                   setShowBulkImportModal(false);
                   loadCustomers();
                   soundSystem.playSuccess();
@@ -551,30 +630,27 @@ export default function Customers() {
                 }
               }}
             >
-              <div className="px-6 py-4 space-y-4">
+              <div className="modal-panel-body space-y-4">
                 <div>
-                  <label className="form-label">CSV Data</label>
+                  <label className="form-label">CSV data</label>
                   <textarea
                     name="csv_data"
                     rows="12"
                     placeholder="Name,Location,Contact Info&#10;Company A,Building 1,John Doe - 555-1234&#10;Company B,Building 2,Jane Smith - 555-5678&#10;..."
                     className="form-textarea font-mono text-sm"
                   ></textarea>
-                  <p className="text-sm text-gray-400 mt-2">
-                    💡 Format: Name,Location,Contact Info (one per line, header required)
+                  <p className="mt-2 text-sm text-gray-400">
+                    Format: Name,Location,Contact Info (one per line, header required)
                   </p>
                 </div>
               </div>
-              <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowBulkImportModal(false)}
-                  className="btn btn-secondary"
-                >
+              <div className="modal-panel-footer">
+                <button type="button" onClick={() => setShowBulkImportModal(false)} className="btn btn-secondary">
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary">
-                  📤 Import Customers
+                  <Upload className="h-4 w-4" aria-hidden />
+                  Import customers
                 </button>
               </div>
             </form>

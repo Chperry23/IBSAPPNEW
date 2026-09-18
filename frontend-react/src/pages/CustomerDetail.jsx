@@ -1,10 +1,35 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  Plus,
+  Pencil,
+  TrendingUp,
+  Upload,
+  Package,
+  Database,
+  Wrench,
+  MapPin,
+  RefreshCw,
+  ChevronDown,
+  X,
+} from 'lucide-react';
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Line,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 import Layout from '../components/Layout';
 import api from '../services/api';
 import soundSystem from '../utils/sounds';
 import { formatSessionNameWithLabel } from '../utils/sessionName';
 import DellPartsPanel from '../components/DellPartsPanel';
+import SessionNodeScopePicker from '../components/SessionNodeScopePicker';
 
 export default function CustomerDetail() {
   const { id } = useParams();
@@ -28,6 +53,10 @@ export default function CustomerDetail() {
   const [newSessionType, setNewSessionType] = useState('pm');
   const [newSessionDate, setNewSessionDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [newSessionSiteLabel, setNewSessionSiteLabel] = useState('');
+  const [newNodeScope, setNewNodeScope] = useState('all');
+  const [newNodeIds, setNewNodeIds] = useState([]);
+  const [dupNodeScope, setDupNodeScope] = useState('all');
+  const [dupNodeIds, setDupNodeIds] = useState([]);
   const [showEditSessionModal, setShowEditSessionModal] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
   const [showSystemRegModal, setShowSystemRegModal] = useState(false);
@@ -40,7 +69,7 @@ export default function CustomerDetail() {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [duplicatingSession, setDuplicatingSession] = useState(null);
   const [duplicateProgress, setDuplicateProgress] = useState(false);
-  const [showTrendModal, setShowTrendModal] = useState(false);
+  const [showTrendPanel, setShowTrendPanel] = useState(false);
   const [metricHistory, setMetricHistory] = useState([]);
   const [metricHistoryLoading, setMetricHistoryLoading] = useState(false);
   const [expandedMetricRow, setExpandedMetricRow] = useState(null);
@@ -119,6 +148,9 @@ export default function CustomerDetail() {
     if (tab === 'parts' || tab === 'hdd') {
       setActiveTab('parts');
       loadHddHistory();
+    } else if (tab === 'notes') {
+      setActiveTab('notes');
+      loadNotes();
     }
   }, [searchParams, id]);
 
@@ -157,10 +189,27 @@ export default function CustomerDetail() {
     }
   };
 
-  const openTrendModal = () => {
-    setShowTrendModal(true);
-    loadMetricHistory();
+  const openTrendPanel = () => {
+    setShowTrendPanel((open) => {
+      const next = !open;
+      if (next) loadMetricHistory();
+      return next;
+    });
   };
+
+  const trendChartData = useMemo(() => {
+    if (!Array.isArray(metricHistory) || metricHistory.length === 0) return [];
+    return [...metricHistory]
+      .filter((r) => r.recorded_at)
+      .sort((a, b) => new Date(a.recorded_at) - new Date(b.recorded_at))
+      .map((r) => ({
+        id: r.id,
+        label: new Date(r.recorded_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' }),
+        score: r.risk_score != null ? Number(r.risk_score) : null,
+        errors: r.error_count != null ? Number(r.error_count) : null,
+        session: r.session_name || '',
+      }));
+  }, [metricHistory]);
 
   const loadNotes = async () => {
     if (!id) return;
@@ -451,6 +500,10 @@ export default function CustomerDetail() {
 
   const handleCreateSession = async (e) => {
     e.preventDefault();
+    if (newNodeScope === 'selected' && newNodeIds.length === 0) {
+      showMessage('Select at least one node, or choose include all nodes', 'error');
+      return;
+    }
     const formData = new FormData(e.target);
     const data = {
       customer_id: id,
@@ -460,6 +513,8 @@ export default function CustomerDetail() {
         newSessionType,
         newSessionDate
       ),
+      node_scope: newNodeScope,
+      node_ids: newNodeScope === 'selected' ? newNodeIds : undefined,
     };
 
     console.log('Creating session with data:', data);
@@ -471,6 +526,8 @@ export default function CustomerDetail() {
         soundSystem.playSuccess();
         setShowNewSessionModal(false);
         setNewSessionSiteLabel('');
+        setNewNodeScope('all');
+        setNewNodeIds([]);
         loadCustomerData();
         showMessage(`${data.session_type?.toUpperCase() || 'Session'} created successfully`, 'success');
         e.target.reset();
@@ -480,7 +537,7 @@ export default function CustomerDetail() {
       }
     } catch (error) {
       soundSystem.playError();
-      showMessage('Error creating session', 'error');
+      showMessage(error?.message || 'Error creating session', 'error');
     }
   };
 
@@ -510,221 +567,378 @@ export default function CustomerDetail() {
     );
   }
 
+  const displayName =
+    customer.alias ||
+    customer.company_name ||
+    customer.name;
+  const idSubtitle =
+    customer.dongle_id ||
+    (customer.alias && customer.name !== customer.alias ? customer.name : null);
+
   return (
     <Layout>
-      {/* Breadcrumb */}
-      <div className="mb-6 text-sm text-gray-400">
-        <Link to="/customers" className="hover:text-gray-200">Customers</Link>
+      <div className="breadcrumb">
+        <Link to="/customers">Customers</Link>
         <span className="mx-2">›</span>
-        <span className="text-gray-200">{customer.name}</span>
+        <span className="text-gray-200">{displayName}</span>
       </div>
 
-      {/* Header */}
-      <div className="flex justify-between items-start mb-8 animate-fadeIn">
-        <div>
-          <h1 className="text-4xl font-bold gradient-text mb-2">{customer.name}</h1>
+      <div className="page-header !flex-col !items-stretch gap-4">
+        <div className="min-w-0">
+          <h1 className="page-title whitespace-nowrap truncate" title={displayName}>
+            {displayName}
+          </h1>
+          {idSubtitle && idSubtitle !== displayName && (
+            <p className="mt-1 font-mono text-sm text-gray-400 whitespace-nowrap truncate" title={idSubtitle}>
+              {idSubtitle}
+            </p>
+          )}
           {customer.location && (
-            <p className="text-gray-400 text-lg">📍 {customer.location}</p>
+            <p className="page-subtitle flex items-center gap-1.5">
+              <MapPin className="h-4 w-4 shrink-0" aria-hidden />
+              <span className="truncate">{customer.location}</span>
+            </p>
           )}
         </div>
-        <div className="flex gap-3 flex-wrap">
+        <div className="page-actions !justify-start">
           <button
-            onClick={openTrendModal}
-            className="btn btn-secondary"
-            title="View error count, risk score, and other metrics over time"
+            type="button"
+            onClick={() => {
+              const today = new Date().toISOString().split('T')[0];
+              setNewSessionType('pm');
+              setNewSessionDate(today);
+              setNewSessionSiteLabel('');
+              setNewNodeScope('all');
+              setNewNodeIds([]);
+              setShowNewSessionModal(true);
+            }}
+            className="btn btn-primary"
           >
-            📈 View trend over time
+            <Plus className="h-4 w-4" aria-hidden />
+            New PM session
           </button>
           <button
-            onClick={() => setShowEditModal(true)}
-            className="btn btn-secondary"
+            type="button"
+            onClick={() => {
+              const today = new Date().toISOString().split('T')[0];
+              setNewSessionType('ii');
+              setNewSessionDate(today);
+              setNewSessionSiteLabel('');
+              setNewNodeScope('all');
+              setNewNodeIds([]);
+              setShowNewSessionModal(true);
+            }}
+            className="btn btn-warning"
           >
-            ⚙️ Edit Customer
+            <Wrench className="h-4 w-4" aria-hidden />
+            New I&amp;I
+          </button>
+          <button type="button" onClick={() => setShowSystemRegModal(true)} className="btn btn-secondary">
+            <Upload className="h-4 w-4" aria-hidden />
+            Import nodes
+          </button>
+          <button type="button" onClick={() => setShowImportBundleModal(true)} className="btn btn-secondary">
+            <Package className="h-4 w-4" aria-hidden />
+            Import bundle
           </button>
           <button
-            onClick={() => navigate('/customers')}
+            type="button"
+            onClick={() => navigate(`/system-registry/${customer.id}`)}
             className="btn btn-secondary"
           >
-            ← Back
+            <Database className="h-4 w-4" aria-hidden />
+            Manage nodes
+          </button>
+          <button
+            type="button"
+            onClick={openTrendPanel}
+            className={`btn btn-secondary ${showTrendPanel ? 'ring-2 ring-blue-500/50 border-blue-500/60' : ''}`}
+            title="View site health score and errors over time"
+            aria-expanded={showTrendPanel}
+          >
+            <TrendingUp className="h-4 w-4" aria-hidden />
+            Trend
+            <ChevronDown
+              className={`h-3.5 w-3.5 transition-transform ${showTrendPanel ? 'rotate-180' : ''}`}
+              aria-hidden
+            />
+          </button>
+          <button type="button" onClick={() => setShowEditModal(true)} className="btn btn-secondary">
+            <Pencil className="h-4 w-4" aria-hidden />
+            Edit
           </button>
         </div>
       </div>
 
-      {/* Message */}
       {message && (
         <div
-          className={`mb-6 px-4 py-3 rounded-lg ${
-            message.type === 'success'
-              ? 'bg-green-900/50 text-green-200 border border-green-500'
-              : message.type === 'error'
-              ? 'bg-red-900/50 text-red-200 border border-red-500'
-              : 'bg-blue-900/50 text-blue-200 border border-blue-500'
+          className={`alert ${
+            message.type === 'success' ? 'alert-success' : message.type === 'error' ? 'alert-error' : 'alert-info'
           }`}
         >
           {message.text}
         </div>
       )}
 
-      {/* Trend over time modal */}
-      {showTrendModal && (
-        <div className="modal-backdrop">
-          <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-600 max-w-4xl w-full flex flex-col">
-            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
-              <h3 className="text-lg font-semibold text-gray-100">📈 Metrics trend over time</h3>
-              <button onClick={() => setShowTrendModal(false)} className="text-gray-400 hover:text-white text-2xl leading-none">×</button>
+      {showTrendPanel && (
+        <div className="card mb-8 animate-fadeIn">
+          <div className="card-header flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-100">Site health trend</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Health score (0–100, higher is better) and I/O error counts from completed PMs saved to history
+              </p>
             </div>
-            <div className="flex-1 overflow-auto p-6">
-              {metricHistoryLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="spinner h-8 w-8"></div>
-                  <span className="ml-3 text-gray-400">Loading history...</span>
+            <button
+              type="button"
+              className="btn-icon"
+              aria-label="Close trend"
+              onClick={() => setShowTrendPanel(false)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="card-body space-y-6">
+            {metricHistoryLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="spinner h-8 w-8" />
+                <span className="ml-3 text-gray-400">Loading history…</span>
+              </div>
+            ) : trendChartData.length === 0 ? (
+              <p className="py-8 text-center text-sm text-gray-500">
+                No history yet. Complete a PM session and check &quot;Save to customer history&quot; to build this chart.
+              </p>
+            ) : (
+              <>
+                <div className="h-64 w-full min-w-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={trendChartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#2d2d44" />
+                      <XAxis dataKey="label" tick={{ fill: '#9ca3af', fontSize: 11 }} stroke="#3d3d5c" />
+                      <YAxis
+                        yAxisId="score"
+                        domain={[0, 100]}
+                        tick={{ fill: '#9ca3af', fontSize: 11 }}
+                        stroke="#3d3d5c"
+                        width={36}
+                      />
+                      <YAxis
+                        yAxisId="errors"
+                        orientation="right"
+                        allowDecimals={false}
+                        tick={{ fill: '#9ca3af', fontSize: 11 }}
+                        stroke="#3d3d5c"
+                        width={36}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          background: '#1b1b2f',
+                          border: '1px solid #2d2d44',
+                          borderRadius: 8,
+                          color: '#e5e7eb',
+                        }}
+                        labelStyle={{ color: '#9ca3af' }}
+                      />
+                      <Legend wrapperStyle={{ color: '#d1d5db', fontSize: 12 }} />
+                      <Bar
+                        yAxisId="errors"
+                        dataKey="errors"
+                        name="Errors"
+                        fill="#f59e0b"
+                        fillOpacity={0.35}
+                        radius={[4, 4, 0, 0]}
+                        maxBarSize={36}
+                      />
+                      <Line
+                        yAxisId="score"
+                        type="monotone"
+                        dataKey="score"
+                        name="Health score"
+                        stroke="#3b82f6"
+                        strokeWidth={2.5}
+                        dot={{ r: 4, fill: '#2563eb', strokeWidth: 0 }}
+                        connectNulls
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
                 </div>
-              ) : metricHistory.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">No history yet. Complete PM sessions and check &quot;Save to customer history&quot; to build trends here.</p>
-              ) : (
+
                 <div className="overflow-x-auto">
-                  <p className="text-xs text-gray-500 mb-3">Risk Score is 0–100 (normalized failure rate — comparable across site sizes). Click a row to see domain breakdown.</p>
-                  <table className="w-full text-sm border-collapse">
+                  <p className="mb-2 text-xs text-gray-500">
+                    Click a row for domain breakdown. Score is site health (100 = perfect).
+                  </p>
+                  <table className="table-compact">
                     <thead>
-                      <tr className="border-b border-gray-600">
-                        <th className="text-left py-2 px-3 text-gray-400 font-medium">Date</th>
-                        <th className="text-left py-2 px-3 text-gray-400 font-medium">Session</th>
-                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Errors</th>
-                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Risk Score (0–100)</th>
-                        <th className="text-left py-2 px-3 text-gray-400 font-medium">Status</th>
-                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Coverage</th>
-                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Failed / Total</th>
-                        <th className="text-right py-2 px-3 text-gray-400 font-medium">Cabinets</th>
+                      <tr>
+                        <th>Date</th>
+                        <th>Session</th>
+                        <th className="text-right">Errors</th>
+                        <th className="text-right">Score</th>
+                        <th>Status</th>
+                        <th className="text-right">Coverage</th>
+                        <th className="text-right">Cabinets</th>
                       </tr>
                     </thead>
                     <tbody>
                       {metricHistory.map((row) => {
                         const isExpanded = expandedMetricRow === row.id;
                         const domainScores = (() => {
-                          try { return row.domain_scores ? JSON.parse(row.domain_scores) : null; } catch { return null; }
+                          try {
+                            return row.domain_scores ? JSON.parse(row.domain_scores) : null;
+                          } catch {
+                            return null;
+                          }
                         })();
-                        const coveragePct = (row.coverage_total > 0)
-                          ? Math.round(100 * (row.coverage_completed ?? 0) / row.coverage_total)
-                          : null;
+                        const coveragePct =
+                          row.coverage_total > 0
+                            ? Math.round((100 * (row.coverage_completed ?? 0)) / row.coverage_total)
+                            : null;
                         const badgeColors = {
-                          CRITICAL: 'bg-red-900/60 text-red-300',
-                          WARNING:  'bg-yellow-900/60 text-yellow-300',
-                          MODERATE: 'bg-orange-900/60 text-orange-300',
-                          ADVISORY: 'bg-purple-900/60 text-purple-300',
-                          GOOD:     'bg-green-900/60 text-green-300',
-                          // legacy labels
-                          LOW:      'bg-yellow-900/60 text-yellow-300',
+                          CRITICAL: 'badge-red',
+                          WARNING: 'badge-yellow',
+                          MODERATE: 'badge-yellow',
+                          ADVISORY: 'badge-blue',
+                          GOOD: 'badge-green',
+                          LOW: 'badge-yellow',
                         };
-                        const badgeCls = badgeColors[row.risk_level] || 'bg-gray-700 text-gray-300';
-                        // risk_score now stores Site Health Index (100=perfect, lower=worse)
-                        const scoreColor = (row.risk_score >= 95) ? 'text-green-400' : (row.risk_score >= 75) ? 'text-purple-400' : (row.risk_score >= 50) ? 'text-orange-400' : (row.risk_score >= 25) ? 'text-yellow-400' : 'text-red-400';
+                        const badgeCls = badgeColors[row.risk_level] || 'badge-gray';
+                        const scoreColor =
+                          row.risk_score >= 95
+                            ? 'text-emerald-400'
+                            : row.risk_score >= 75
+                              ? 'text-blue-300'
+                              : row.risk_score >= 50
+                                ? 'text-orange-400'
+                                : row.risk_score >= 25
+                                  ? 'text-amber-400'
+                                  : 'text-red-400';
                         const domainLabels = {
-                          controllers:       'Controllers',
-                          network:           'Network',
-                          power:             'Power',
+                          controllers: 'Controllers',
+                          network: 'Network',
+                          power: 'Power',
                           cabinet_condition: 'Cabinet',
-                          environmental:     'Environ.',
-                          node_maintenance:  'Nodes',
+                          environmental: 'Environ.',
+                          node_maintenance: 'Nodes',
                         };
                         return (
-                          <>
+                          <Fragment key={row.id}>
                             <tr
-                              key={row.id}
-                              className="border-b border-gray-700/50 hover:bg-gray-700/30 cursor-pointer select-none"
+                              className="cursor-pointer select-none"
                               onClick={() => setExpandedMetricRow(isExpanded ? null : row.id)}
                             >
-                              <td className="py-2 px-3 text-gray-300">
-                                {row.recorded_at ? new Date(row.recorded_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
-                              </td>
-                              <td className="py-2 px-3 text-gray-200 max-w-[180px] truncate">{row.session_name || row.session_id || '—'}</td>
-                              <td className="py-2 px-3 text-right text-gray-300">{row.error_count ?? '—'}</td>
-                              <td className={`py-2 px-3 text-right font-bold ${scoreColor}`}>{row.risk_score ?? '—'}</td>
-                              <td className="py-2 px-3">
-                                {row.risk_level ? (
-                                  <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded ${badgeCls}`}>{row.risk_level}</span>
-                                ) : '—'}
-                              </td>
-                              <td className="py-2 px-3 text-right text-gray-300">
-                                {coveragePct !== null ? `${coveragePct}%` : '—'}
-                              </td>
-                              <td className="py-2 px-3 text-right text-gray-300">
-                                {(row.failed_components != null && row.total_components != null)
-                                  ? `${row.failed_components} / ${row.total_components}`
+                              <td>
+                                {row.recorded_at
+                                  ? new Date(row.recorded_at).toLocaleDateString(undefined, {
+                                      year: 'numeric',
+                                      month: 'short',
+                                      day: 'numeric',
+                                    })
                                   : '—'}
                               </td>
-                              <td className="py-2 px-3 text-right text-gray-300">{row.cabinet_count ?? '—'}</td>
+                              <td className="max-w-[12rem] truncate text-gray-200">
+                                {row.session_name || row.session_id || '—'}
+                              </td>
+                              <td className="text-right">{row.error_count ?? '—'}</td>
+                              <td className={`text-right font-semibold ${scoreColor}`}>{row.risk_score ?? '—'}</td>
+                              <td>
+                                {row.risk_level ? (
+                                  <span className={`badge ${badgeCls}`}>{row.risk_level}</span>
+                                ) : (
+                                  '—'
+                                )}
+                              </td>
+                              <td className="text-right">{coveragePct !== null ? `${coveragePct}%` : '—'}</td>
+                              <td className="text-right">{row.cabinet_count ?? '—'}</td>
                             </tr>
                             {isExpanded && (
-                              <tr key={`${row.id}-detail`} className="border-b border-gray-700/50 bg-gray-900/40">
-                                <td colSpan={8} className="py-3 px-4">
-                                  <div className="grid grid-cols-2 gap-4 text-xs">
+                              <tr>
+                                <td colSpan={7} className="bg-[var(--surface-inset)]/50">
+                                  <div className="grid grid-cols-1 gap-4 py-2 text-xs sm:grid-cols-2">
                                     <div>
-                                      <div className="text-gray-400 font-semibold mb-2 uppercase tracking-wide">Domain Scores (0–100)</div>
+                                      <div className="mb-2 font-semibold uppercase tracking-wide text-gray-500">
+                                        Domain scores
+                                      </div>
                                       {domainScores ? (
                                         <div className="space-y-1.5">
                                           {Object.entries(domainLabels).map(([key, label]) => {
                                             const val = domainScores[key];
-                                            if (val === null || val === undefined) return (
-                                              <div key={key} className="flex items-center gap-2">
-                                                <span className="w-20 text-gray-500">{label}</span>
-                                                <span className="text-gray-600 italic">not inspected</span>
-                                              </div>
-                                            );
-                                            const barColor = val >= 60 ? 'bg-red-500' : val >= 30 ? 'bg-orange-500' : val >= 10 ? 'bg-yellow-500' : 'bg-green-500';
-                                            const textColor = val >= 60 ? 'text-red-400' : val >= 30 ? 'text-orange-400' : val >= 10 ? 'text-yellow-400' : 'text-green-400';
+                                            if (val === null || val === undefined) {
+                                              return (
+                                                <div key={key} className="flex items-center gap-2">
+                                                  <span className="w-20 text-gray-500">{label}</span>
+                                                  <span className="italic text-gray-600">not inspected</span>
+                                                </div>
+                                              );
+                                            }
+                                            const barColor =
+                                              val >= 60
+                                                ? 'bg-red-500'
+                                                : val >= 30
+                                                  ? 'bg-orange-500'
+                                                  : val >= 10
+                                                    ? 'bg-amber-500'
+                                                    : 'bg-emerald-500';
                                             return (
                                               <div key={key} className="flex items-center gap-2">
                                                 <span className="w-20 text-gray-400">{label}</span>
-                                                <div className="flex-1 bg-gray-700 rounded h-2 overflow-hidden">
-                                                  <div className={`h-full rounded ${barColor}`} style={{ width: `${Math.min(val, 100)}%` }} />
+                                                <div className="h-2 flex-1 overflow-hidden rounded bg-[var(--border-strong)]">
+                                                  <div
+                                                    className={`h-full rounded ${barColor}`}
+                                                    style={{ width: `${Math.min(val, 100)}%` }}
+                                                  />
                                                 </div>
-                                                <span className={`w-8 text-right font-bold ${textColor}`}>{val}</span>
+                                                <span className="w-8 text-right font-semibold text-gray-300">{val}</span>
                                               </div>
                                             );
                                           })}
                                         </div>
                                       ) : (
-                                        <span className="text-gray-600 italic">No domain data (session pre-dates this feature)</span>
+                                        <span className="italic text-gray-600">No domain data</span>
                                       )}
                                     </div>
                                     <div>
-                                      <div className="text-gray-400 font-semibold mb-2 uppercase tracking-wide">Coverage</div>
+                                      <div className="mb-2 font-semibold uppercase tracking-wide text-gray-500">
+                                        Coverage
+                                      </div>
                                       {row.coverage_total > 0 ? (
-                                        <div className="space-y-1 text-gray-300">
-                                          <div>{row.coverage_completed} / {row.coverage_total} check-points recorded</div>
-                                          <div className="flex items-center gap-2 mt-2">
-                                            <div className="flex-1 bg-gray-700 rounded h-2 overflow-hidden">
-                                              <div className="h-full rounded bg-blue-500" style={{ width: `${coveragePct}%` }} />
+                                        <div className="text-gray-300">
+                                          {row.coverage_completed} / {row.coverage_total} checkpoints
+                                          <div className="mt-2 flex items-center gap-2">
+                                            <div className="h-2 flex-1 overflow-hidden rounded bg-[var(--border-strong)]">
+                                              <div
+                                                className="h-full rounded bg-blue-500"
+                                                style={{ width: `${coveragePct}%` }}
+                                              />
                                             </div>
-                                            <span className="text-blue-400 font-bold w-10 text-right">{coveragePct}%</span>
+                                            <span className="w-10 text-right font-semibold text-blue-400">
+                                              {coveragePct}%
+                                            </span>
                                           </div>
                                         </div>
                                       ) : (
-                                        <span className="text-gray-600 italic">No coverage data</span>
+                                        <span className="italic text-gray-600">No coverage data</span>
                                       )}
                                     </div>
                                   </div>
                                 </td>
                               </tr>
                             )}
-                          </>
+                          </Fragment>
                         );
                       })}
                     </tbody>
                   </table>
                 </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
         </div>
       )}
 
-      {/* Customer Info & Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* Customer Info Card */}
+      <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="card">
           <div className="card-header">
-            <h3 className="text-lg font-semibold text-gray-100">ℹ️ Customer Information</h3>
+            <h3 className="text-lg font-semibold text-gray-100">Customer information</h3>
           </div>
           <div className="card-body space-y-3">
             {customer.alias && (
@@ -790,7 +1004,7 @@ export default function CustomerDetail() {
               </div>
             )}
             {(customer.system_username || customer.system_password) && (
-              <div className="pt-3 border-t border-gray-700">
+              <div className="border-t border-[var(--border-subtle)] pt-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xs text-gray-500 uppercase">System Credentials</div>
                   <button
@@ -820,24 +1034,23 @@ export default function CustomerDetail() {
           </div>
         </div>
 
-        {/* Stats Card */}
         <div className="card">
           <div className="card-header">
-            <h3 className="text-lg font-semibold text-gray-100">📊 Statistics</h3>
+            <h3 className="text-lg font-semibold text-gray-100">Statistics</h3>
           </div>
           <div className="card-body">
             <div className="grid grid-cols-2 gap-4">
-              <div className="text-center bg-gray-700/50 rounded-lg p-4">
-                <div className="text-3xl font-bold text-blue-400">{sessions.length}</div>
-                <div className="text-xs text-gray-400">Total Sessions</div>
+              <div className="rounded-lg bg-[var(--surface-inset)] p-4 text-center">
+                <div className="text-3xl font-bold text-white">{sessions.length}</div>
+                <div className="text-xs text-gray-500">Total sessions</div>
               </div>
-              <div className="text-center bg-gray-700/50 rounded-lg p-4">
-                <div className="text-3xl font-bold text-green-400">{activeSessions.length}</div>
-                <div className="text-xs text-gray-400">Active Sessions</div>
+              <div className="rounded-lg bg-[var(--surface-inset)] p-4 text-center">
+                <div className="text-3xl font-bold text-white">{activeSessions.length}</div>
+                <div className="text-xs text-gray-500">Active sessions</div>
               </div>
             </div>
             {systemRegSummary && (systemRegSummary.workstations > 0 || systemRegSummary.controllers > 0 || systemRegSummary.smartSwitches > 0) && (
-              <div className="mt-4 pt-4 border-t border-gray-600">
+              <div className="mt-4 border-t border-[var(--border-subtle)] pt-4">
                 <div className="flex justify-between items-center mb-2">
                   <div className="text-sm text-gray-400">System Registry Data</div>
                   <button
@@ -940,63 +1153,13 @@ export default function CustomerDetail() {
             )}
           </div>
         </div>
-
-        {/* Quick Actions Card */}
-        <div className="card">
-          <div className="card-header">
-            <h3 className="text-lg font-semibold text-gray-100">⚡ Quick Actions</h3>
-          </div>
-          <div className="card-body space-y-2">
-            <button
-              onClick={() => {
-                const today = new Date().toISOString().split('T')[0];
-                setNewSessionType('pm');
-                setNewSessionDate(today);
-                setShowNewSessionModal(true);
-              }}
-              className="btn btn-primary w-full"
-            >
-              ➕ New PM Session
-            </button>
-            <button
-              onClick={() => setShowSystemRegModal(true)}
-              className="btn btn-info w-full text-white"
-            >
-              📋 Import Nodes
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowImportBundleModal(true)}
-              className="btn btn-secondary w-full border-violet-500/50 text-violet-200 hover:bg-violet-900/40"
-            >
-              📦 Import customer bundle (ZIP)
-            </button>
-            <button
-              onClick={() => navigate(`/system-registry/${customer.id}`)}
-              className="btn btn-success w-full"
-            >
-              🖥️ Manage Nodes
-            </button>
-            <button
-              onClick={() => {
-                const today = new Date().toISOString().split('T')[0];
-                setNewSessionType('ii');
-                setNewSessionDate(today);
-                setShowNewSessionModal(true);
-              }}
-              className="btn btn-warning w-full text-lg font-bold border-2 border-yellow-400"
-            >
-              🔧 New I&I Session
-            </button>
-          </div>
-        </div>
       </div>
 
-      {/* Workstations + live Dell warranty */}
+      {/* Workstations + Dell warranty */}
       <div className="card mb-8">
         <div className="card-header flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold text-gray-100">🖥️ Workstations &amp; Dell warranty</h3>
+            <h3 className="text-lg font-semibold text-gray-100">Workstations &amp; Dell warranty</h3>
             <p className="text-xs text-gray-500 mt-0.5">
               Registry workstations · cached Dell warranty (Refresh pulls live from TechDirect)
               {wsWarranty?.checked_at && (
@@ -1009,41 +1172,38 @@ export default function CustomerDetail() {
           </div>
           <button
             type="button"
-            className="btn btn-secondary text-sm"
+            className="btn btn-secondary btn-sm"
             onClick={() => loadWorkstationWarranties(true)}
             disabled={wsWarrantyLoading}
           >
+            <RefreshCw className={`h-4 w-4 ${wsWarrantyLoading ? 'animate-spin' : ''}`} aria-hidden />
             {wsWarrantyLoading ? 'Checking Dell…' : 'Refresh warranties'}
           </button>
         </div>
         <div className="card-body p-0">
           {wsWarrantyLoading && !wsWarranty ? (
             <div className="flex justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400" />
+              <div className="spinner h-8 w-8" />
             </div>
           ) : !wsWarranty?.workstations?.length ? (
-            <div className="text-center py-10 text-gray-400 text-sm">
+            <div className="py-10 text-center text-sm text-gray-400">
               No workstations in system registry for this customer.
             </div>
           ) : (
             <>
               {wsWarrantyError && (
-                <div className="mx-4 mt-4 p-2.5 rounded-lg bg-yellow-900/30 border border-yellow-700/40 text-yellow-300 text-xs">
+                <div className="alert alert-error mx-4 mt-4 mb-0 text-xs">
                   Warranty API: {wsWarrantyError}
                 </div>
               )}
-              <div className="overflow-x-auto">
-                <table className="table-dark">
+              <div className="table-scroll-5">
+                <table className="table-compact">
                   <thead>
                     <tr>
-                      <th>Workstation</th>
-                      <th>Type</th>
-                      <th>Model</th>
-                      <th>Service tag</th>
-                      <th>Warranty</th>
-                      <th>Expires</th>
-                      <th>Support</th>
-                      <th></th>
+                      <th className="w-[28%]">Workstation</th>
+                      <th className="w-[22%]">Tag / model</th>
+                      <th className="w-[38%]">Warranty</th>
+                      <th className="w-[12%] text-right"> </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1051,46 +1211,56 @@ export default function CustomerDetail() {
                       const ends = w.warranty?.warrantyEnds
                         ? new Date(w.warranty.warrantyEnds)
                         : null;
+                      const support = w.warranty?.serviceLevel || '';
+                      let warrantyBadge = null;
+                      if (!w.dell_capable) {
+                        warrantyBadge = <span className="text-xs text-gray-500">No Dell tag</span>;
+                      } else if (w.warranty?.invalid) {
+                        warrantyBadge = <span className="badge badge-gray">Invalid tag</span>;
+                      } else if (w.warranty?.inCoverage) {
+                        warrantyBadge = <span className="badge badge-green">In warranty</span>;
+                      } else if (w.warranty) {
+                        warrantyBadge = <span className="badge badge-red">Expired</span>;
+                      } else {
+                        warrantyBadge = <span className="text-xs text-amber-400">Not checked</span>;
+                      }
                       return (
                         <tr key={w.id}>
-                          <td className="font-medium text-gray-200">{w.name}</td>
-                          <td className="text-xs text-gray-400">{w.type || '—'}</td>
-                          <td className="text-xs text-gray-400">
-                            {w.warranty?.product || w.model || '—'}
-                          </td>
-                          <td className="font-mono text-sm text-cyan-400">
-                            {w.service_tag || <span className="text-gray-600">—</span>}
-                          </td>
                           <td>
-                            {!w.dell_capable ? (
-                              <span className="text-xs text-gray-500">No Dell tag</span>
-                            ) : w.warranty?.invalid ? (
-                              <span className="px-2 py-0.5 rounded text-xs border bg-gray-600/40 text-gray-300 border-gray-500/30">
-                                Invalid tag
-                              </span>
-                            ) : w.warranty?.inCoverage ? (
-                              <span className="px-2 py-0.5 rounded text-xs border bg-green-500/20 text-green-300 border-green-500/30">
-                                In warranty
-                              </span>
-                            ) : w.warranty ? (
-                              <span className="px-2 py-0.5 rounded text-xs border bg-red-500/20 text-red-300 border-red-500/30">
-                                Expired
-                              </span>
-                            ) : (
-                              <span className="text-xs text-yellow-500">Not checked — hit Refresh</span>
+                            <div className="font-medium leading-snug text-gray-100 break-words">{w.name}</div>
+                            {w.type && (
+                              <div className="mt-0.5 text-xs leading-snug text-gray-500 break-words">{w.type}</div>
                             )}
                           </td>
-                          <td className="text-sm text-gray-300 whitespace-nowrap">
-                            {ends ? ends.toLocaleDateString() : '—'}
-                          </td>
-                          <td className="text-xs text-gray-400 max-w-[12rem] truncate" title={w.warranty?.serviceLevel || ''}>
-                            {w.warranty?.serviceLevel || '—'}
+                          <td>
+                            <div className="font-mono text-xs text-gray-200">
+                              {w.service_tag || <span className="font-sans text-gray-600">—</span>}
+                            </div>
+                            <div className="mt-0.5 text-xs leading-snug text-gray-500 break-words">
+                              {w.warranty?.product || w.model || '—'}
+                            </div>
                           </td>
                           <td>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              {warrantyBadge}
+                              {ends && (
+                                <span className="text-xs text-gray-400">
+                                  {ends.toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+                            {support && (
+                              <div className="mt-1 text-xs leading-snug text-gray-500 line-clamp-2" title={support}>
+                                {support}
+                              </div>
+                            )}
+                          </td>
+                          <td className="text-right">
                             {w.dell_capable && (
                               <button
                                 type="button"
-                                className="px-2 py-0.5 rounded text-[10px] bg-orange-600 hover:bg-orange-500 text-white"
+                                className="btn btn-secondary btn-sm !px-2"
+                                title="Request part"
                                 onClick={() => {
                                   setSearchParams((prev) => {
                                     const next = new URLSearchParams(prev);
@@ -1102,7 +1272,8 @@ export default function CustomerDetail() {
                                   loadHddHistory();
                                 }}
                               >
-                                Request part
+                                <Package className="h-3.5 w-3.5" aria-hidden />
+                                <span className="hidden lg:inline">Part</span>
                               </button>
                             )}
                           </td>
@@ -1112,7 +1283,7 @@ export default function CustomerDetail() {
                   </tbody>
                 </table>
               </div>
-              <p className="px-4 py-3 text-xs text-gray-500 border-t border-gray-700">
+              <p className="border-t border-[var(--border-subtle)] px-4 py-3 text-xs text-gray-500">
                 {wsWarranty.workstations.length} workstation
                 {wsWarranty.workstations.length !== 1 ? 's' : ''} · {wsWarranty.tag_count || 0} Dell
                 tag{(wsWarranty.tag_count || 0) !== 1 ? 's' : ''}
@@ -1123,49 +1294,36 @@ export default function CustomerDetail() {
         </div>
       </div>
 
-      {/* Sessions / Notes Tabs */}
       <div className="card">
-        <div className="card-header">
-          <div className="flex gap-4 border-b border-gray-700">
+        <div className="card-header !pb-0">
+          <div className="tabs border-0">
             <button
+              type="button"
               onClick={() => setActiveTab('active')}
-              className={`pb-2 px-4 font-medium transition-colors ${
-                activeTab === 'active'
-                  ? 'text-blue-400 border-b-2 border-blue-400'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
+              className={`tab ${activeTab === 'active' ? 'tab-active' : ''}`}
             >
-              Active Sessions ({activeSessions.length})
+              Active sessions ({activeSessions.length})
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('completed')}
-              className={`pb-2 px-4 font-medium transition-colors ${
-                activeTab === 'completed'
-                  ? 'text-blue-400 border-b-2 border-blue-400'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
+              className={`tab ${activeTab === 'completed' ? 'tab-active' : ''}`}
             >
-              Completed Sessions ({completedSessions.length})
+              Completed ({completedSessions.length})
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('notes')}
-              className={`pb-2 px-4 font-medium transition-colors ${
-                activeTab === 'notes'
-                  ? 'text-yellow-400 border-b-2 border-yellow-400'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
+              className={`tab ${activeTab === 'notes' ? 'tab-active' : ''}`}
             >
-              📋 Site Notes ({notes.length})
+              Site notes ({notes.length})
             </button>
             <button
+              type="button"
               onClick={openPartsTab}
-              className={`pb-2 px-4 font-medium transition-colors ${
-                activeTab === 'parts'
-                  ? 'text-orange-400 border-b-2 border-orange-400'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
+              className={`tab ${activeTab === 'parts' ? 'tab-active' : ''}`}
             >
-              💾 Dell Parts
+              Dell Parts
             </button>
           </div>
         </div>
@@ -1330,7 +1488,22 @@ export default function CustomerDetail() {
               ) : (
                 (activeTab === 'active' ? activeSessions : completedSessions).map((session) => (
                   <tr key={session.id}>
-                    <td className="font-medium text-gray-200">{session.session_name}</td>
+                    <td className="font-medium text-gray-200">
+                      <div>{session.session_name}</div>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {session.node_scope === 'selected' && (
+                          <span className="badge badge-blue text-[10px]">Partial nodes</span>
+                        )}
+                        {Number(session.location_count) > 0 && (
+                          <span className="badge badge-gray text-[10px]">
+                            {session.location_count} location{Number(session.location_count) !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                        {Number(session.site_notes_count) > 0 && (
+                          <span className="badge badge-yellow text-[10px]">Site notes</span>
+                        )}
+                      </div>
+                    </td>
                     <td>
                       <span className="badge badge-blue">
                         {(session.session_type || 'PM').toUpperCase()}
@@ -1396,6 +1569,8 @@ export default function CustomerDetail() {
                         <button
                           onClick={() => {
                             setDuplicatingSession(session);
+                            setDupNodeScope('all');
+                            setDupNodeIds([]);
                             setShowDuplicateModal(true);
                           }}
                           className="text-yellow-400 hover:text-yellow-300 font-medium"
@@ -1615,11 +1790,15 @@ export default function CustomerDetail() {
       {/* New Session Modal */}
       {showNewSessionModal && (
         <div className="modal-backdrop">
-          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-md w-full mx-4 border border-gray-700">
+          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-2xl w-full mx-4 border border-gray-700 max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
               <h3 className="text-lg font-semibold text-gray-100">Create New Session</h3>
               <button
-                onClick={() => setShowNewSessionModal(false)}
+                onClick={() => {
+                  setShowNewSessionModal(false);
+                  setNewNodeScope('all');
+                  setNewNodeIds([]);
+                }}
                 className="text-gray-400 hover:text-gray-200 text-2xl"
               >
                 ×
@@ -1645,13 +1824,14 @@ export default function CustomerDetail() {
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="e.g. Sherwood"
+                    placeholder="e.g. Sherwood — Area 1"
                     value={newSessionSiteLabel}
                     onChange={(e) => setNewSessionSiteLabel(e.target.value)}
                     autoComplete="off"
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    Optional. Example: <strong className="text-gray-400">Sherwood PM-3/5/2026</strong>
+                    Optional. For split sites use the area in the name, e.g.{' '}
+                    <strong className="text-gray-400">Area 1 PM-3/5/2026</strong>
                   </p>
                 </div>
                 <div>
@@ -1678,6 +1858,36 @@ export default function CustomerDetail() {
                     className="form-input bg-gray-700 cursor-default"
                   />
                 </div>
+                {notes.length > 0 && (
+                  <div className="rounded-lg border border-amber-600/50 bg-amber-950/40 px-3 py-2.5 text-sm text-amber-100">
+                    <p className="font-medium text-amber-200">Please check site notes before beginning PM</p>
+                    <p className="mt-1 text-xs text-amber-100/80">
+                      This customer has {notes.length} site note{notes.length !== 1 ? 's' : ''} (access, hazards, contacts, etc.).
+                    </p>
+                    <button
+                      type="button"
+                      className="mt-2 text-xs font-medium text-amber-300 underline hover:text-amber-200"
+                      onClick={() => {
+                        setShowNewSessionModal(false);
+                        setActiveTab('notes');
+                        setSearchParams((prev) => {
+                          const next = new URLSearchParams(prev);
+                          next.set('tab', 'notes');
+                          return next;
+                        });
+                      }}
+                    >
+                      View site notes
+                    </button>
+                  </div>
+                )}
+                <SessionNodeScopePicker
+                  customerId={id}
+                  mode={newNodeScope}
+                  onModeChange={setNewNodeScope}
+                  selectedIds={newNodeIds}
+                  onSelectedIdsChange={setNewNodeIds}
+                />
               </div>
               <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
                 <button
@@ -1687,6 +1897,8 @@ export default function CustomerDetail() {
                     setNewSessionType('pm');
                     setNewSessionDate(new Date().toISOString().split('T')[0]);
                     setNewSessionSiteLabel('');
+                    setNewNodeScope('all');
+                    setNewNodeIds([]);
                   }}
                   className="btn btn-secondary"
                 >
@@ -1941,11 +2153,16 @@ export default function CustomerDetail() {
       {/* Duplicate Session Modal */}
       {showDuplicateModal && duplicatingSession && (
         <div className="modal-backdrop">
-          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-lg w-full mx-4 border border-gray-700">
+          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-2xl w-full mx-4 border border-gray-700 max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
               <h3 className="text-lg font-semibold text-gray-100">Duplicate Session</h3>
               <button
-                onClick={() => { setShowDuplicateModal(false); setDuplicatingSession(null); }}
+                onClick={() => {
+                  setShowDuplicateModal(false);
+                  setDuplicatingSession(null);
+                  setDupNodeScope('all');
+                  setDupNodeIds([]);
+                }}
                 className="text-gray-400 hover:text-gray-200 text-2xl"
               >&times;</button>
             </div>
@@ -1953,6 +2170,18 @@ export default function CustomerDetail() {
               <p className="text-gray-300">
                 Duplicating: <strong className="text-white">{duplicatingSession.session_name}</strong>
               </p>
+
+              <SessionNodeScopePicker
+                customerId={id}
+                sessionId={duplicatingSession.id}
+                mode={dupNodeScope}
+                onModeChange={setDupNodeScope}
+                selectedIds={dupNodeIds}
+                onSelectedIdsChange={setDupNodeIds}
+                allLabel="Include all nodes from this session"
+                selectedLabel="Include only specific ones from this session"
+                hint="“All” keeps the same node set as the source (including a prior custom scope). Checklist answers still clear."
+              />
               
               <div className="bg-green-900/30 border border-green-700/50 rounded-lg p-3">
                 <p className="text-sm font-medium text-green-300 mb-2">What gets KEPT:</p>
@@ -1983,7 +2212,12 @@ export default function CustomerDetail() {
             </div>
             <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
               <button
-                onClick={() => { setShowDuplicateModal(false); setDuplicatingSession(null); }}
+                onClick={() => {
+                  setShowDuplicateModal(false);
+                  setDuplicatingSession(null);
+                  setDupNodeScope('all');
+                  setDupNodeIds([]);
+                }}
                 className="btn btn-secondary"
               >
                 Cancel
@@ -1991,17 +2225,23 @@ export default function CustomerDetail() {
               <button
                 disabled={duplicateProgress}
                 onClick={async () => {
+                  if (dupNodeScope === 'selected' && dupNodeIds.length === 0) {
+                    showMessage('Select at least one node, or include all from this session', 'error');
+                    return;
+                  }
                   setDuplicateProgress(true);
                   try {
-                    const result = await api.request(`/api/sessions/${duplicatingSession.id}/duplicate`, {
-                      method: 'POST',
-                      body: JSON.stringify({}),
+                    const result = await api.duplicateSession(duplicatingSession.id, {
+                      node_scope: dupNodeScope,
+                      node_ids: dupNodeScope === 'selected' ? dupNodeIds : undefined,
                     });
                     if (result.success) {
                       soundSystem.playSuccess();
                       showMessage('Session duplicated successfully! Cabinets and assignments preserved.', 'success');
                       setShowDuplicateModal(false);
                       setDuplicatingSession(null);
+                      setDupNodeScope('all');
+                      setDupNodeIds([]);
                       loadCustomerData();
                     } else {
                       soundSystem.playError();
@@ -2009,7 +2249,7 @@ export default function CustomerDetail() {
                     }
                   } catch (error) {
                     soundSystem.playError();
-                    showMessage('Error duplicating session', 'error');
+                    showMessage(error?.message || 'Error duplicating session', 'error');
                   } finally {
                     setDuplicateProgress(false);
                   }

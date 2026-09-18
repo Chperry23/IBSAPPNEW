@@ -191,7 +191,7 @@ export default function DellPartsPanel({
         {needsRequest.length === 0 ? (
           <p className="text-sm text-gray-500 py-4">No Dell workstations waiting for a parts request.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-scroll-5-tall">
             <table className="table-dark">
               <thead>
                 <tr>
@@ -260,7 +260,7 @@ export default function DellPartsPanel({
         {dispatches.length === 0 ? (
           <p className="text-sm text-gray-500 py-4">No dispatches for this customer yet.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-scroll-5-tall">
             <table className="table-dark">
               <thead>
                 <tr>
@@ -366,7 +366,7 @@ export default function DellPartsPanel({
         ) : hddHistory.length === 0 ? (
           <p className="text-sm text-gray-500">No HDD replacements recorded yet.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-scroll-5-tall">
             <table className="table-dark">
               <thead>
                 <tr>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { LogIn, UserPlus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Login() {
@@ -27,7 +28,6 @@ export default function Login() {
     setError('');
 
     if (!isLogin) {
-      // Registration validation
       if (formData.password !== formData.confirmPassword) {
         setError('Passwords do not match');
         setLoading(false);
@@ -56,124 +56,143 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full">
-        <div className="bg-gray-800 rounded-lg shadow-2xl shadow-blue-500/20 p-8 border border-gray-700">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="flex justify-center mb-4">
-              <img src="/logo.svg" alt="" className="h-16 w-16 rounded-2xl shadow-lg shadow-blue-900/50" width={64} height={64} />
-            </div>
-            <h1 className="text-4xl font-bold mb-2">
-              <span className="gradient-text">PM APP</span>
-            </h1>
-            <p className="text-gray-400">
-              {isLogin ? 'Preventative Maintenance Documentation' : 'Create Your Account'}
-            </p>
-          </div>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[var(--app-bg)] px-4 py-12">
+      <div
+        className="pointer-events-none absolute inset-0 opacity-40"
+        style={{
+          background:
+            'radial-gradient(ellipse 80% 50% at 50% -20%, rgba(37, 99, 235, 0.35), transparent), radial-gradient(ellipse 60% 40% at 100% 100%, rgba(37, 99, 235, 0.12), transparent)',
+        }}
+      />
 
-          {/* Error Message */}
-          {error && (
-            <div className="mb-4 bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded-lg">
-              {error}
-            </div>
-          )}
+      <div className="relative w-full max-w-md">
+        <div className="mb-8 text-center">
+          <img
+            src="/logo.svg"
+            alt=""
+            className="mx-auto mb-4 h-16 w-16 rounded-2xl shadow-xl shadow-blue-900/40"
+            width={64}
+            height={64}
+          />
+          <h1 className="page-title justify-center text-3xl">Cabinet PM</h1>
+          <p className="mt-2 text-sm text-gray-400">ECI Industrial Solutions</p>
+          <p className="mt-1 text-sm text-gray-500">
+            {isLogin ? 'Sign in to continue field PM work' : 'Create an account for this tablet'}
+          </p>
+        </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="username" className="form-label">
-                Username *
-              </label>
-              <input
-                id="username"
-                name="username"
-                type="text"
-                required
-                value={formData.username}
-                onChange={handleChange}
-                className="form-input"
-                autoComplete="username"
-              />
+        <div className="card shadow-2xl shadow-black/40">
+          <div className="card-body space-y-6 p-8">
+            <div className="inline-flex w-full rounded-lg border border-[var(--border-strong)] bg-[var(--surface-inset)] p-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLogin(true);
+                  setError('');
+                }}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-semibold transition-all ${
+                  isLogin ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                <LogIn className="h-4 w-4" aria-hidden />
+                Sign in
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLogin(false);
+                  setError('');
+                }}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-semibold transition-all ${
+                  !isLogin ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                <UserPlus className="h-4 w-4" aria-hidden />
+                Register
+              </button>
             </div>
 
-            {!isLogin && (
+            {error && <div className="alert alert-error mb-0">{error}</div>}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label htmlFor="email" className="form-label">
-                  Email
+                <label htmlFor="username" className="form-label">
+                  Username *
                 </label>
                 <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  value={formData.email}
+                  id="username"
+                  name="username"
+                  type="text"
+                  required
+                  value={formData.username}
                   onChange={handleChange}
                   className="form-input"
-                  autoComplete="email"
+                  autoComplete="username"
+                  autoFocus
                 />
               </div>
-            )}
 
-            <div>
-              <label htmlFor="password" className="form-label">
-                Password *
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                value={formData.password}
-                onChange={handleChange}
-                className="form-input"
-                autoComplete={isLogin ? 'current-password' : 'new-password'}
-              />
-            </div>
+              {!isLogin && (
+                <div>
+                  <label htmlFor="email" className="form-label">
+                    Email
+                  </label>
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    className="form-input"
+                    autoComplete="email"
+                  />
+                </div>
+              )}
 
-            {!isLogin && (
               <div>
-                <label htmlFor="confirmPassword" className="form-label">
-                  Confirm Password *
+                <label htmlFor="password" className="form-label">
+                  Password *
                 </label>
                 <input
-                  id="confirmPassword"
-                  name="confirmPassword"
+                  id="password"
+                  name="password"
                   type="password"
                   required
-                  value={formData.confirmPassword}
+                  value={formData.password}
                   onChange={handleChange}
                   className="form-input"
-                  autoComplete="new-password"
+                  autoComplete={isLogin ? 'current-password' : 'new-password'}
                 />
               </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn btn-primary w-full"
-            >
-              {loading ? 'Please wait...' : isLogin ? 'Login' : 'Register'}
-            </button>
-          </form>
+              {!isLogin && (
+                <div>
+                  <label htmlFor="confirmPassword" className="form-label">
+                    Confirm password *
+                  </label>
+                  <input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type="password"
+                    required
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    className="form-input"
+                    autoComplete="new-password"
+                  />
+                </div>
+              )}
 
-          {/* Toggle Login/Register */}
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-400">
-              {isLogin ? "Don't have an account? " : 'Already have an account? '}
-              <button
-                onClick={() => {
-                  setIsLogin(!isLogin);
-                  setError('');
-                  setFormData({ username: '', email: '', password: '', confirmPassword: '' });
-                }}
-                className="text-blue-400 font-medium hover:text-blue-300 transition-colors"
-              >
-                {isLogin ? 'Register here' : 'Login here'}
+              <button type="submit" disabled={loading} className="btn btn-primary w-full">
+                {loading ? 'Please wait…' : isLogin ? 'Sign in' : 'Create account'}
               </button>
-            </p>
+            </form>
           </div>
         </div>
+
+        <p className="mt-6 text-center text-xs text-gray-500">
+          Internal use · Cabinet preventive maintenance
+        </p>
       </div>
     </div>
   );

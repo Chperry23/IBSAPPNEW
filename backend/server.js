@@ -88,6 +88,7 @@ function createApp(options = {}) {
   app.use('/api/sessions', nodeTrackerRoutes);
   app.use('/api/sessions', diagnosticsRoutes);
   app.use('/api/sessions', pmNotesRoutes);
+  app.use('/api/analytics', require('./routes/analytics'));
   app.use('/', iiDocumentsRoutes);
   app.use('/', systemRegistryRoutes);
   app.use('/api/customers', systemRegistrySyncRoutes);

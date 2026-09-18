@@ -1606,14 +1606,12 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                     );
                   };
 
-                  // Select all / deselect all in pool
-                  const allChecked = ciocPool.length > 0 && ciocPool.every(d => checkedSet.has(deviceKey(d)));
-                  const toggleAllChecked = () => {
-                    if (allChecked) {
-                      setCiocCheckedKeys([]);
-                    } else {
-                      setCiocCheckedKeys(ciocPool.map(d => deviceKey(d)));
-                    }
+                  // Select all / unselect all in pool
+                  const selectAllChecked = () => {
+                    setCiocCheckedKeys(ciocPool.map((d) => deviceKey(d)));
+                  };
+                  const unselectAllChecked = () => {
+                    setCiocCheckedKeys([]);
                   };
 
                   // Charms for the active baseplate
@@ -1695,10 +1693,23 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                             Step 2 — Select which to add error to ({ciocCheckedKeys.length} of {ciocPool.length})
                           </div>
                           {ciocPool.length > 0 && (
-                            <button type="button" onClick={toggleAllChecked}
-                              className="text-xs text-blue-400 hover:text-blue-300">
-                              {allChecked ? 'Deselect all' : 'Select all'}
-                            </button>
+                            <div className="flex items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={selectAllChecked}
+                                className="text-xs text-blue-400 hover:text-blue-300"
+                              >
+                                Select all
+                              </button>
+                              <button
+                                type="button"
+                                onClick={unselectAllChecked}
+                                disabled={ciocCheckedKeys.length === 0}
+                                className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                Unselect all
+                              </button>
+                            </div>
                           )}
                         </div>
                         {ciocPool.length === 0 ? (
@@ -1784,13 +1795,35 @@ export default function DiagnosticsAdvanced({ sessionId, isCompleted, customerId
                   </h4>
                   {(selectedCard.devices?.length > 0) ? (
                     <>
-                      <input
-                        type="text"
-                        placeholder="Search devices..."
-                        value={deviceSearch}
-                        onChange={(e) => setDeviceSearch(e.target.value)}
-                        className="form-input mb-3"
-                      />
+                      <div className="mb-3 flex flex-wrap items-center gap-3">
+                        <input
+                          type="text"
+                          placeholder="Search devices..."
+                          value={deviceSearch}
+                          onChange={(e) => setDeviceSearch(e.target.value)}
+                          className="form-input min-w-[12rem] flex-1"
+                        />
+                        <button
+                          type="button"
+                          className="text-xs text-blue-400 hover:text-blue-300 whitespace-nowrap"
+                          onClick={() => {
+                            const filtered = getFilteredDevices(selectedCard.devices);
+                            const existingKeys = new Set(selectedDevices.map(deviceKey));
+                            const toAdd = filtered.filter((dev) => !existingKeys.has(deviceKey(dev)));
+                            setSelectedDevices([...selectedDevices, ...toAdd]);
+                          }}
+                        >
+                          Select all
+                        </button>
+                        <button
+                          type="button"
+                          className="text-xs text-blue-400 hover:text-blue-300 whitespace-nowrap disabled:opacity-40"
+                          disabled={selectedDevices.length === 0}
+                          onClick={() => setSelectedDevices([])}
+                        >
+                          Unselect all
+                        </button>
+                      </div>
                       <div className="overflow-auto border border-gray-600 rounded-lg" style={{ maxHeight: '40vh' }}>
                         <table className="relative w-full text-sm border-collapse">
                           <thead>

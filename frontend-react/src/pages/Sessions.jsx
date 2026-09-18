@@ -1,9 +1,162 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { Plus, X, Check, Copy, Pencil, Trash2, ExternalLink, MoreHorizontal, MapPin, StickyNote, GitBranch } from 'lucide-react';
 import Layout from '../components/Layout';
 import api from '../services/api';
 import soundSystem from '../utils/sounds';
 import { formatSessionNameWithLabel, defaultDuplicateSessionName } from '../utils/sessionName';
+import SessionNodeScopePicker from '../components/SessionNodeScopePicker';
+
+function SessionMetaTags({ session }) {
+  const locationCount = Number(session.location_count) || 0;
+  const notesCount = Number(session.site_notes_count) || 0;
+  const partialNodes = session.node_scope === 'selected';
+  const isIi = session.session_type === 'ii';
+
+  if (!locationCount && !notesCount && !partialNodes && !isIi) return null;
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      {isIi && <span className="badge badge-gray">I&amp;I</span>}
+      {partialNodes && (
+        <span className="badge badge-blue inline-flex items-center gap-1" title="Only selected nodes are in scope">
+          <GitBranch className="h-3 w-3" aria-hidden />
+          Partial nodes
+        </span>
+      )}
+      {locationCount > 0 && (
+        <span className="badge badge-gray inline-flex items-center gap-1" title={`${locationCount} location(s)`}>
+          <MapPin className="h-3 w-3" aria-hidden />
+          {locationCount} location{locationCount !== 1 ? 's' : ''}
+        </span>
+      )}
+      {notesCount > 0 && (
+        <Link
+          to={`/customer/${session.customer_id}?tab=notes`}
+          className="badge badge-yellow inline-flex items-center gap-1 hover:brightness-110"
+          title="Customer has site notes — review before PM"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <StickyNote className="h-3 w-3" aria-hidden />
+          Site notes
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function SessionRowActions({
+  session,
+  menuOpen,
+  onToggleMenu,
+  onCloseMenu,
+  onEdit,
+  onDuplicate,
+  onComplete,
+  onDelete,
+}) {
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) onCloseMenu();
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') onCloseMenu();
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen, onCloseMenu]);
+
+  const isActive = (session.status || 'active') === 'active';
+
+  return (
+    <div className="flex items-center gap-1.5 whitespace-nowrap" ref={menuRef}>
+      <Link to={`/session/${session.id}`} className="btn btn-primary btn-sm">
+        <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+        Open
+      </Link>
+      <div className="relative">
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm !px-2"
+          aria-label="More actions"
+          aria-expanded={menuOpen}
+          aria-haspopup="menu"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleMenu();
+          }}
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden />
+        </button>
+        {menuOpen && (
+          <div
+            role="menu"
+            className="absolute right-0 z-30 mt-1 min-w-[11rem] overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] py-1 shadow-xl shadow-black/40"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-200 hover:bg-[var(--surface-hover)]"
+              onClick={() => {
+                onCloseMenu();
+                onEdit();
+              }}
+            >
+              <Pencil className="h-3.5 w-3.5 text-gray-400" aria-hidden />
+              Edit
+            </button>
+            {isActive && (
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-emerald-300 hover:bg-[var(--surface-hover)]"
+                onClick={() => {
+                  onCloseMenu();
+                  onComplete();
+                }}
+              >
+                <Check className="h-3.5 w-3.5" aria-hidden />
+                Complete
+              </button>
+            )}
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-200 hover:bg-[var(--surface-hover)]"
+              onClick={() => {
+                onCloseMenu();
+                onDuplicate();
+              }}
+            >
+              <Copy className="h-3.5 w-3.5 text-gray-400" aria-hidden />
+              Duplicate
+            </button>
+            <div className="my-1 border-t border-[var(--border-subtle)]" />
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-300 hover:bg-red-950/40"
+              onClick={() => {
+                onCloseMenu();
+                onDelete();
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden />
+              Delete
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function Sessions() {
   const [searchParams] = useSearchParams();
@@ -18,6 +171,7 @@ export default function Sessions() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedSession, setSelectedSession] = useState(null);
   const [message, setMessage] = useState(null);
+  const [actionsMenuId, setActionsMenuId] = useState(null);
   const [newSessionSiteLabel, setNewSessionSiteLabel] = useState('');
   const [newSessionDate, setNewSessionDate] = useState(() =>
     new Date().toISOString().split('T')[0]
@@ -26,6 +180,13 @@ export default function Sessions() {
   const [newSessionCustomerId, setNewSessionCustomerId] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [newNodeScope, setNewNodeScope] = useState('all');
+  const [newNodeIds, setNewNodeIds] = useState([]);
+  const [dupNodeScope, setDupNodeScope] = useState('all');
+  const [dupNodeIds, setDupNodeIds] = useState([]);
+  const [dupSessionName, setDupSessionName] = useState('');
+  const [createSiteNotesCount, setCreateSiteNotesCount] = useState(0);
+  const [createSiteNotesLoading, setCreateSiteNotesLoading] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -36,9 +197,35 @@ export default function Sessions() {
       setNewSessionCustomerId('');
       setCustomerSearch('');
       setShowCustomerDropdown(false);
+      setNewNodeScope('all');
+      setNewNodeIds([]);
+      setCreateSiteNotesCount(0);
       setShowNewModal(true);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!showNewModal || !newSessionCustomerId) {
+      setCreateSiteNotesCount(0);
+      setCreateSiteNotesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCreateSiteNotesLoading(true);
+    (async () => {
+      try {
+        const notes = await api.getCustomerNotes(newSessionCustomerId);
+        if (!cancelled) setCreateSiteNotesCount(Array.isArray(notes) ? notes.length : 0);
+      } catch {
+        if (!cancelled) setCreateSiteNotesCount(0);
+      } finally {
+        if (!cancelled) setCreateSiteNotesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showNewModal, newSessionCustomerId]);
 
   const loadData = async () => {
     try {
@@ -67,6 +254,10 @@ export default function Sessions() {
       showMessage('Please select a customer', 'error');
       return;
     }
+    if (newNodeScope === 'selected' && newNodeIds.length === 0) {
+      showMessage('Select at least one node, or choose include all nodes', 'error');
+      return;
+    }
     const data = {
       customer_id: newSessionCustomerId,
       session_type: newSessionType,
@@ -75,6 +266,8 @@ export default function Sessions() {
         newSessionType,
         newSessionDate
       ),
+      node_scope: newNodeScope,
+      node_ids: newNodeScope === 'selected' ? newNodeIds : undefined,
     };
 
     try {
@@ -87,6 +280,8 @@ export default function Sessions() {
         setNewSessionType('pm');
         setNewSessionCustomerId('');
         setCustomerSearch('');
+        setNewNodeScope('all');
+        setNewNodeIds([]);
         loadData();
         showMessage('PM Session created successfully', 'success');
       } else {
@@ -95,7 +290,7 @@ export default function Sessions() {
       }
     } catch (error) {
       soundSystem.playError();
-      showMessage('Error creating session', 'error');
+      showMessage(error?.message || 'Error creating session', 'error');
     }
   };
 
@@ -139,15 +334,23 @@ export default function Sessions() {
 
   const handleDuplicateSession = async (e) => {
     e.preventDefault();
-    const formData = new FormData(e.target);
-    const newName = formData.get('session_name');
+    if (dupNodeScope === 'selected' && dupNodeIds.length === 0) {
+      showMessage('Select at least one node, or include all from this session', 'error');
+      return;
+    }
 
     try {
-      const result = await api.duplicateSession(selectedSession.id, newName);
+      const result = await api.duplicateSession(selectedSession.id, {
+        session_name: dupSessionName,
+        node_scope: dupNodeScope,
+        node_ids: dupNodeScope === 'selected' ? dupNodeIds : undefined,
+      });
       if (result.success) {
         soundSystem.playSuccess();
         setShowDuplicateModal(false);
         setSelectedSession(null);
+        setDupNodeScope('all');
+        setDupNodeIds([]);
         loadData();
         showMessage('Session duplicated successfully', 'success');
       } else {
@@ -156,7 +359,7 @@ export default function Sessions() {
       }
     } catch (error) {
       soundSystem.playError();
-      showMessage('Error duplicating session', 'error');
+      showMessage(error?.message || 'Error duplicating session', 'error');
     }
   };
 
@@ -216,8 +419,8 @@ export default function Sessions() {
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="flex h-64 items-center justify-center">
+          <div className="spinner h-12 w-12" />
         </div>
       </Layout>
     );
@@ -225,47 +428,44 @@ export default function Sessions() {
 
   return (
     <Layout>
-      {/* Header */}
-      <div className="flex justify-between items-center mb-8 animate-fadeIn">
-        <div>
-          <h1 className="text-4xl font-bold gradient-text mb-2">📋 PM Sessions</h1>
-          <p className="text-gray-400">Manage preventative maintenance sessions</p>
+      <div className="page-header">
+        <div className="page-header-text">
+          <h1 className="page-title">PM Sessions</h1>
+          <p className="page-subtitle">Preventive maintenance and field visit sessions</p>
         </div>
-        <button
-          onClick={() => {
-            setNewSessionSiteLabel('');
-            setNewSessionDate(new Date().toISOString().split('T')[0]);
-            setNewSessionType('pm');
-            setShowNewModal(true);
-          }}
-          className="btn btn-primary"
-        >
-          ➕ New PM Session
-        </button>
+        <div className="page-actions">
+          <button
+            type="button"
+            onClick={() => {
+              setNewSessionSiteLabel('');
+              setNewSessionDate(new Date().toISOString().split('T')[0]);
+              setNewSessionType('pm');
+              setShowNewModal(true);
+            }}
+            className="btn btn-primary"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            New PM session
+          </button>
+        </div>
       </div>
 
-      {/* Message */}
       {message && (
         <div
-          className={`mb-6 px-4 py-3 rounded-lg ${
-            message.type === 'success'
-              ? 'bg-green-900/50 text-green-200 border border-green-500'
-              : message.type === 'error'
-              ? 'bg-red-900/50 text-red-200 border border-red-500'
-              : 'bg-blue-900/50 text-blue-200 border border-blue-500'
+          className={`alert ${
+            message.type === 'success' ? 'alert-success' : message.type === 'error' ? 'alert-error' : 'alert-info'
           }`}
         >
           {message.text}
         </div>
       )}
 
-      {/* Filters */}
       <div className="card mb-6">
         <div className="card-body">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <input
               type="text"
-              placeholder="Search sessions..."
+              placeholder="Search sessions…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="form-input"
@@ -273,18 +473,18 @@ export default function Sessions() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="form-input"
+              className="form-select"
             >
-              <option value="">All Statuses</option>
+              <option value="">All statuses</option>
               <option value="active">Active</option>
               <option value="completed">Completed</option>
             </select>
             <select
               value={customerFilter}
               onChange={(e) => setCustomerFilter(e.target.value)}
-              className="form-input"
+              className="form-select"
             >
-              <option value="">All Customers</option>
+              <option value="">All customers</option>
               {customers.map((customer) => (
                 <option key={customer.id} value={customer.id}>
                   {customer.name}
@@ -324,6 +524,7 @@ export default function Sessions() {
                   <tr key={session.id}>
                     <td>
                       <div className="font-medium text-gray-200">{session.session_name}</div>
+                      <SessionMetaTags session={session} />
                     </td>
                     <td>
                       <Link
@@ -354,8 +555,8 @@ export default function Sessions() {
                                 <span>0 / 0</span>
                                 <span className={completed ? 'text-green-400' : 'text-gray-500'}>{completed ? '100%' : '—'}</span>
                               </div>
-                              <div className="w-full bg-gray-700 rounded-full h-1.5">
-                                <div className={`h-1.5 rounded-full ${completed ? 'bg-green-500 w-full' : 'w-0'}`} />
+                              <div className="w-full bg-[var(--surface-inset)] rounded-full h-1.5">
+                                <div className={`h-1.5 rounded-full ${completed ? 'bg-emerald-500 w-full' : 'w-0'}`} />
                               </div>
                             </div>
                           );
@@ -368,9 +569,9 @@ export default function Sessions() {
                               <span>{done} / {total}</span>
                               <span className={allDone ? 'text-green-400' : ''}>{pct}%</span>
                             </div>
-                            <div className="w-full bg-gray-700 rounded-full h-1.5">
+                            <div className="w-full bg-[var(--surface-inset)] rounded-full h-1.5">
                               <div
-                                className={`h-1.5 rounded-full transition-all ${allDone ? 'bg-green-500' : 'bg-blue-500'}`}
+                                className={`h-1.5 rounded-full transition-all ${allDone ? 'bg-emerald-500' : 'bg-blue-500'}`}
                                 style={{ width: `${pct}%` }}
                               />
                             </div>
@@ -380,46 +581,27 @@ export default function Sessions() {
                     </td>
                     <td>{new Date(session.created_at).toLocaleDateString()}</td>
                     <td>
-                      <div className="flex gap-3">
-                        <Link
-                          to={`/session/${session.id}`}
-                          className="text-blue-400 hover:text-blue-300 font-medium"
-                        >
-                          Open
-                        </Link>
-                        <button
-                          onClick={() => {
-                            setSelectedSession(session);
-                            setShowEditModal(true);
-                          }}
-                          className="text-blue-400 hover:text-blue-300 font-medium"
-                        >
-                          Edit
-                        </button>
-                        {session.status === 'active' && (
-                          <button
-                            onClick={() => handleCompleteSession(session.id)}
-                            className="text-green-400 hover:text-green-300 font-medium"
-                          >
-                            Complete
-                          </button>
-                        )}
-                        <button
-                          onClick={() => {
-                            setSelectedSession(session);
-                            setShowDuplicateModal(true);
-                          }}
-                          className="text-gray-400 hover:text-gray-300 font-medium"
-                        >
-                          Duplicate
-                        </button>
-                        <button
-                          onClick={() => handleDeleteSession(session.id)}
-                          className="text-red-400 hover:text-red-300 font-medium"
-                        >
-                          Delete
-                        </button>
-                      </div>
+                      <SessionRowActions
+                        session={session}
+                        menuOpen={actionsMenuId === session.id}
+                        onToggleMenu={() =>
+                          setActionsMenuId((id) => (id === session.id ? null : session.id))
+                        }
+                        onCloseMenu={() => setActionsMenuId(null)}
+                        onEdit={() => {
+                          setSelectedSession(session);
+                          setShowEditModal(true);
+                        }}
+                        onDuplicate={() => {
+                          setSelectedSession(session);
+                          setDupSessionName(defaultDuplicateSessionName(session.session_name));
+                          setDupNodeScope('all');
+                          setDupNodeIds([]);
+                          setShowDuplicateModal(true);
+                        }}
+                        onComplete={() => handleCompleteSession(session.id)}
+                        onDelete={() => handleDeleteSession(session.id)}
+                      />
                     </td>
                   </tr>
                 ))
@@ -429,33 +611,35 @@ export default function Sessions() {
         </div>
       </div>
 
-      {/* New Session Modal */}
       {showNewModal && (
         <div className="modal-backdrop">
-          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-md w-full mx-4 border border-gray-700">
-            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-100">New PM Session</h3>
+          <div className="modal-panel max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="modal-panel-header">
+              <h3 className="text-lg font-semibold text-gray-100">New PM session</h3>
               <button
+                type="button"
                 onClick={() => {
                   setShowNewModal(false);
                   setNewSessionCustomerId('');
                   setCustomerSearch('');
                   setShowCustomerDropdown(false);
+                  setNewNodeScope('all');
+                  setNewNodeIds([]);
                 }}
-                className="text-gray-400 hover:text-gray-200 text-2xl"
+                className="btn-icon"
+                aria-label="Close"
               >
-                ×
+                <X className="h-4 w-4" />
               </button>
             </div>
             <form onSubmit={handleCreateSession}>
-              <div className="px-6 py-4 space-y-4">
-                {/* Searchable customer picker */}
+              <div className="modal-panel-body space-y-4">
                 <div className="relative">
                   <label className="form-label">Customer *</label>
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="Search customers..."
+                    placeholder="Search customers…"
                     value={customerSearch}
                     autoComplete="off"
                     onFocus={() => setShowCustomerDropdown(true)}
@@ -463,37 +647,57 @@ export default function Sessions() {
                     onChange={(e) => {
                       setCustomerSearch(e.target.value);
                       setNewSessionCustomerId('');
+                      setNewNodeScope('all');
+                      setNewNodeIds([]);
                       setShowCustomerDropdown(true);
                     }}
                   />
                   {newSessionCustomerId && (
-                    <div className="mt-1 text-xs text-green-400">
-                      ✓ {customers.find(c => String(c.id) === String(newSessionCustomerId))?.name}
+                    <div className="mt-1 text-xs text-emerald-400">
+                      Selected: {customers.find((c) => String(c.id) === String(newSessionCustomerId))?.name}
+                    </div>
+                  )}
+                  {newSessionCustomerId && !createSiteNotesLoading && createSiteNotesCount > 0 && (
+                    <div className="mt-3 rounded-lg border border-amber-600/50 bg-amber-950/40 px-3 py-2.5 text-sm text-amber-100">
+                      <p className="font-medium text-amber-200">Please check site notes before beginning PM</p>
+                      <p className="mt-1 text-xs text-amber-100/80">
+                        This customer has {createSiteNotesCount} site note
+                        {createSiteNotesCount !== 1 ? 's' : ''} (access, hazards, contacts, etc.).
+                      </p>
+                      <Link
+                        to={`/customer/${newSessionCustomerId}?tab=notes`}
+                        className="mt-2 inline-flex text-xs font-medium text-amber-300 underline hover:text-amber-200"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open site notes
+                      </Link>
                     </div>
                   )}
                   {showCustomerDropdown && (
-                    <div className="absolute z-50 w-full mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-xl max-h-52 overflow-y-auto">
+                    <div className="absolute z-50 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] shadow-xl">
                       {customers
-                        .filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()))
+                        .filter((c) => c.name.toLowerCase().includes(customerSearch.toLowerCase()))
                         .sort((a, b) => a.name.localeCompare(b.name))
-                        .map(c => (
+                        .map((c) => (
                           <button
                             key={c.id}
                             type="button"
-                            className="w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-blue-600 hover:text-white transition-colors"
+                            className="w-full px-4 py-2 text-left text-sm text-gray-200 transition-colors hover:bg-blue-600 hover:text-white"
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => {
                               setNewSessionCustomerId(String(c.id));
                               setCustomerSearch(c.name);
+                              setNewNodeScope('all');
+                              setNewNodeIds([]);
                               setShowCustomerDropdown(false);
                             }}
                           >
                             {c.name}
                           </button>
                         ))}
-                      {customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase())).length === 0 && (
-                        <div className="px-4 py-3 text-sm text-gray-400">No customers found</div>
-                      )}
+                      {customers.filter((c) => c.name.toLowerCase().includes(customerSearch.toLowerCase())).length ===
+                        0 && <div className="px-4 py-3 text-sm text-gray-400">No customers found</div>}
                     </div>
                   )}
                 </div>
@@ -513,11 +717,14 @@ export default function Sessions() {
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="e.g. Sherwood"
+                    placeholder="e.g. Sherwood — Area 1"
                     value={newSessionSiteLabel}
                     onChange={(e) => setNewSessionSiteLabel(e.target.value)}
                     autoComplete="off"
                   />
+                  <p className="mt-1 text-xs text-gray-500">
+                    For split sites, put the area in the label (e.g. Area 1) so you can tell sessions apart by name.
+                  </p>
                 </div>
                 <div>
                   <label className="form-label">Session Date *</label>
@@ -539,20 +746,23 @@ export default function Sessions() {
                       newSessionType,
                       newSessionDate
                     )}
-                    className="form-input bg-gray-700 cursor-default text-gray-200"
+                    className="form-input cursor-default bg-[var(--surface-hover)] text-gray-200"
                   />
                 </div>
+                <SessionNodeScopePicker
+                  customerId={newSessionCustomerId || null}
+                  mode={newNodeScope}
+                  onModeChange={setNewNodeScope}
+                  selectedIds={newNodeIds}
+                  onSelectedIdsChange={setNewNodeIds}
+                />
               </div>
-              <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowNewModal(false)}
-                  className="btn btn-secondary"
-                >
+              <div className="modal-panel-footer">
+                <button type="button" onClick={() => setShowNewModal(false)} className="btn btn-secondary">
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary">
-                  Create Session
+                  Create session
                 </button>
               </div>
             </form>
@@ -560,48 +770,59 @@ export default function Sessions() {
         </div>
       )}
 
-      {/* Duplicate Session Modal */}
       {showDuplicateModal && selectedSession && (
         <div className="modal-backdrop">
-          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-md w-full mx-4 border border-gray-700">
-            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-100">Duplicate Session</h3>
+          <div className="modal-panel max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="modal-panel-header">
+              <h3 className="text-lg font-semibold text-gray-100">Duplicate session</h3>
               <button
+                type="button"
                 onClick={() => {
                   setShowDuplicateModal(false);
                   setSelectedSession(null);
+                  setDupNodeScope('all');
+                  setDupNodeIds([]);
                 }}
-                className="text-gray-400 hover:text-gray-200 text-2xl"
+                className="btn-icon"
+                aria-label="Close"
               >
-                ×
+                <X className="h-4 w-4" />
               </button>
             </div>
             <form onSubmit={handleDuplicateSession}>
-              <div className="px-6 py-4 space-y-4">
+              <div className="modal-panel-body space-y-4">
                 <div>
-                  <label className="form-label">New Session Name</label>
+                  <label className="form-label">New session name</label>
                   <input
                     type="text"
-                    name="session_name"
                     required
-                    defaultValue={defaultDuplicateSessionName(
-                      selectedSession.session_name
-                    )}
+                    value={dupSessionName}
+                    onChange={(e) => setDupSessionName(e.target.value)}
                     className="form-input"
                   />
                 </div>
-                <div className="bg-blue-900/30 border border-blue-500 rounded-lg p-4">
-                  <h4 className="text-sm font-medium text-blue-300 mb-2">
-                    What will be duplicated:
-                  </h4>
-                  <ul className="text-sm text-blue-200 space-y-1">
-                    <li>• Session structure and cabinet locations</li>
-                    <li>• Number and types of components</li>
-                    <li>• All form fields will be reset to default</li>
+                <SessionNodeScopePicker
+                  customerId={selectedSession.customer_id}
+                  sessionId={selectedSession.id}
+                  mode={dupNodeScope}
+                  onModeChange={setDupNodeScope}
+                  selectedIds={dupNodeIds}
+                  onSelectedIdsChange={setDupNodeIds}
+                  allLabel="Include all nodes from this session"
+                  selectedLabel="Include only specific ones from this session"
+                  hint="“All” keeps the same node set as the source (including a prior custom scope). Checklist answers still clear."
+                />
+                <div className="rounded-lg border border-blue-500/40 bg-blue-950/30 p-4">
+                  <h4 className="mb-2 text-sm font-medium text-blue-300">What will be duplicated</h4>
+                  <ul className="space-y-1 text-sm text-blue-200">
+                    <li>Session structure and cabinet locations</li>
+                    <li>Number and types of components</li>
+                    <li>Form fields reset to default</li>
+                    <li>Node checklist answers cleared</li>
                   </ul>
                 </div>
               </div>
-              <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
+              <div className="modal-panel-footer">
                 <button
                   type="button"
                   onClick={() => {
@@ -613,7 +834,7 @@ export default function Sessions() {
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-success">
-                  Create Duplicate
+                  Create duplicate
                 </button>
               </div>
             </form>
@@ -621,26 +842,27 @@ export default function Sessions() {
         </div>
       )}
 
-      {/* Edit Session Modal */}
       {showEditModal && selectedSession && (
         <div className="modal-backdrop">
-          <div className="bg-gray-800 rounded-lg shadow-2xl max-w-md w-full mx-4 border border-gray-700">
-            <div className="px-6 py-4 border-b border-gray-700 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-100">Edit PM Session</h3>
+          <div className="modal-panel max-w-md w-full mx-4">
+            <div className="modal-panel-header">
+              <h3 className="text-lg font-semibold text-gray-100">Edit PM session</h3>
               <button
+                type="button"
                 onClick={() => {
                   setShowEditModal(false);
                   setSelectedSession(null);
                 }}
-                className="text-gray-400 hover:text-gray-200 text-2xl"
+                className="btn-icon"
+                aria-label="Close"
               >
-                ×
+                <X className="h-4 w-4" />
               </button>
             </div>
             <form onSubmit={handleEditSession}>
-              <div className="px-6 py-4 space-y-4">
+              <div className="modal-panel-body space-y-4">
                 <div>
-                  <label className="form-label">Session Name *</label>
+                  <label className="form-label">Session name *</label>
                   <input
                     type="text"
                     name="session_name"
@@ -651,17 +873,13 @@ export default function Sessions() {
                 </div>
                 <div>
                   <label className="form-label">Status</label>
-                  <select
-                    name="status"
-                    defaultValue={selectedSession.status || 'active'}
-                    className="form-select"
-                  >
+                  <select name="status" defaultValue={selectedSession.status || 'active'} className="form-select">
                     <option value="active">Active</option>
                     <option value="completed">Completed</option>
                   </select>
                 </div>
               </div>
-              <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
+              <div className="modal-panel-footer">
                 <button
                   type="button"
                   onClick={() => {
@@ -673,7 +891,7 @@ export default function Sessions() {
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary">
-                  Save Changes
+                  Save changes
                 </button>
               </div>
             </form>

@@ -303,8 +303,12 @@ initializeDatabase()
             }
         }
 
-        // Catch-all → serve React
+        // Catch-all → serve React (never swallow API/auth endpoints)
         app.get('*', (req, res) => {
+            const p = req.path || '';
+            if (p.startsWith('/api') || p === '/login' || p === '/logout' || p === '/register') {
+                return res.status(404).json({ error: 'Not found' });
+            }
             res.sendFile(path.join(reactBuildPath, 'index.html'), (err) => {
                 if (err) res.status(500).send('Error loading page');
             });

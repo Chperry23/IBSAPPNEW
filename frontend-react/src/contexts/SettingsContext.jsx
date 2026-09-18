@@ -1,12 +1,14 @@
 import { createContext, useCallback, useContext, useMemo, useState, useEffect } from 'react';
 
 const STORAGE_KEY = 'pm-app-settings';
-const SETTINGS_VERSION = 2;
+const SETTINGS_VERSION = 3;
 
 const defaultSettings = {
   settingsVersion: SETTINGS_VERSION,
   /** @type {'sidebar' | 'top'} */
   navLayout: 'sidebar',
+  /** @type {'cards' | 'list'} */
+  customersView: 'cards',
 };
 
 function loadStored() {
@@ -15,14 +17,15 @@ function loadStored() {
     if (!raw) return { ...defaultSettings };
     const parsed = JSON.parse(raw);
     let navLayout = parsed.navLayout === 'top' ? 'top' : 'sidebar';
-    // Sidebar is the app default; reset one-time for settings saved before v2
-    if ((parsed.settingsVersion ?? 1) < SETTINGS_VERSION) {
+    if ((parsed.settingsVersion ?? 1) < 2) {
       navLayout = 'sidebar';
     }
+    const customersView = parsed.customersView === 'list' ? 'list' : 'cards';
     return {
       ...defaultSettings,
       ...parsed,
       navLayout,
+      customersView,
       settingsVersion: SETTINGS_VERSION,
     };
   } catch {
@@ -43,12 +46,18 @@ export function SettingsProvider({ children }) {
     setSettings((s) => ({ ...s, navLayout }));
   }, []);
 
+  const setCustomersView = useCallback((customersView) => {
+    setSettings((s) => ({ ...s, customersView: customersView === 'list' ? 'list' : 'cards' }));
+  }, []);
+
   const value = useMemo(
     () => ({
       navLayout: settings.navLayout,
       setNavLayout,
+      customersView: settings.customersView,
+      setCustomersView,
     }),
-    [settings.navLayout, setNavLayout]
+    [settings.navLayout, settings.customersView, setNavLayout, setCustomersView]
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

@@ -13,6 +13,17 @@ class ApiService {
         },
       });
 
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await response.text();
+        const snippet = text.slice(0, 80).replace(/\s+/g, ' ');
+        throw new Error(
+          response.status === 404
+            ? `API not found (${endpoint}). Restart the tablet server to load new routes.`
+            : `Expected JSON from ${endpoint} but got ${contentType || 'non-JSON'} (${response.status}): ${snippet}`
+        );
+      }
+
       const data = await response.json();
       return data;
     } catch (error) {
@@ -43,6 +54,17 @@ class ApiService {
   // Dashboard
   async getDashboardStats() {
     return this.request('/api/dashboard/stats');
+  }
+
+  async getAnalyticsOverview(weeks = 12) {
+    return this.request(`/api/analytics/overview?weeks=${encodeURIComponent(weeks)}`);
+  }
+
+  async sessionTimer(id, body) {
+    return this.request(`/api/sessions/${id}/timer`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
   }
 
   // Customers
@@ -166,10 +188,14 @@ class ApiService {
     });
   }
 
-  async duplicateSession(id, newSessionName) {
+  async duplicateSession(id, newSessionNameOrOptions) {
+    const body =
+      typeof newSessionNameOrOptions === 'object' && newSessionNameOrOptions !== null
+        ? newSessionNameOrOptions
+        : { session_name: newSessionNameOrOptions };
     return this.request(`/api/sessions/${id}/duplicate`, {
       method: 'POST',
-      body: JSON.stringify({ session_name: newSessionName }),
+      body: JSON.stringify(body),
     });
   }
 
@@ -212,8 +238,9 @@ class ApiService {
   }
 
   // Nodes
-  async getNodes(customerId) {
-    return this.request(`/api/customers/${customerId}/nodes`);
+  async getNodes(customerId, sessionId) {
+    const q = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
+    return this.request(`/api/customers/${customerId}/nodes${q}`);
   }
 
   async createNode(customerId, nodeData) {

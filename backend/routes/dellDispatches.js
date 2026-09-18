@@ -10,7 +10,7 @@ const requireAuth = require('../middleware/auth');
 const { syncFieldsForInsert, afterSyncableWrite, softDeleteSyncRow } = require('../utils/sync-write-helper');
 const { lookupWarranty, lookupWarrantyBatched } = require('../services/dell-warranty');
 const sdsr = require('../services/dell-sdsr');
-const { loadDellEnv } = require('../utils/dell-env');
+const { loadDellEnv, getDellDispatchDefaults } = require('../utils/dell-env');
 
 const ID_WORKSTATION = 1000000;
 const OPEN_STATUSES = new Set(['draft', 'queued', 'submitted', 'issued', 'shipped']);
@@ -93,18 +93,51 @@ router.get('/api/dell-dispatches/status-summary', requireAuth, async (req, res) 
   }
 });
 
-/** GET /api/dell-dispatches/connection — CheckLogin probe (no create) */
+/** GET /api/dell-dispatches/connection — OAuth + REST company-info probe */
 router.get('/api/dell-dispatches/connection', requireAuth, async (req, res) => {
   try {
     const env = loadDellEnv();
-    const login = await sdsr.checkLogin();
+    const configured = Boolean(env.DELL_DISPATCH_CLIENT_ID && env.DELL_DISPATCH_USER_ID);
+    const sandbox = sdsr.isSandboxEnv(env);
+
+    let oauthOk = false;
+    let oauthError = null;
+    try {
+      await sdsr.getDispatchToken();
+      oauthOk = true;
+    } catch (e) {
+      oauthError = e.message;
+    }
+
+    const login = oauthOk
+      ? await sdsr.checkLogin()
+      : { ok: false, ready: false, error: oauthError || 'OAuth token failed' };
+
+    let hint = null;
+    if (!configured) {
+      hint = 'DELL.env is missing DELL_DISPATCH_CLIENT_ID or DELL_DISPATCH_USER_ID.';
+    } else if (!oauthOk) {
+      hint = 'Fix DELL_DISPATCH_CLIENT_ID / DELL_DISPATCH_CLIENT_SECRET / DELL_DISPATCH_TOKEN_URL.';
+    } else if (!login.ok) {
+      hint =
+        'OAuth works, but REST company-info failed. Confirm DELL_DISPATCH_USER_ID matches TechDirect Sandbox details (TDUser header).';
+    } else if (sandbox) {
+      hint =
+        'REST Self-Dispatch is ready in Sandbox. Real service tags may return no parts until Dell promotes the key to production.';
+    }
+
     res.json({
-      configured: Boolean(env.DELL_DISPATCH_CLIENT_ID && env.DELL_DISPATCH_TECH_EMAIL),
-      sandbox: String(env.DELL_DISPATCH_API_URL || '').includes('Sandbox'),
+      configured,
+      sandbox,
+      mode: 'rest',
+      restBase: sdsr.restBase(env),
+      oauthOk,
+      oauthError,
+      hint,
       ...login,
     });
   } catch (error) {
-    res.json({ configured: false, ok: false, ready: false, error: error.message });
+    res.json({ configured: false, ok: false, ready: false, oauthOk: false, mode: 'rest', error: error.message });
   }
 });
 
@@ -411,6 +444,7 @@ router.get('/api/customers/:customerId/dell-dispatches/prefill', requireAuth, as
     }
 
     const env = loadDellEnv();
+    const defaults = getDellDispatchDefaults();
     let warranty = null;
     if (isDellServiceTag(tag)) {
       try {
@@ -430,18 +464,23 @@ router.get('/api/customers/:customerId/dell-dispatches/prefill', requireAuth, as
       service_tag: isDellServiceTag(tag) ? tag : null,
       product_line: warranty?.product || ws?.computer_model || ws?.model || null,
       troubleshooting_note: String(sessionNotes || '').slice(0, 1000),
-      primary_contact_name: customer.contact_person || '',
-      primary_contact_phone: customer.phone || '',
-      primary_contact_email: customer.email || '',
-      alternate_contact_name: '',
-      alternate_contact_phone: '',
-      ship_address_line1: customer.street_address || customer.address || '',
-      ship_address_line2: '',
-      ship_city: customer.city || '',
-      ship_state: customer.state || '',
-      ship_zip: customer.zip || '',
-      ship_country: customer.country || 'US',
-      ship_timezone: 'US/Eastern',
+      // Always ECI dispatch contact / ship-to (self-replace parts to Lawrence)
+      primary_contact_name: defaults.primary_contact_name,
+      primary_contact_phone: defaults.primary_contact_phone,
+      primary_contact_email: defaults.primary_contact_email,
+      // Site contact as alternate when available
+      alternate_contact_name: customer.contact_person || '',
+      alternate_contact_phone: customer.phone || '',
+      ship_address_line1: defaults.ship_address_line1,
+      ship_address_line2: defaults.ship_address_line2,
+      ship_city: defaults.ship_city,
+      ship_state: defaults.ship_state,
+      ship_zip: defaults.ship_zip,
+      ship_country: defaults.ship_country,
+      ship_timezone: defaults.ship_timezone,
+      request_onsite_technician: defaults.request_onsite_technician,
+      request_complete_care: defaults.request_complete_care,
+      request_return_to_depot: defaults.request_return_to_depot,
       tech_email: env.DELL_DISPATCH_TECH_EMAIL || '',
       branch_name: env.DELL_DISPATCH_GROUP_NAME || '',
       dell_customer_name: env.DELL_DISPATCH_CUSTOMER_NAME || '',
@@ -528,18 +567,20 @@ async function trySubmitToDell(row, attachmentPayloads) {
   if (!login.ok || !login.ready) {
     return {
       status: 'queued',
-      dell_last_error: login.error || 'Dell SDSR CheckLogin failed — saved locally for later submit',
+      dell_last_error: login.error || 'Dell SDSR REST company-info failed — saved locally for later submit',
       dps_number: null,
       work_order: null,
     };
   }
 
+  // Prefer branch/customer from company-info when local row blank
+  const rel = login.relationships?.[0];
   const created = await sdsr.createDispatch({
     serviceTag: row.service_tag,
     techEmail: row.primary_contact_email || loadDellEnv().DELL_DISPATCH_TECH_EMAIL,
-    branchName: row.branch_name,
-    dellCustomerName: row.dell_customer_name,
-    track: row.track,
+    branchName: row.branch_name || rel?.branchName,
+    dellCustomerName: row.dell_customer_name || rel?.customerName,
+    track: row.track || rel?.track || 'Tier 1',
     primaryContactName: row.primary_contact_name,
     primaryContactPhone: row.primary_contact_phone,
     primaryContactEmail: row.primary_contact_email,
@@ -571,7 +612,7 @@ async function trySubmitToDell(row, attachmentPayloads) {
   if (!created.ok) {
     return {
       status: 'queued',
-      dell_last_error: created.error || 'CreateDispatch failed',
+      dell_last_error: created.error || 'REST CreateDispatch failed',
       dps_number: null,
       work_order: null,
     };
