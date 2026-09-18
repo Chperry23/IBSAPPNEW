@@ -19,6 +19,8 @@ export default function Sync() {
   const [adminError, setAdminError] = useState('');
   const [adminVerifying, setAdminVerifying] = useState(false);
   const [pendingAdminAction, setPendingAdminAction] = useState(null); // fn to call after auth
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [updateBusy, setUpdateBusy] = useState(false);
 
   useEffect(() => {
     loadAllData();
@@ -335,6 +337,49 @@ export default function Sync() {
     }
   };
 
+  const checkForUpdates = async () => {
+    try {
+      setUpdateBusy(true);
+      const result = await api.request('/api/updates/check');
+      setUpdateInfo(result);
+      if (result.updateAvailable) {
+        showMessage(result.message || 'Update available', 'success');
+      } else if (result.reachable === false || result.configured === false) {
+        showMessage(result.message || 'No update feed / offline', 'info');
+      } else {
+        showMessage(result.message || 'Up to date', 'success');
+      }
+    } catch (error) {
+      showMessage(`Update check failed: ${error.message}`, 'error');
+    } finally {
+      setUpdateBusy(false);
+    }
+  };
+
+  const applyUpdate = async () => {
+    if (!updateInfo?.updateAvailable || !updateInfo?.remote?.installerUrl) {
+      showMessage('No installer URL from update check', 'error');
+      return;
+    }
+    try {
+      setUpdateBusy(true);
+      showMessage('Downloading installer…', 'info');
+      const result = await api.request('/api/updates/apply', {
+        method: 'POST',
+        body: JSON.stringify({ installerUrl: updateInfo.remote.installerUrl }),
+      });
+      if (result.ok) {
+        showMessage(result.message || 'Installer started — leave the app open until it finishes.', 'success');
+      } else {
+        showMessage(result.error || 'Update apply failed', 'error');
+      }
+    } catch (error) {
+      showMessage(`Update apply failed: ${error.message}`, 'error');
+    } finally {
+      setUpdateBusy(false);
+    }
+  };
+
   const calculateTotalUnsynced = () => {
     if (!syncStatus?.unsyncedCounts || typeof syncStatus.unsyncedCounts !== 'object') return 0;
     return Object.values(syncStatus.unsyncedCounts).reduce(
@@ -406,10 +451,42 @@ export default function Sync() {
       )}
 
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold gradient-text mb-2">Cloud Sync</h1>
-        <p className="text-gray-400">Keep your data synchronized across all devices</p>
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <h1 className="text-4xl font-bold gradient-text mb-2">Cloud Sync</h1>
+          <p className="text-gray-400">Keep your data synchronized across all devices</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={checkForUpdates}
+            disabled={updateBusy || syncing}
+            className="px-4 py-2 rounded-lg border border-gray-600 bg-gray-800 text-gray-100 hover:bg-gray-700 disabled:opacity-50"
+          >
+            {updateBusy ? 'Checking…' : 'Check for updates'}
+          </button>
+          {updateInfo?.updateAvailable && (
+            <button
+              type="button"
+              onClick={applyUpdate}
+              disabled={updateBusy || syncing}
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
+            >
+              Install {updateInfo.remote?.version || 'update'}
+            </button>
+          )}
+        </div>
       </div>
+      {updateInfo?.local && (
+        <p className="text-xs text-gray-500 -mt-6 mb-6">
+          Local {updateInfo.local.version}
+          {updateInfo.local.buildId ? ` (${updateInfo.local.buildId})` : ''}
+          {updateInfo.updateAvailable && updateInfo.remote?.version
+            ? ` → ${updateInfo.remote.version}`
+            : ''}
+          {updateInfo.message ? ` — ${updateInfo.message}` : ''}
+        </p>
+      )}
 
       {/* Message */}
       {message && (

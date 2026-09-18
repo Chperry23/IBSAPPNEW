@@ -27,6 +27,7 @@
     "version:major": "node scripts/release-version.js major",
     "build:exe": "node build-exe.js",
     "build:full": "node create-full-package.js",
+    "build:installer": "node scripts/stage-installer-payload.js && echo Compile installer\\cabinet-pm.iss with Inno Setup (ISCC)",
     "deploy": "npm run build:frontend && npm run build:exe && npm run build:full",
     "merge-import-bundle": "node scripts/merge-cabinet-import-bundle.js",
     "pdf:blank-ii": "node backend/scripts/generate-ii-blank-pdf.js",

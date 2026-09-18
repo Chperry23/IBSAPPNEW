@@ -1,0 +1,8 @@
+{
+  "version": "2.0.2",
+  "buildId": "2.0.2-example",
+  "buildDate": "2026-09-18T00:00:00.000Z",
+  "notes": "Example update feed. Host this file next to the installer on a share or HTTPS endpoint. Set CABINET_PM_UPDATE_URL to that folder/URL (without version.json).",
+  "installerUrl": "CabinetPM-Setup-2.0.2.exe",
+  "minSchemaSafe": true
+}

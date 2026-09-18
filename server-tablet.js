@@ -127,8 +127,12 @@ process.on('unhandledRejection', (reason) => fatal('Unhandled promise rejection'
 // ─────────────────────────────────────────────────────────────────────────────
 stamp('STEP 1', 'Running environment diagnostics');
 
-const dataDir       = path.join(appBasePath, 'data');
-const dbPath        = path.join(dataDir, 'cabinet_pm_tablet.db');
+// Packaged: DB under %APPDATA%\CabinetPM (survives installer upgrades).
+// Dev: ./data. Legacy <exeDir>/data is migrated once if AppData is empty.
+const { prepareTabletDatabase } = require('./backend/utils/tablet-paths');
+const tabletDb = prepareTabletDatabase();
+const dataDir = tabletDb.userDataDir;
+const dbPath = tabletDb.dbPath;
 const reactBuildPath = path.join(appBasePath, 'frontend-react', 'dist');
 
 console.log('='.repeat(60));
@@ -138,11 +142,16 @@ console.log(`  Packaged      : ${isPackaged}`);
 console.log(`  Node version  : ${process.version}  (NAPI ${process.versions.napi})`);
 console.log(`  Exe location  : ${process.execPath}`);
 console.log(`  Base path     : ${appBasePath}`);
+console.log(`  User data     : ${dataDir}`);
 console.log(`  DB path       : ${dbPath}`);
+if (tabletDb.migration?.migrated) {
+  console.log(`  DB migrated   : from ${tabletDb.migration.from}`);
+}
 console.log(`  React build   : ${reactBuildPath}`);
 console.log(`  Crash report  : ${crashReportPath}`);
 console.log(`  Log file      : ${logFilePath}`);
 console.log('');
+stamp('STEP 1', `DB path ${dbPath}${tabletDb.migration?.migrated ? ' (migrated from legacy data/)' : ''}`);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STEP 2 — Check required folders / files

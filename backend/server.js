@@ -97,6 +97,7 @@ function createApp(options = {}) {
   app.use('/api', searchRoutes);
   app.use('/api/reports/demo-pm', demoReportRoutes);
   app.use('/', dellDispatchesRoutes);
+  app.use('/', require('./routes/updates'));
   app.use('/', sharepointRoutes);
 
   if (!catchAllPath) {
