@@ -119,11 +119,14 @@ router.get('/api/dell-dispatches/connection', requireAuth, async (req, res) => {
     } else if (!oauthOk) {
       hint = 'Fix DELL_DISPATCH_CLIENT_ID / DELL_DISPATCH_CLIENT_SECRET / DELL_DISPATCH_TOKEN_URL.';
     } else if (!login.ok) {
-      hint =
-        'OAuth works, but REST company-info failed. Confirm DELL_DISPATCH_USER_ID matches TechDirect Sandbox details (TDUser header).';
+      hint = sandbox
+        ? 'OAuth works, but REST company-info failed. Confirm DELL_DISPATCH_USER_ID matches TechDirect Sandbox View details (TDUser).'
+        : 'OAuth works, but REST company-info failed. Confirm DELL_DISPATCH_USER_ID / Group / Customer match TechDirect production View details (TDUser).';
     } else if (sandbox) {
       hint =
-        'REST Self-Dispatch is ready in Sandbox. Real service tags may return no parts until Dell promotes the key to production.';
+        'REST Self-Dispatch is ready in Sandbox. Empty parts lists on real tags can be normal until production.';
+    } else {
+      hint = 'REST Self-Dispatch is ready on production. Empty parts for an in-warranty tag usually means a real Dell/config problem — not sandbox behavior.';
     }
 
     res.json({

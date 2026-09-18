@@ -1,6 +1,6 @@
 /**
  * Dell Self-Dispatch REST client (TechDirect SDSR REST API v1.2).
- * Auth: OAuth Bearer + TDUser header (sandbox User ID from TechDirect).
+ * Auth: OAuth Bearer + TDUser header (TechDirect User ID — sandbox or prod).
  * See DELL HELP/Self-Dispatch_REST_API_Version_1.2/
  */
 const { loadDellEnv } = require('../utils/dell-env');
@@ -31,7 +31,7 @@ function restBase(env = loadDellEnv()) {
   return 'https://apigtwb2c.us.dell.com/td/PROD/dispatch/services/selfdispatch';
 }
 
-/** TDUser header — sandbox requires TechDirect sandbox User ID, not email. */
+/** TDUser header — TechDirect User ID from View details (not email). */
 function tdUser(env = loadDellEnv()) {
   const id = String(env.DELL_DISPATCH_USER_ID || '').trim();
   if (!id) throw new Error('DELL.env missing DELL_DISPATCH_USER_ID (required as REST TDUser)');
@@ -161,7 +161,7 @@ async function getPartsByServiceTag(serviceTag) {
   try {
     const result = await restFetch(`/parts?service_tag=${encodeURIComponent(tag)}`);
 
-    // Sandbox often returns 204 for real production tags
+    // Sandbox often returns 204 for real production tags; production 204 is unusual for in-warranty assets
     if (result.status === 204) {
       return {
         ok: true,
@@ -171,8 +171,8 @@ async function getPartsByServiceTag(serviceTag) {
         empty: true,
         sandbox: isSandboxEnv(),
         hint: isSandboxEnv()
-          ? 'Sandbox returned no parts for this service tag (normal for real tags until Dell promotes the API key to production). Try a sandbox test tag such as CARV005, or enter the part number manually.'
-          : 'No replaceable parts returned for this service tag.',
+          ? 'Sandbox returned no parts for this service tag (normal for real tags). Try a sandbox test tag such as CARV005, or enter the part number manually.'
+          : 'Production returned no replaceable parts for this service tag. Confirm the tag is in warranty and DELL_DISPATCH_USER_ID / Group / Customer match TechDirect production View details — empty results here are not normal sandbox behavior.',
       };
     }
 

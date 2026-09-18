@@ -67,7 +67,9 @@ export default function DellDispatchWizard({
               partsRes.hint ||
                 partsRes.error ||
                 (partsRes.ok
-                  ? 'No Dell parts returned for this service tag — enter part number manually.'
+                  ? partsRes.sandbox
+                    ? 'No Dell parts returned for this service tag (sandbox empty can be normal) — enter part number manually.'
+                    : 'No Dell parts returned for this in-warranty tag on production — check TechDirect User/Group/Customer and enter part number manually if needed.'
                   : 'Parts list unavailable')
             );
           }
