@@ -31,11 +31,22 @@ function restBase(env = loadDellEnv()) {
   return 'https://apigtwb2c.us.dell.com/td/PROD/dispatch/services/selfdispatch';
 }
 
-/** TDUser header — TechDirect User ID from View details (not email). */
+/**
+ * TDUser header:
+ * - Sandbox: TechDirect User ID (Manage API Keys → Sandbox details)
+ * - Production: TechDirect account email (REST spec header examples)
+ */
 function tdUser(env = loadDellEnv()) {
-  const id = String(env.DELL_DISPATCH_USER_ID || '').trim();
-  if (!id) throw new Error('DELL.env missing DELL_DISPATCH_USER_ID (required as REST TDUser)');
-  return id;
+  if (isSandboxEnv(env)) {
+    const id = String(env.DELL_DISPATCH_USER_ID || '').trim();
+    if (!id) throw new Error('DELL.env missing DELL_DISPATCH_USER_ID (required as sandbox REST TDUser)');
+    return id;
+  }
+  const email = String(env.DELL_DISPATCH_TECH_EMAIL || env.DELL_DISPATCH_TDUSER_EMAIL || '').trim();
+  if (!email) {
+    throw new Error('DELL.env missing DELL_DISPATCH_TECH_EMAIL (required as production REST TDUser)');
+  }
+  return email;
 }
 
 function countryIso(value) {
@@ -273,9 +284,17 @@ async function createDispatch(payload) {
     attachments,
     epsa_validation_code: null,
     epsa_code: null,
-    problem_description: String(payload.problemDescription || payload.troubleshootingNote || '').slice(0, 1000),
-    troubleshooting_note: String(payload.troubleshootingNote || '').slice(0, 1000),
-    on_site_note: payload.onSiteNote || '',
+    // Spec max lengths: problem_description 255, troubleshooting_note 1000
+    problem_description: String(
+      payload.problemDescription || payload.troubleshootingNote || ''
+    )
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 255),
+    troubleshooting_note: String(payload.troubleshootingNote || '')
+      .trim()
+      .slice(0, 1000),
+    on_site_note: String(payload.onSiteNote || '').slice(0, 255),
     federal_specialized_services: false,
     customer_arranged_date: null,
   };
@@ -291,18 +310,228 @@ async function createDispatch(payload) {
     }
 
     const json = result.json || {};
+    const notes = Array.isArray(json.notes)
+      ? json.notes.map((n) => n?.note || n?.message || String(n)).filter(Boolean)
+      : [];
+    const workOrder = json.code || json.work_order || json.workOrder || null;
+    const dpsNumber =
+      json.dps_number || json.dell_dispatch_number || json.dpsNumber || null;
+    // Dell sometimes returns HTTP 200 with null code + notes explaining the reject
+    if (!workOrder && !dpsNumber && !json.id) {
+      const noteMsg = notes.join('; ') || null;
+      return {
+        ok: false,
+        error:
+          noteMsg ||
+          json.message ||
+          `Dell create returned HTTP ${result.status} without a work order/DPS. Raw: ${(result.text || '').slice(0, 400)}`,
+        raw: result.text || null,
+      };
+    }
     return {
       ok: true,
-      workOrder: json.code || json.work_order || null,
-      dpsNumber: json.dps_number || json.dell_dispatch_number || null,
-      dispatchCode: json.code || null,
+      workOrder,
+      dpsNumber: dpsNumber || workOrder,
+      dispatchCode: workOrder,
       result: json.status || json.message || null,
       id: json.id || null,
-      raw: JSON.stringify(json).slice(0, 2000),
+      notes,
+      raw: json,
     };
   } catch (e) {
     return { ok: false, error: e.message };
   }
+}
+
+function inquiryResultFromRow(row, fallbackCode) {
+  const statusDetail = propertyValue(row, 'StatusDescription') || row?.StatusDescription || null;
+  const dellStatus = row?.status || statusDetail || null;
+  return {
+    ok: true,
+    result: dellStatus,
+    status: dellStatus,
+    statusDetail,
+    dpsNumber: row?.dps_number || row?.dell_dispatch_number || null,
+    dispatchCode: row?.code || fallbackCode || null,
+    orderDeniedReason: row?.order_denied_reason || null,
+    mappedStatus: mapDellStatusFromRow(row),
+    raw: row,
+  };
+}
+
+async function inquiryEx(options = {}) {
+  const since =
+    options.created_from_date ||
+    new Date(Date.now() - (options.days || 90) * 86400000).toISOString().slice(0, 10);
+  try {
+    const result = await restFetch('/inquiry_ex', {
+      method: 'POST',
+      body: {
+        offset: String(options.offset ?? '0'),
+        page_size: String(options.page_size ?? '100'),
+        created_from_date: since,
+        scope: options.scope || 'All',
+        additional_fields: options.additional_fields || [
+          'CreateTimestamp',
+          'Customer.FullName',
+          'Description',
+          'Group.Description',
+          'ScheduledEmployeeFullName',
+          'StatusDescription',
+          'Unit.Serial',
+          'UpdateTimeLocal',
+        ],
+        ...(options.in_statuses ? { in_statuses: options.in_statuses } : {}),
+      },
+    });
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: result.json?.message || result.text?.slice(0, 300) || `HTTP ${result.status}`,
+      };
+    }
+    const rows = Array.isArray(result.json)
+      ? result.json
+      : result.json?.data || result.json?.results || result.json?.items || [];
+    return { ok: true, rows: Array.isArray(rows) ? rows : [] };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function pickBestInquiryRow(rows) {
+  if (!rows?.length) return null;
+  const scored = rows.map((row) => {
+    let score = 0;
+    const mapped = mapDellStatusFromRow(row);
+    if (mapped !== 'denied') score += 100;
+    if (row?.dps_number || row?.dell_dispatch_number) score += 50;
+    if (row?.code) score += 10;
+    const upd = String(propertyValue(row, 'UpdateTimeLocal') || '');
+    return { row, score, upd };
+  });
+  scored.sort((a, b) => b.score - a.score || b.upd.localeCompare(a.upd));
+  return scored[0]?.row || null;
+}
+
+function normalizeDigits(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function extractRelatedWorkOrder(text) {
+  const m = String(text || '').match(/WO#\s*(SR[\w\d]+)/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+function extractDpsNumber(text) {
+  const m = String(text || '').match(/DPS#\s*([\d|]+)/i);
+  if (!m) return null;
+  return m[1].split('|')[0].trim() || null;
+}
+
+/** Dell sometimes returns multiple DPS values pipe-separated (e.g. 468877067|468900984). */
+function dpsNumbersFromRow(row) {
+  const raw = row?.dps_number || row?.dell_dispatch_number || '';
+  return String(raw)
+    .split('|')
+    .map((s) => normalizeDigits(s))
+    .filter(Boolean);
+}
+
+function rowMatchesDps(row, dps) {
+  if (!dps) return true;
+  return dpsNumbersFromRow(row).includes(normalizeDigits(dps));
+}
+
+function rowMatchesTag(row, tag) {
+  if (!tag) return true;
+  const serial = String(propertyValue(row, 'Unit.Serial') || row?.service_tag || '').toUpperCase();
+  return serial === String(tag).toUpperCase();
+}
+
+/** Walk work-order hints; follow denied messages to related WOs (e.g. duplicate → real WO). */
+async function inquiryCandidates(hintCodes, maxCodes = 24) {
+  const seen = new Set();
+  const queue = [
+    ...new Set(
+      (hintCodes || []).map((c) => String(c || '').trim().toUpperCase()).filter(Boolean)
+    ),
+  ];
+  const results = [];
+
+  while (queue.length && seen.size < maxCodes) {
+    const code = queue.shift();
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    const res = await getDispatchStatus(code);
+    if (!res.ok || !res.raw) continue;
+    results.push(res);
+    const related = extractRelatedWorkOrder(res.raw.order_denied_reason || res.orderDeniedReason);
+    if (related && !seen.has(related)) queue.push(related);
+  }
+
+  return results;
+}
+
+/**
+ * Find a Dell dispatch by work order, DPS number, and/or service tag.
+ * Production inquiry_ex often returns empty — we rely on per-WO inquiry + hint chaining.
+ */
+async function findDispatchByCriteria({ code, dpsNumber, serviceTag, hintCodes = [], days = 90 } = {}) {
+  const wo = String(code || '').trim().toUpperCase();
+  const tag = String(serviceTag || '').trim().toUpperCase();
+  const dps = normalizeDigits(dpsNumber);
+
+  const hints = [
+    ...new Set(
+      [wo, ...(hintCodes || []).map((c) => String(c || '').trim().toUpperCase())].filter(Boolean)
+    ),
+  ];
+
+  const candidates = await inquiryCandidates(hints);
+  let matches = candidates.filter((r) => r.raw && rowMatchesTag(r.raw, tag));
+  if (dps) matches = matches.filter((r) => rowMatchesDps(r.raw, dps));
+  if (!matches.length && dps) {
+    matches = candidates.filter((r) => r.raw && rowMatchesDps(r.raw, dps));
+  }
+  if (!matches.length && tag) {
+    matches = candidates.filter((r) => r.raw && rowMatchesTag(r.raw, tag));
+  }
+  if (!matches.length) matches = candidates;
+
+  let pick = pickBestInquiryRow(matches.map((m) => m.raw));
+  if (pick) return inquiryResultFromRow(pick, wo || pick?.code);
+
+  // inquiry_ex fallback (sandbox / when bulk search is populated)
+  const ex = await inquiryEx({ days, page_size: '100' });
+  if (ex.ok && ex.rows?.length) {
+    let rows = ex.rows;
+    if (tag) rows = rows.filter((row) => rowMatchesTag(row, tag));
+    if (dps) rows = rows.filter((row) => rowMatchesDps(row, dps));
+    if (wo) {
+      const byWo = rows.filter((row) => String(row?.code || '').toUpperCase() === wo);
+      if (byWo.length) rows = byWo;
+    }
+    pick = pickBestInquiryRow(rows);
+    if (pick) return inquiryResultFromRow(pick, wo || pick?.code);
+  }
+
+  const related = candidates
+    .map((c) => extractRelatedWorkOrder(c.raw?.order_denied_reason))
+    .filter(Boolean);
+  const relatedHint = related.find((r) => !hints.includes(r));
+
+  return {
+    ok: false,
+    error: dps
+      ? `No Dell dispatch found for DPS ${dpsNumber}${tag ? ` / tag ${tag}` : ''}.${relatedHint ? ` Try work order ${relatedHint}.` : ''}`
+      : tag
+        ? `No Dell dispatch found for service tag ${tag}.`
+        : wo
+          ? `Work order ${wo} not found on Dell.`
+          : 'Provide a work order, DPS number, or service tag.',
+    suggestedWorkOrder: relatedHint || null,
+  };
 }
 
 async function getDispatchStatus(code) {
@@ -332,15 +561,7 @@ async function getDispatchStatus(code) {
       };
     }
     const row = Array.isArray(result.json) ? result.json[0] : result.json;
-    return {
-      ok: true,
-      result: row?.status || row?.StatusDescription || null,
-      status: row?.status || row?.StatusDescription || null,
-      dpsNumber: row?.dps_number || row?.dell_dispatch_number || null,
-      dispatchCode: row?.code || code,
-      orderDeniedReason: row?.order_denied_reason || null,
-      raw: row,
-    };
+    return inquiryResultFromRow(row, code);
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -354,15 +575,53 @@ async function resubmitDispatch(code) {
   };
 }
 
+function propertyValue(row, name) {
+  if (!row?.properties || !Array.isArray(row.properties)) return null;
+  const hit = row.properties.find((p) => p?.name === name);
+  return hit?.value ?? null;
+}
+
 function mapDellStatus(rawStatus) {
   const s = String(rawStatus || '').toLowerCase();
   if (!s) return null;
-  if (s.includes('denied') || s.includes('deny')) return 'denied';
-  if (s.includes('ship')) return 'shipped';
-  if (s.includes('issued') || s.includes('dsp') || s.includes('ord') || s.includes('que')) return 'issued';
-  if (s.includes('submit') || s.includes('review') || s.includes('hold') || s.includes('pending')) return 'submitted';
-  if (s.includes('claim') || s.includes('defective')) return 'received';
+  if (
+    s.includes('denied') ||
+    s.includes('deny') ||
+    s.includes('cancel') ||
+    s.includes('unable to process') ||
+    s.includes('duplicate request') ||
+    s.includes('not processed')
+  ) {
+    return 'denied';
+  }
+  if (s.includes('deliver') || s.includes('complete') || s.includes('closed') || s.includes('accept')) {
+    return 'received';
+  }
+  if (s.includes('ship') || s.includes('transit') || s.includes('out for')) return 'shipped';
+  if (s.includes('issued') || s.includes('dsp') || s.includes('ord') || s.includes('parts review') || s.includes('que')) {
+    return 'issued';
+  }
+  if (s.includes('submit') || s.includes('review') || s.includes('hold') || s.includes('pending') || s.includes('open')) {
+    return 'submitted';
+  }
+  if (s.includes('claim') || s.includes('defective') || s.includes('received')) return 'received';
   return 'submitted';
+}
+
+/** Map inquiry row (status + properties + denied reason) to local tracker status. */
+function mapDellStatusFromRow(row) {
+  if (!row || typeof row !== 'object') return mapDellStatus(row);
+  const bits = [
+    row.status,
+    row.StatusDescription,
+    propertyValue(row, 'StatusDescription'),
+    row.order_denied_reason,
+  ].filter(Boolean);
+  for (const bit of bits) {
+    const mapped = mapDellStatus(bit);
+    if (mapped === 'denied') return 'denied';
+  }
+  return mapDellStatus(row.status || propertyValue(row, 'StatusDescription'));
 }
 
 module.exports = {
@@ -370,8 +629,19 @@ module.exports = {
   getPartsByServiceTag,
   createDispatch,
   getDispatchStatus,
+  inquiryEx,
+  findDispatchByCriteria,
+  inquiryCandidates,
+  extractRelatedWorkOrder,
+  extractDpsNumber,
+  rowMatchesTag,
+  rowMatchesDps,
+  dpsNumbersFromRow,
   resubmitDispatch,
   mapDellStatus,
+  mapDellStatusFromRow,
+  propertyValue,
+  inquiryResultFromRow,
   getDispatchToken,
   restBase,
   isSandboxEnv,

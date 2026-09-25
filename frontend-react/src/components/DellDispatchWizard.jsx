@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import DellSubmitOverlay from './DellSubmitOverlay';
+import { parseDellSubmitResponse } from '../utils/dellSubmitMessages';
 
 /**
  * Submit wizard for one Dell service-tag dispatch (HDD / parts).
@@ -23,6 +25,8 @@ export default function DellDispatchWizard({
   const [manualPart, setManualPart] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const fileRef = useRef(null);
+  const saveLock = useRef(false);
+  const [submittingToDell, setSubmittingToDell] = useState(false);
 
   useEffect(() => {
     loadPrefill();
@@ -152,13 +156,26 @@ export default function DellDispatchWizard({
     if (fileRef.current) fileRef.current.value = '';
   };
 
+  const notify = (payload, legacyType) => {
+    if (typeof payload === 'object' && payload.message) {
+      showMessage?.({ message: payload.message, type: payload.type, title: payload.title });
+      return;
+    }
+    showMessage?.(payload, legacyType);
+  };
+
   const submit = async (draftOnly) => {
+    if (saveLock.current || saving) return;
     if (!form?.service_tag) {
-      showMessage?.('Service tag required', 'error');
+      notify({ type: 'error', title: 'Missing info', message: 'Service tag is required.' });
       return;
     }
     if (!draftOnly && !form.part_number) {
-      showMessage?.('Select a Dell part number from the list (or enter one manually)', 'error');
+      notify({
+        type: 'error',
+        title: 'Missing part',
+        message: 'Select a Dell part number from the list (or enter one manually).',
+      });
       return;
     }
     if (!draftOnly && form.warranty_in_coverage === false) {
@@ -167,9 +184,11 @@ export default function DellDispatchWizard({
       );
       if (!ok) return;
     }
+    saveLock.current = true;
     setSaving(true);
+    setSubmittingToDell(!draftOnly);
     try {
-      const res = await fetch(`/api/customers/${customerId}/dell-dispatches`, {
+      const http = await fetch(`/api/customers/${customerId}/dell-dispatches`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -178,18 +197,47 @@ export default function DellDispatchWizard({
           draft_only: draftOnly,
           attachments,
         }),
-      }).then((r) => r.json());
-      if (res.error) {
-        showMessage?.(res.error, 'error');
+      });
+      const res = await http.json();
+      if (draftOnly) {
+        if (!http.ok || res.error) {
+          notify({
+            type: 'error',
+            title: 'Draft not saved',
+            message: res.message || res.error || 'Could not save draft.',
+          });
+          if (res.dispatch) {
+            onSaved?.(res.dispatch);
+            onClose?.();
+          }
+          return;
+        }
+        notify({
+          type: 'success',
+          title: 'Draft saved',
+          message: res.message || 'Draft saved on this tablet (not sent to Dell yet).',
+        });
+        onSaved?.(res.dispatch);
+        onClose?.();
         return;
       }
-      showMessage?.(res.message || 'Saved', res.dell_ready ? 'success' : 'info');
-      onSaved?.(res.dispatch);
-      onClose?.();
+
+      const parsed = parseDellSubmitResponse(http, res);
+      notify(parsed);
+      if (res.dispatch) {
+        onSaved?.(res.dispatch);
+        onClose?.();
+      }
     } catch (error) {
-      showMessage?.(error.message || 'Save failed', 'error');
+      notify({
+        type: 'error',
+        title: draftOnly ? 'Draft not saved' : 'Could not submit to Dell',
+        message: error.message || 'Unexpected error. Try again in a moment.',
+      });
     } finally {
+      saveLock.current = false;
       setSaving(false);
+      setSubmittingToDell(false);
     }
   };
 
@@ -200,6 +248,15 @@ export default function DellDispatchWizard({
           <div className="spinner h-10 w-10" />
         </div>
       </div>
+    );
+  }
+
+  if (saving && submittingToDell) {
+    return (
+      <DellSubmitOverlay
+        title="Sending to Dell…"
+        detail="Saving your dispatch and contacting Dell SDSR. This may take a few seconds."
+      />
     );
   }
 
@@ -357,7 +414,12 @@ export default function DellDispatchWizard({
               onChange={(e) => setField('troubleshooting_note', e.target.value)}
               placeholder="Symptom / failure evidence…"
             />
-            <p className="text-xs text-gray-500 text-right">{(form.troubleshooting_note || '').length}/1000</p>
+            <p className="text-xs text-gray-500 text-right">
+              {(form.troubleshooting_note || '').length}/1000
+              <span className="float-left text-left max-w-[70%]">
+                Full note goes to Dell troubleshooting; a 255-char summary is sent as the work-order description.
+              </span>
+            </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -452,10 +514,10 @@ export default function DellDispatchWizard({
             Cancel
           </button>
           <button type="button" className="btn btn-secondary" onClick={() => submit(true)} disabled={saving}>
-            Save draft
+            {saving && !submittingToDell ? 'Saving…' : 'Save draft'}
           </button>
           <button type="button" className="btn btn-primary" onClick={() => submit(false)} disabled={saving}>
-            {saving ? 'Saving…' : 'Submit / queue'}
+            {saving && submittingToDell ? 'Sending to Dell…' : saving ? 'Saving…' : 'Submit to Dell'}
           </button>
         </div>
       </div>

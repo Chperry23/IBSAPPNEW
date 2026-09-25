@@ -1579,6 +1579,8 @@ function initializeDatabase() {
         }
       );
 
+      addColumnIfNotExists('dell_dispatches', 'status_history', 'TEXT');
+
       console.log('✅ Database tables initialized successfully');
 
       installChangeLogTriggers()

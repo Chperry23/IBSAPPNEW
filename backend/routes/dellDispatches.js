@@ -11,9 +11,19 @@ const { syncFieldsForInsert, afterSyncableWrite, softDeleteSyncRow } = require('
 const { lookupWarranty, lookupWarrantyBatched } = require('../services/dell-warranty');
 const sdsr = require('../services/dell-sdsr');
 const { loadDellEnv, getDellDispatchDefaults } = require('../utils/dell-env');
+const {
+  serializeDellRaw,
+  appendDispatchHistory,
+  historyFromInquiry,
+  inquiryServiceSummary,
+  parseHistory,
+} = require('../utils/dell-dispatch-history');
 
 const ID_WORKSTATION = 1000000;
 const OPEN_STATUSES = new Set(['draft', 'queued', 'submitted', 'issued', 'shipped']);
+
+/** Prevent concurrent duplicate POST .../submit for the same dispatch row */
+const submitInFlight = new Set();
 
 function attachmentsDir() {
   const isPackaged = typeof process.pkg !== 'undefined';
@@ -56,7 +66,7 @@ router.get('/api/dell-dispatches', requireAuth, async (req, res) => {
   try {
     const status = (req.query.status || 'open').toLowerCase();
     let sql = `
-      SELECT d.*, c.name as customer_name
+      SELECT d.*, c.name as customer_name, c.alias as customer_alias
       FROM dell_dispatches d
       LEFT JOIN customers c ON c.id = d.customer_id
       WHERE COALESCE(d.deleted,0)=0
@@ -70,13 +80,40 @@ router.get('/api/dell-dispatches', requireAuth, async (req, res) => {
     }
     sql += ` ORDER BY COALESCE(d.updated_at, d.created_at) DESC LIMIT 200`;
     const rows = await db.prepare(sql).all(params);
-    res.json(rows);
+    const withAtts = await attachAttachments(rows);
+    res.json(withAtts);
   } catch (error) {
     console.error('List dell dispatches error:', error);
     res.status(500).json({ error: 'Database error' });
   }
 });
 
+async function attachAttachments(rows) {
+  if (!Array.isArray(rows) || !rows.length) return rows || [];
+  const ids = rows.map((r) => r.id).filter(Boolean);
+  if (!ids.length) return rows.map((r) => ({ ...r, attachments: [] }));
+  const placeholders = ids.map(() => '?').join(',');
+  const atts = await db.prepare(`
+    SELECT id, dispatch_id, filename, mime_type, description, created_at
+    FROM dell_dispatch_attachments
+    WHERE dispatch_id IN (${placeholders})
+    ORDER BY id ASC
+  `).all(ids);
+  const byDispatch = new Map();
+  for (const a of atts) {
+    if (!byDispatch.has(a.dispatch_id)) byDispatch.set(a.dispatch_id, []);
+    byDispatch.get(a.dispatch_id).push({
+      id: a.id,
+      filename: a.filename,
+      mime_type: a.mime_type,
+      description: a.description,
+      created_at: a.created_at,
+      url: `/api/dell-dispatches/attachments/${a.id}`,
+      is_image: /^image\//i.test(String(a.mime_type || '')),
+    });
+  }
+  return rows.map((r) => ({ ...r, attachments: byDispatch.get(r.id) || [] }));
+}
 /** GET /api/dell-dispatches/status-summary — open count for dashboard */
 router.get('/api/dell-dispatches/status-summary', requireAuth, async (req, res) => {
   try {
@@ -97,8 +134,11 @@ router.get('/api/dell-dispatches/status-summary', requireAuth, async (req, res) 
 router.get('/api/dell-dispatches/connection', requireAuth, async (req, res) => {
   try {
     const env = loadDellEnv();
-    const configured = Boolean(env.DELL_DISPATCH_CLIENT_ID && env.DELL_DISPATCH_USER_ID);
     const sandbox = sdsr.isSandboxEnv(env);
+    const configured = Boolean(
+      env.DELL_DISPATCH_CLIENT_ID &&
+        (sandbox ? env.DELL_DISPATCH_USER_ID : env.DELL_DISPATCH_TECH_EMAIL)
+    );
 
     let oauthOk = false;
     let oauthError = null;
@@ -115,13 +155,15 @@ router.get('/api/dell-dispatches/connection', requireAuth, async (req, res) => {
 
     let hint = null;
     if (!configured) {
-      hint = 'DELL.env is missing DELL_DISPATCH_CLIENT_ID or DELL_DISPATCH_USER_ID.';
+      hint = sandbox
+        ? 'DELL.env is missing DELL_DISPATCH_CLIENT_ID or DELL_DISPATCH_USER_ID.'
+        : 'DELL.env is missing DELL_DISPATCH_CLIENT_ID or DELL_DISPATCH_TECH_EMAIL (prod TDUser is your TechDirect email).';
     } else if (!oauthOk) {
       hint = 'Fix DELL_DISPATCH_CLIENT_ID / DELL_DISPATCH_CLIENT_SECRET / DELL_DISPATCH_TOKEN_URL.';
     } else if (!login.ok) {
       hint = sandbox
         ? 'OAuth works, but REST company-info failed. Confirm DELL_DISPATCH_USER_ID matches TechDirect Sandbox View details (TDUser).'
-        : 'OAuth works, but REST company-info failed. Confirm DELL_DISPATCH_USER_ID / Group / Customer match TechDirect production View details (TDUser).';
+        : 'OAuth works, but REST company-info failed. Production TDUser must be your TechDirect email (DELL_DISPATCH_TECH_EMAIL), not the sandbox User ID.';
     } else if (sandbox) {
       hint =
         'REST Self-Dispatch is ready in Sandbox. Empty parts lists on real tags can be normal until production.';
@@ -215,7 +257,7 @@ router.get('/api/customers/:customerId/dell-dispatches', requireAuth, async (req
       WHERE customer_id = ? AND COALESCE(deleted,0)=0
       ORDER BY COALESCE(updated_at, created_at) DESC
     `).all([req.params.customerId]);
-    res.json(rows);
+    res.json(await attachAttachments(rows));
   } catch (error) {
     console.error('Customer dell dispatches error:', error);
     res.status(500).json({ error: 'Database error' });
@@ -458,6 +500,20 @@ router.get('/api/customers/:customerId/dell-dispatches/prefill', requireAuth, as
       }
     }
 
+    // Production branch/customer come from company-info; sandbox uses View-details Group/Customer.
+    let branchName = env.DELL_DISPATCH_GROUP_NAME || '';
+    let dellCustomerName = env.DELL_DISPATCH_CUSTOMER_NAME || '';
+    let track = 'Tier 1';
+    try {
+      const login = await sdsr.checkLogin();
+      const rel = login.relationships?.[0];
+      if (rel?.branchName) branchName = rel.branchName;
+      if (rel?.customerName) dellCustomerName = rel.customerName;
+      if (rel?.track) track = rel.track;
+    } catch (_) {
+      /* keep env defaults */
+    }
+
     res.json({
       customer_id: customer.id,
       customer_name: customer.name,
@@ -485,9 +541,9 @@ router.get('/api/customers/:customerId/dell-dispatches/prefill', requireAuth, as
       request_complete_care: defaults.request_complete_care,
       request_return_to_depot: defaults.request_return_to_depot,
       tech_email: env.DELL_DISPATCH_TECH_EMAIL || '',
-      branch_name: env.DELL_DISPATCH_GROUP_NAME || '',
-      dell_customer_name: env.DELL_DISPATCH_CUSTOMER_NAME || '',
-      track: 'Tier 1',
+      branch_name: branchName,
+      dell_customer_name: dellCustomerName,
+      track,
       warranty,
     });
   } catch (error) {
@@ -534,6 +590,100 @@ function mapBodyToRow(body, customerId) {
   };
 }
 
+function mapInquiryToLocalRow(inquiryRaw, customerId, customer, extras = {}) {
+  const defaults = getDellDispatchDefaults();
+  const part = Array.isArray(inquiryRaw?.parts) ? inquiryRaw.parts[0] : null;
+  const prop = (name) => sdsr.propertyValue(inquiryRaw, name);
+  const mapped = sdsr.mapDellStatusFromRow(inquiryRaw);
+  const tag = String(prop('Unit.Serial') || extras.service_tag || '').trim().toUpperCase();
+
+  return {
+    customer_id: customerId,
+    session_id: extras.session_id || null,
+    node_id: extras.node_id != null ? Number(extras.node_id) : null,
+    node_name: extras.node_name || null,
+    service_tag: tag,
+    product_line: extras.product_line || null,
+    part_number: part?.part_number || part?.override_part_number || extras.part_number || null,
+    part_description: part?.part_description || extras.part_description || null,
+    part_qty: part?.quantity ?? extras.part_qty ?? 1,
+    part_ppid: part?.ppid || extras.part_ppid || null,
+    troubleshooting_note: String(
+      inquiryRaw?.troubleshooting_notes || prop('Description') || extras.troubleshooting_note || ''
+    ).slice(0, 1000),
+    primary_contact_name: extras.primary_contact_name || defaults.primary_contact_name,
+    primary_contact_phone: extras.primary_contact_phone || defaults.primary_contact_phone,
+    primary_contact_email: extras.primary_contact_email || defaults.primary_contact_email,
+    alternate_contact_name: extras.alternate_contact_name || customer?.contact_person || null,
+    alternate_contact_phone: extras.alternate_contact_phone || customer?.phone || null,
+    ship_address_line1: extras.ship_address_line1 || defaults.ship_address_line1,
+    ship_address_line2: extras.ship_address_line2 || defaults.ship_address_line2,
+    ship_city: extras.ship_city || defaults.ship_city,
+    ship_state: extras.ship_state || defaults.ship_state,
+    ship_zip: extras.ship_zip || defaults.ship_zip,
+    ship_country: extras.ship_country || defaults.ship_country,
+    ship_timezone: extras.ship_timezone || defaults.ship_timezone,
+    reference_po: extras.reference_po || null,
+    request_complete_care:
+      extras.request_complete_care != null
+        ? extras.request_complete_care
+          ? 1
+          : 0
+        : defaults.request_complete_care
+          ? 1
+          : 0,
+    request_return_to_depot:
+      extras.request_return_to_depot != null
+        ? extras.request_return_to_depot
+          ? 1
+          : 0
+        : defaults.request_return_to_depot
+          ? 1
+          : 0,
+    request_onsite_technician:
+      extras.request_onsite_technician != null
+        ? extras.request_onsite_technician
+          ? 1
+          : 0
+        : defaults.request_onsite_technician
+          ? 1
+          : 0,
+    branch_name: prop('Group.Description') || extras.branch_name || null,
+    dell_customer_name: prop('Customer.FullName') || extras.dell_customer_name || null,
+    track: extras.track || 'Tier 1',
+    status: mapped,
+    work_order: inquiryRaw?.code || extras.work_order || null,
+    dps_number: inquiryRaw?.dps_number || inquiryRaw?.dell_dispatch_number || extras.dps_number || null,
+    dell_status_raw: serializeDellRaw(inquiryRaw),
+    dell_last_error: mapped === 'denied' ? inquiryRaw?.order_denied_reason || null : null,
+    warranty_ends: extras.warranty_ends || null,
+    warranty_in_coverage:
+      extras.warranty_in_coverage == null ? null : extras.warranty_in_coverage ? 1 : 0,
+  };
+}
+
+async function copyAttachmentsFromDispatch(fromDispatchId, toDispatchId) {
+  const atts = await db
+    .prepare('SELECT * FROM dell_dispatch_attachments WHERE dispatch_id = ?')
+    .all([fromDispatchId]);
+  if (!atts.length) return 0;
+  const destDir = path.join(attachmentsDir(), String(toDispatchId));
+  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+  let copied = 0;
+  for (const att of atts.slice(0, 8)) {
+    if (!att.file_path || !fs.existsSync(att.file_path)) continue;
+    const safeName = path.basename(att.filename || att.file_path).replace(/[^\w.\-]+/g, '_');
+    const destPath = path.join(destDir, `${Date.now()}_${safeName}`);
+    fs.copyFileSync(att.file_path, destPath);
+    await db.prepare(`
+      INSERT INTO dell_dispatch_attachments (dispatch_id, filename, mime_type, file_path, description)
+      VALUES (?, ?, ?, ?, ?)
+    `).run([toDispatchId, att.filename, att.mime_type, destPath, att.description || att.filename]);
+    copied += 1;
+  }
+  return copied;
+}
+
 async function saveAttachments(dispatchId, files) {
   if (!Array.isArray(files) || !files.length) return [];
   const dir = path.join(attachmentsDir(), String(dispatchId));
@@ -565,6 +715,110 @@ async function saveAttachments(dispatchId, files) {
   return saved;
 }
 
+async function gatherHintCodes(customerId, serviceTag, excludeId = null) {
+  const hintCodes = [];
+  const params = [customerId];
+  let sql = `
+    SELECT work_order, dps_number, dell_last_error, dell_status_raw
+    FROM dell_dispatches
+    WHERE customer_id = ? AND COALESCE(deleted,0)=0
+  `;
+  if (serviceTag) {
+    sql += ` AND UPPER(service_tag) = ?`;
+    params.push(String(serviceTag).toUpperCase());
+  }
+  if (excludeId) {
+    sql += ` AND id != ?`;
+    params.push(excludeId);
+  }
+  const localRows = await db.prepare(sql).all(params);
+  for (const l of localRows) {
+    if (l.work_order) hintCodes.push(l.work_order);
+    if (l.dps_number) hintCodes.push(l.dps_number);
+    for (const text of [l.dell_last_error, l.dell_status_raw]) {
+      const rel = sdsr.extractRelatedWorkOrder(text);
+      if (rel) hintCodes.push(rel);
+      const dps = sdsr.extractDpsNumber(text);
+      if (dps) hintCodes.push(dps);
+    }
+  }
+  return hintCodes;
+}
+
+function submitResultFromInquiry(inquiry, { source = 'dell_link', note = null } = {}) {
+  const raw = inquiry.raw;
+  const mapped = inquiry.mappedStatus || sdsr.mapDellStatusFromRow(raw);
+  const wo = inquiry.dispatchCode || raw?.code || null;
+  const dps = raw?.dps_number || raw?.dell_dispatch_number || inquiry.dpsNumber || null;
+  return {
+    status: mapped,
+    dell_last_error: mapped === 'denied' ? raw?.order_denied_reason || note : null,
+    dps_number: dps,
+    work_order: wo,
+    dell_status_raw: serializeDellRaw(raw),
+    historyEntry: historyFromInquiry(raw, mapped, source),
+    linked: mapped !== 'denied',
+    message:
+      note ||
+      (mapped !== 'denied'
+        ? `Linked to Dell work order ${wo}${dps ? ` (DPS ${dps})` : ''} — status “${inquiry.status || mapped}”.`
+        : null),
+  };
+}
+
+async function resolveDeniedToActiveInquiry(inquiryRow, row) {
+  const deniedText = inquiryRow?.order_denied_reason || '';
+  const relatedWo = sdsr.extractRelatedWorkOrder(deniedText);
+  const dpsHint = sdsr.extractDpsNumber(deniedText);
+  const hintCodes = await gatherHintCodes(row.customer_id, row.service_tag, row.id);
+  const found = await sdsr.findDispatchByCriteria({
+    code: relatedWo || undefined,
+    dpsNumber: dpsHint || undefined,
+    serviceTag: row.service_tag,
+    hintCodes,
+  });
+  if (found.ok && found.raw && found.mappedStatus !== 'denied') {
+    return submitResultFromInquiry(found, {
+      source: 'dell_link',
+      note: `Linked to existing Dell dispatch ${found.dispatchCode} — duplicate submit was not needed.`,
+    });
+  }
+  return null;
+}
+
+async function findExistingDellLink(row) {
+  const tag = String(row.service_tag || '').toUpperCase();
+  if (!tag) return null;
+
+  const hintCodes = await gatherHintCodes(row.customer_id, tag, row.id);
+  const found = await sdsr.findDispatchByCriteria({
+    serviceTag: tag,
+    hintCodes,
+  });
+  if (found.ok && found.raw && found.mappedStatus !== 'denied') {
+    return submitResultFromInquiry(found, {
+      source: 'dell_link',
+      note: `Linked to existing Dell work order ${found.dispatchCode} — no new request was created.`,
+    });
+  }
+  return null;
+}
+
+async function softDeleteDuplicateLocals(customerId, serviceTag, keepId, partNumber) {
+  const dupes = await db.prepare(`
+    SELECT id FROM dell_dispatches
+    WHERE customer_id = ? AND UPPER(service_tag) = ? AND id != ?
+      AND COALESCE(deleted,0)=0
+      AND (status = 'denied' OR work_order IS NULL OR part_number = ?)
+  `).all([customerId, String(serviceTag).toUpperCase(), keepId, partNumber || '']);
+  const deleted = [];
+  for (const d of dupes) {
+    const ok = await softDeleteSyncRow(db, 'dell_dispatches', d.id);
+    if (ok) deleted.push(d.id);
+  }
+  return deleted;
+}
+
 async function trySubmitToDell(row, attachmentPayloads) {
   const login = await sdsr.checkLogin();
   if (!login.ok || !login.ready) {
@@ -576,13 +830,34 @@ async function trySubmitToDell(row, attachmentPayloads) {
     };
   }
 
-  // Prefer branch/customer from company-info when local row blank
+  const existing = await findExistingDellLink(row);
+  if (existing?.linked) {
+    if (row.id) {
+      existing.deleted_duplicates = await softDeleteDuplicateLocals(
+        row.customer_id,
+        row.service_tag,
+        row.id,
+        row.part_number
+      );
+    }
+    return existing;
+  }
+
+  // Prefer company-info relationships for branch/customer (esp. production).
+  // Ignore leftover sandbox "API <hex>" values from older prefills.
   const rel = login.relationships?.[0];
+  const looksLikeSandboxApiName = (v) => /^API\s+[0-9A-F]{20,}$/i.test(String(v || '').trim());
+  const branchName =
+    (!looksLikeSandboxApiName(row.branch_name) && row.branch_name) || rel?.branchName || row.branch_name;
+  const dellCustomerName =
+    (!looksLikeSandboxApiName(row.dell_customer_name) && row.dell_customer_name) ||
+    rel?.customerName ||
+    row.dell_customer_name;
   const created = await sdsr.createDispatch({
     serviceTag: row.service_tag,
     techEmail: row.primary_contact_email || loadDellEnv().DELL_DISPATCH_TECH_EMAIL,
-    branchName: row.branch_name || rel?.branchName,
-    dellCustomerName: row.dell_customer_name || rel?.customerName,
+    branchName,
+    dellCustomerName,
     track: row.track || rel?.track || 'Tier 1',
     primaryContactName: row.primary_contact_name,
     primaryContactPhone: row.primary_contact_phone,
@@ -618,15 +893,61 @@ async function trySubmitToDell(row, attachmentPayloads) {
       dell_last_error: created.error || 'REST CreateDispatch failed',
       dps_number: null,
       work_order: null,
+      dell_status_raw: serializeDellRaw(created.raw),
     };
   }
 
+  const wo = created.workOrder || created.dpsNumber || created.dispatchCode || null;
+  let mappedStatus = 'submitted';
+  let dellRaw = serializeDellRaw(created.raw);
+  let inquiryRow = null;
+
+  if (wo) {
+    const inquiry = await sdsr.getDispatchStatus(wo);
+    if (inquiry.ok && inquiry.raw) {
+      inquiryRow = inquiry.raw;
+      dellRaw = serializeDellRaw(inquiry.raw);
+      mappedStatus = inquiry.mappedStatus || sdsr.mapDellStatusFromRow(inquiry.raw) || 'submitted';
+    }
+  }
+
+  if (mappedStatus === 'denied' && inquiryRow) {
+    const resolved = await resolveDeniedToActiveInquiry(inquiryRow, row);
+    if (resolved?.linked) {
+      if (row.id) {
+        resolved.deleted_duplicates = await softDeleteDuplicateLocals(
+          row.customer_id,
+          row.service_tag,
+          row.id,
+          row.part_number
+        );
+      }
+      return resolved;
+    }
+  }
+
+  const deniedNote =
+    inquiryRow?.order_denied_reason ||
+    (mappedStatus === 'denied' ? created.notes?.join('; ') || null : null);
+
+  const dpsFromInquiry =
+    inquiryRow?.dps_number || inquiryRow?.dell_dispatch_number || created.dpsNumber || null;
+
   return {
-    status: 'submitted',
-    dell_last_error: null,
-    dps_number: created.dpsNumber || created.dispatchCode || null,
-    work_order: created.workOrder || created.dispatchCode || null,
-    dell_status_raw: created.result || null,
+    status: mappedStatus,
+    dell_last_error: deniedNote,
+    dps_number: dpsFromInquiry,
+    work_order: inquiryRow?.code || wo,
+    dell_status_raw: dellRaw,
+    linked: false,
+    historyEntry: inquiryRow
+      ? historyFromInquiry(inquiryRow, mappedStatus, 'dell_submit')
+      : {
+          source: 'dell_submit',
+          local_status: mappedStatus,
+          work_order: wo,
+          note: deniedNote || created.notes?.join('; ') || (wo ? 'Submitted to Dell' : null),
+        },
   };
 }
 
@@ -645,6 +966,19 @@ router.post('/api/customers/:customerId/dell-dispatches', requireAuth, async (re
 
     const draftOnly = Boolean(body.draft_only);
     const sync = syncFieldsForInsert('dell_dispatches');
+    const insertParams = [
+      row.customer_id, row.session_id, row.node_id, row.node_name, row.service_tag, row.product_line,
+      row.part_number, row.part_description, row.part_qty, row.part_ppid, row.troubleshooting_note,
+      row.primary_contact_name, row.primary_contact_phone, row.primary_contact_email,
+      row.alternate_contact_name, row.alternate_contact_phone,
+      row.ship_address_line1, row.ship_address_line2, row.ship_city, row.ship_state, row.ship_zip, row.ship_country, row.ship_timezone,
+      row.reference_po, row.request_complete_care, row.request_return_to_depot, row.request_onsite_technician,
+      row.branch_name, row.dell_customer_name, row.track, draftOnly ? 'draft' : 'queued',
+      row.warranty_ends, row.warranty_in_coverage, row.created_by || req.session?.username || null,
+      sync.uuid,
+      0,
+      0,
+    ];
     const insert = await db.prepare(`
       INSERT INTO dell_dispatches (
         customer_id, session_id, node_id, node_name, service_tag, product_line,
@@ -656,18 +990,19 @@ router.post('/api/customers/:customerId/dell-dispatches', requireAuth, async (re
         branch_name, dell_customer_name, track, status,
         warranty_ends, warranty_in_coverage, created_by,
         uuid, synced, deleted, created_at, updated_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?,0,0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-    `).run([
-      row.customer_id, row.session_id, row.node_id, row.node_name, row.service_tag, row.product_line,
-      row.part_number, row.part_description, row.part_qty, row.part_ppid, row.troubleshooting_note,
-      row.primary_contact_name, row.primary_contact_phone, row.primary_contact_email,
-      row.alternate_contact_name, row.alternate_contact_phone,
-      row.ship_address_line1, row.ship_address_line2, row.ship_city, row.ship_state, row.ship_zip, row.ship_country, row.ship_timezone,
-      row.reference_po, row.request_complete_care, row.request_return_to_depot, row.request_onsite_technician,
-      row.branch_name, row.dell_customer_name, row.track, draftOnly ? 'draft' : 'queued',
-      row.warranty_ends, row.warranty_in_coverage, row.created_by || req.session?.username || null,
-      sync.uuid,
-    ]);
+      ) VALUES (
+        ?,?,?,?,?,?,
+        ?,?,?,?,?,
+        ?,?,?,
+        ?,?,
+        ?,?,?,?,?,?,?,
+        ?,?,?,?,
+        ?,?,?,?,
+        ?,?,?,
+        ?,?,?,
+        CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+      )
+    `).run(insertParams);
 
     const dispatchId = insert.lastInsertRowid;
     const savedFiles = await saveAttachments(dispatchId, body.attachments || []);
@@ -681,7 +1016,7 @@ router.post('/api/customers/:customerId/dell-dispatches', requireAuth, async (re
       UPDATE dell_dispatches SET
         status = ?, dps_number = ?, work_order = ?, dell_last_error = ?,
         dell_status_raw = ?,
-        submitted_at = CASE WHEN ? = 'submitted' THEN CURRENT_TIMESTAMP ELSE submitted_at END,
+        submitted_at = CASE WHEN ? IN ('submitted','issued','shipped','received','denied') THEN COALESCE(submitted_at, CURRENT_TIMESTAMP) ELSE submitted_at END,
         last_status_at = CURRENT_TIMESTAMP,
         synced = 0, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
@@ -695,30 +1030,77 @@ router.post('/api/customers/:customerId/dell-dispatches', requireAuth, async (re
       dispatchId,
     ]);
 
+    if (!draftOnly && submitResult.historyEntry) {
+      await appendDispatchHistory(dispatchId, submitResult.historyEntry);
+    } else if (draftOnly) {
+      await appendDispatchHistory(dispatchId, {
+        source: 'local',
+        local_status: 'draft',
+        note: 'Draft saved on tablet',
+      });
+    }
+
     await afterSyncableWrite(db, 'dell_dispatches', dispatchId);
     const saved = await db.prepare('SELECT * FROM dell_dispatches WHERE id = ?').get([dispatchId]);
+    const wo = submitResult.work_order || submitResult.dps_number;
+    const removed = submitResult.deleted_duplicates?.length || 0;
     res.json({
       success: true,
       dispatch: saved,
-      dell_ready: submitResult.status === 'submitted',
+      linked: Boolean(submitResult.linked),
+      dell_ready: Boolean(wo) && submitResult.status !== 'denied',
+      ok: Boolean(wo) && submitResult.status !== 'denied',
+      work_order: wo || null,
+      deleted_duplicates: submitResult.deleted_duplicates || [],
       message:
-        submitResult.status === 'submitted'
-          ? `Submitted to Dell${submitResult.dps_number ? ` — DPS ${submitResult.dps_number}` : ''}`
+        submitResult.message ||
+        (wo && submitResult.status !== 'denied'
+          ? `Dell work order ${wo} — status “${submitResult.status}”.${removed ? ` Removed ${removed} duplicate local request(s).` : ''}`
           : submitResult.status === 'draft'
-            ? 'Draft saved'
-            : `Saved locally (${submitResult.dell_last_error || 'queued for Dell'})`,
+            ? 'Draft saved on this tablet (not sent to Dell yet).'
+            : submitResult.dell_last_error
+              ? `Saved locally — ${submitResult.dell_last_error}`
+              : 'Saved locally and queued for Dell.'),
     });
   } catch (error) {
     console.error('Create dell dispatch error:', error);
-    res.status(500).json({ error: error.message || 'Database error' });
+    res.status(500).json({
+      success: false,
+      ok: false,
+      error: error.message || 'Database error',
+      message: `Could not save dispatch — ${error.message || 'database error'}`,
+    });
   }
 });
 
 /** POST /api/dell-dispatches/:id/submit — retry SDSR submit for queued/draft */
 router.post('/api/dell-dispatches/:id/submit', requireAuth, async (req, res) => {
+  const dispatchId = Number(req.params.id);
+  if (submitInFlight.has(dispatchId)) {
+    return res.status(429).json({
+      success: false,
+      ok: false,
+      error: 'Submit already in progress',
+      message: 'A submit to Dell is already running for this dispatch. Please wait for it to finish.',
+    });
+  }
+
+  submitInFlight.add(dispatchId);
   try {
-    const row = await db.prepare('SELECT * FROM dell_dispatches WHERE id = ? AND COALESCE(deleted,0)=0').get([req.params.id]);
-    if (!row) return res.status(404).json({ error: 'Not found' });
+    const row = await db.prepare('SELECT * FROM dell_dispatches WHERE id = ? AND COALESCE(deleted,0)=0').get([dispatchId]);
+    if (!row) return res.status(404).json({ error: 'Not found', message: 'Dispatch not found.' });
+
+    if (row.work_order || row.dps_number) {
+      const wo = row.work_order || row.dps_number;
+      return res.status(409).json({
+        success: false,
+        ok: false,
+        error: 'Already submitted',
+        dispatch: row,
+        work_order: wo,
+        message: `This dispatch already has Dell work order ${wo}. Use “Update from Dell” to refresh status.`,
+      });
+    }
 
     const atts = await db.prepare('SELECT * FROM dell_dispatch_attachments WHERE dispatch_id = ?').all([row.id]);
     const payloads = atts.map((a) => {
@@ -736,7 +1118,7 @@ router.post('/api/dell-dispatches/:id/submit', requireAuth, async (req, res) => 
       UPDATE dell_dispatches SET
         status = ?, dps_number = COALESCE(?, dps_number), work_order = COALESCE(?, work_order),
         dell_last_error = ?, dell_status_raw = ?,
-        submitted_at = CASE WHEN ? = 'submitted' THEN CURRENT_TIMESTAMP ELSE submitted_at END,
+        submitted_at = CASE WHEN ? IN ('submitted','issued','shipped','received','denied') THEN COALESCE(submitted_at, CURRENT_TIMESTAMP) ELSE submitted_at END,
         last_status_at = CURRENT_TIMESTAMP, synced = 0, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run([
@@ -748,12 +1130,77 @@ router.post('/api/dell-dispatches/:id/submit', requireAuth, async (req, res) => 
       submitResult.status,
       row.id,
     ]);
+    if (submitResult.historyEntry) {
+      await appendDispatchHistory(row.id, submitResult.historyEntry);
+    }
     await afterSyncableWrite(db, 'dell_dispatches', row.id);
     const saved = await db.prepare('SELECT * FROM dell_dispatches WHERE id = ?').get([row.id]);
-    res.json({ success: true, dispatch: saved, message: submitResult.dell_last_error || 'Submitted' });
+    const wo = submitResult.work_order || submitResult.dps_number || saved?.work_order || saved?.dps_number;
+    if (wo && submitResult.status === 'denied') {
+      return res.json({
+        success: true,
+        ok: false,
+        dispatch: saved,
+        work_order: wo,
+        message: `Dell work order ${wo} was denied — ${submitResult.dell_last_error || 'see status timeline for details'}.`,
+      });
+    }
+    if (wo && submitResult.status !== 'queued') {
+      const removed = submitResult.deleted_duplicates?.length || 0;
+      return res.json({
+        success: true,
+        ok: submitResult.status !== 'denied',
+        linked: Boolean(submitResult.linked),
+        dispatch: saved,
+        work_order: wo,
+        deleted_duplicates: submitResult.deleted_duplicates || [],
+        message:
+          submitResult.message ||
+          `Dell work order ${wo} — status “${saved.status}”.${removed ? ` Removed ${removed} duplicate local request(s).` : ''}`,
+      });
+    }
+    const errText = submitResult.dell_last_error || 'Dell did not return a work order';
+    return res.status(502).json({
+      success: false,
+      ok: false,
+      dispatch: saved,
+      error: errText,
+      message: `Could not submit to Dell — ${errText}. The request is still saved locally; you can try again.`,
+    });
   } catch (error) {
     console.error('Submit dell dispatch error:', error);
-    res.status(500).json({ error: error.message || 'Submit failed' });
+    res.status(500).json({
+      success: false,
+      ok: false,
+      error: error.message || 'Submit failed',
+      message: `Submit failed — ${error.message || 'unexpected error'}. Try again in a moment.`,
+    });
+  } finally {
+    submitInFlight.delete(dispatchId);
+  }
+});
+
+/** GET /api/dell-dispatches/attachments/:attachmentId — preview/download evidence file */
+router.get('/api/dell-dispatches/attachments/:attachmentId', requireAuth, async (req, res) => {
+  try {
+    const att = await db.prepare(`
+      SELECT a.*, d.customer_id
+      FROM dell_dispatch_attachments a
+      JOIN dell_dispatches d ON d.id = a.dispatch_id
+      WHERE a.id = ? AND COALESCE(d.deleted,0)=0
+    `).get([req.params.attachmentId]);
+    if (!att?.file_path || !fs.existsSync(att.file_path)) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+    if (att.mime_type) res.type(att.mime_type);
+    res.setHeader(
+      'Content-Disposition',
+      `${req.query.download ? 'attachment' : 'inline'}; filename="${String(att.filename || 'file').replace(/"/g, '')}"`
+    );
+    fs.createReadStream(att.file_path).pipe(res);
+  } catch (error) {
+    console.error('Attachment serve error:', error);
+    res.status(500).json({ error: error.message || 'Failed to read attachment' });
   }
 });
 
@@ -772,20 +1219,55 @@ router.post('/api/dell-dispatches/:id/refresh-status', requireAuth, async (req, 
         WHERE id = ?
       `).run([status.error, row.id]);
       await afterSyncableWrite(db, 'dell_dispatches', row.id);
-      return res.status(502).json({ error: status.error });
+      return res.status(502).json({
+        error: status.error,
+        message: `Could not refresh from Dell — ${status.error}`,
+      });
     }
 
-    const mapped = sdsr.mapDellStatus(status.status) || row.status;
+    const mapped = status.mappedStatus || sdsr.mapDellStatusFromRow(status.raw) || row.status;
+    const rawText = serializeDellRaw(status.raw);
+    const deniedNote = status.orderDeniedReason || null;
     await db.prepare(`
       UPDATE dell_dispatches SET
         status = ?, dps_number = COALESCE(?, dps_number), work_order = COALESCE(?, work_order),
-        dell_status_raw = ?, dell_last_error = NULL,
+        dell_status_raw = ?, dell_last_error = ?,
         last_status_at = CURRENT_TIMESTAMP, synced = 0, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run([mapped, status.dpsNumber, status.dispatchCode, status.status, row.id]);
+    `).run([
+      mapped,
+      status.dpsNumber,
+      status.dispatchCode,
+      rawText,
+      mapped === 'denied' ? deniedNote : null,
+      row.id,
+    ]);
+    await appendDispatchHistory(row.id, historyFromInquiry(status.raw, mapped, 'dell_refresh'));
     await afterSyncableWrite(db, 'dell_dispatches', row.id);
     const saved = await db.prepare('SELECT * FROM dell_dispatches WHERE id = ?').get([row.id]);
-    res.json({ success: true, dispatch: saved, dell: status });
+    const [withAtts] = await attachAttachments([saved]);
+    const statusLabel = status.status || status.result || mapped;
+    const detailBits = [status.statusDetail, deniedNote].filter(Boolean);
+    const serviceSummary = inquiryServiceSummary(status.raw);
+    res.json({
+      success: true,
+      dispatch: withAtts || saved,
+      dell: {
+        status: status.status,
+        statusDetail: status.statusDetail,
+        result: status.result,
+        mappedStatus: mapped,
+        dpsNumber: status.dpsNumber,
+        dispatchCode: status.dispatchCode,
+        orderDeniedReason: deniedNote,
+        raw: status.raw || null,
+      },
+      message: serviceSummary
+        ? `Dell: ${statusLabel} — ${serviceSummary}`
+        : detailBits.length
+          ? `Dell: ${statusLabel} — ${detailBits.join(' · ')}`
+          : `Dell status: ${statusLabel} (tracker: ${mapped})`,
+    });
   } catch (error) {
     console.error('Refresh status error:', error);
     res.status(500).json({ error: error.message || 'Refresh failed' });
@@ -832,6 +1314,12 @@ router.patch('/api/dell-dispatches/:id', requireAuth, async (req, res) => {
       UPDATE dell_dispatches SET status = ?, synced = 0, updated_at = CURRENT_TIMESTAMP, last_status_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run([status, row.id]);
+    await appendDispatchHistory(row.id, {
+      source: 'local',
+      local_status: status,
+      work_order: row.work_order || row.dps_number || null,
+      note: `Marked “${status}” on this tablet`,
+    });
     await afterSyncableWrite(db, 'dell_dispatches', row.id);
     const saved = await db.prepare('SELECT * FROM dell_dispatches WHERE id = ?').get([row.id]);
     res.json({ success: true, dispatch: saved });
@@ -846,7 +1334,7 @@ router.delete('/api/dell-dispatches/:id', requireAuth, async (req, res) => {
   try {
     const ok = await softDeleteSyncRow(db, 'dell_dispatches', req.params.id);
     if (!ok) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true });
+    res.json({ success: true, message: 'Dispatch request deleted.' });
   } catch (error) {
     console.error('Delete dell dispatch error:', error);
     res.status(500).json({ error: 'Database error' });

@@ -695,6 +695,7 @@ const dellDispatchSchema = new mongoose.Schema({
   work_order: { type: String },
   dell_status_raw: { type: String },
   dell_last_error: { type: String },
+  status_history: { type: String },
   warranty_ends: { type: String },
   warranty_in_coverage: { type: Number },
   submitted_at: { type: Date },

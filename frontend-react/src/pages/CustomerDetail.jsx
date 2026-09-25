@@ -12,6 +12,8 @@ import {
   RefreshCw,
   ChevronDown,
   X,
+  Copy,
+  Check,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -74,6 +76,7 @@ export default function CustomerDetail() {
   const [metricHistoryLoading, setMetricHistoryLoading] = useState(false);
   const [expandedMetricRow, setExpandedMetricRow] = useState(null);
   const [showSystemPassword, setShowSystemPassword] = useState(false);
+  const [copiedSiId, setCopiedSiId] = useState(false);
   const [systemRegStats, setSystemRegStats] = useState(null);
   const [spSyncing, setSpSyncing] = useState(false);
   const [spLastSync, setSpLastSync] = useState(null);
@@ -170,9 +173,17 @@ export default function CustomerDetail() {
     }
   };
 
-  const showMessage = (text, type = 'info') => {
-    setMessage({ text, type });
-    setTimeout(() => setMessage(null), 5000);
+  const showMessage = (text, type = 'info', title) => {
+    if (typeof text === 'object' && text !== null) {
+      setMessage({
+        text: text.message || text.text || '',
+        type: text.type || 'info',
+        title: text.title,
+      });
+    } else {
+      setMessage({ text, type, title });
+    }
+    setTimeout(() => setMessage(null), 8000);
   };
 
   const loadMetricHistory = async () => {
@@ -575,6 +586,19 @@ export default function CustomerDetail() {
     customer.dongle_id ||
     (customer.alias && customer.name !== customer.alias ? customer.name : null);
 
+  const copySiId = async () => {
+    const value = String(customer.dongle_id || '').trim();
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedSiId(true);
+      showMessage('SI ID copied', 'success');
+      setTimeout(() => setCopiedSiId(false), 2000);
+    } catch (_) {
+      showMessage('Could not copy SI ID', 'error');
+    }
+  };
+
   return (
     <Layout>
       <div className="breadcrumb">
@@ -589,8 +613,19 @@ export default function CustomerDetail() {
             {displayName}
           </h1>
           {idSubtitle && idSubtitle !== displayName && (
-            <p className="mt-1 font-mono text-sm text-gray-400 whitespace-nowrap truncate" title={idSubtitle}>
-              {idSubtitle}
+            <p className="mt-1 font-mono text-sm text-gray-400 whitespace-nowrap truncate flex items-center gap-2" title={idSubtitle}>
+              <span className="truncate">{customer.dongle_id ? `SI ID ${idSubtitle}` : idSubtitle}</span>
+              {customer.dongle_id && (
+                <button
+                  type="button"
+                  onClick={copySiId}
+                  className="shrink-0 inline-flex items-center gap-1 rounded border border-gray-600 px-1.5 py-0.5 text-[11px] text-gray-300 hover:bg-gray-700 hover:text-white"
+                  title="Copy SI ID"
+                >
+                  {copiedSiId ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copiedSiId ? 'Copied' : 'Copy'}
+                </button>
+              )}
             </p>
           )}
           {customer.location && (
@@ -676,6 +711,7 @@ export default function CustomerDetail() {
             message.type === 'success' ? 'alert-success' : message.type === 'error' ? 'alert-error' : 'alert-info'
           }`}
         >
+          {message.title && <div className="font-semibold mb-1">{message.title}</div>}
           {message.text}
         </div>
       )}
@@ -993,8 +1029,19 @@ export default function CustomerDetail() {
             ) : null}
             {customer.dongle_id && (
               <div>
-                <div className="text-xs text-gray-500 uppercase">Dongle ID</div>
-                <div className="text-gray-200 font-mono text-sm">{customer.dongle_id}</div>
+                <div className="text-xs text-gray-500 uppercase flex items-center justify-between gap-2">
+                  <span>SI ID</span>
+                  <button
+                    type="button"
+                    onClick={copySiId}
+                    className="inline-flex items-center gap-1 text-[11px] normal-case tracking-normal text-blue-400 hover:text-blue-300"
+                    title="Copy SI ID"
+                  >
+                    {copiedSiId ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copiedSiId ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <div className="text-gray-200 font-mono text-sm select-all">{customer.dongle_id}</div>
               </div>
             )}
             {customer.contact_info && (

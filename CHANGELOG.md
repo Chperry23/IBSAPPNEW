@@ -11,9 +11,15 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Dell Parts / HDD dispatch on customer profile (Needs request queue, submit wizard, open tracker) plus `/dispatches` and PM session Request shortcut
 - Local `dell_dispatches` table (sync metadata) with SDSR sandbox submit that queues when CheckLogin is not ready
 - Workstation Dell warranty cache on `sys_workstations` (ends / coverage / product / service level); customer profile loads from cache; **Refresh warranties** hits Dell again
+- Dell dispatch auto-link: create/submit attaches to an existing TechDirect work order when one is already open, and drops denied local duplicates
+- Dispatch status history and an on-site service snapshot (technician, parts tracking, Dell last-update time)
 
 ### Fixed
-- System Registry (`/csv-tracking`) load: `/api/system-registry/imports` now uses one grouped count per table instead of seven queries per customer (sys_charms can be 80k+ rows) 
+- Dell inquiry status mapping for denied/duplicate work orders and pipe-separated DPS numbers
+- System Registry (`/csv-tracking`) load: `/api/system-registry/imports` now uses one grouped count per table instead of seven queries per customer (sys_charms can be 80k+ rows)
+
+### Known
+- Appointment windows and “technician en route” text stay on dell.com — the Self-Dispatch inquiry API does not return that timeline 
 
 ## [2.0.1] - 2026-06-25
 
