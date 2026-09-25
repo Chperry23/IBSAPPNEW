@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import api from '../services/api';
 import soundSystem from '../utils/sounds';
+import { applyAppUpdate, checkAppUpdate } from '../utils/appUpdates';
 
 export default function Sync() {
   const [deviceInfo, setDeviceInfo] = useState(null);
@@ -24,6 +25,7 @@ export default function Sync() {
 
   useEffect(() => {
     loadAllData();
+    checkForUpdates({ quiet: true });
   }, []);
 
   const loadAllData = async () => {
@@ -164,6 +166,7 @@ export default function Sync() {
         soundSystem.playSuccess();
         showMessage(`Downloaded ${result.totalPulled ?? 0} records${conflictMsg}. Refresh status below.`, 'success');
         await refreshStatus();
+        checkForUpdates({ quiet: true });
       } else {
         soundSystem.playError();
         showMessage(`Download failed: ${result.error || 'unknown error'}`, 'error');
@@ -261,6 +264,7 @@ export default function Sync() {
         const warn = result.warnings?.length ? ` (warnings: ${result.warnings.join('; ')})` : '';
         showMessage(`Uploaded ${result.totalPushed ?? 0} records${warn}`, 'success');
         await refreshStatus();
+        checkForUpdates({ quiet: true });
       } else {
         soundSystem.playError();
         showMessage(
@@ -299,6 +303,7 @@ export default function Sync() {
           'success'
         );
         await refreshStatus();
+        checkForUpdates({ quiet: true });
       } else {
         soundSystem.playError();
         showMessage(`Sync incomplete: ${result.error || result.message || 'see Data Status'}`, 'error');
@@ -337,11 +342,12 @@ export default function Sync() {
     }
   };
 
-  const checkForUpdates = async () => {
+  const checkForUpdates = async ({ quiet = false } = {}) => {
     try {
       setUpdateBusy(true);
-      const result = await api.request('/api/updates/check');
+      const result = await checkAppUpdate();
       setUpdateInfo(result);
+      if (quiet && !result.updateAvailable) return;
       if (result.updateAvailable) {
         showMessage(result.message || 'Update available', 'success');
       } else if (result.reachable === false || result.configured === false) {
@@ -350,26 +356,23 @@ export default function Sync() {
         showMessage(result.message || 'Up to date', 'success');
       }
     } catch (error) {
-      showMessage(`Update check failed: ${error.message}`, 'error');
+      if (!quiet) showMessage(`Update check failed: ${error.message}`, 'error');
     } finally {
       setUpdateBusy(false);
     }
   };
 
   const applyUpdate = async () => {
-    if (!updateInfo?.updateAvailable || !updateInfo?.remote?.installerUrl) {
-      showMessage('No installer URL from update check', 'error');
+    if (!updateInfo?.updateAvailable) {
+      showMessage('No update is available', 'error');
       return;
     }
     try {
       setUpdateBusy(true);
-      showMessage('Downloading installer…', 'info');
-      const result = await api.request('/api/updates/apply', {
-        method: 'POST',
-        body: JSON.stringify({ installerUrl: updateInfo.remote.installerUrl }),
-      });
+      showMessage('Downloading installer… Cabinet PM will close when the installer starts.', 'info');
+      const result = await applyAppUpdate(updateInfo.remote?.installerUrl);
       if (result.ok) {
-        showMessage(result.message || 'Installer started — leave the app open until it finishes.', 'success');
+        showMessage(result.message || 'Installer started. Reopen Cabinet PM when it finishes.', 'success');
       } else {
         showMessage(result.error || 'Update apply failed', 'error');
       }
@@ -454,7 +457,7 @@ export default function Sync() {
       <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
           <h1 className="text-4xl font-bold gradient-text mb-2">Cloud Sync</h1>
-          <p className="text-gray-400">Keep your data synchronized across all devices</p>
+          <p className="text-gray-400">Keep your data synchronized across all devices. App updates are checked here.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -477,13 +480,36 @@ export default function Sync() {
           )}
         </div>
       </div>
-      {updateInfo?.local && (
+      {updateInfo?.updateAvailable && (
+        <div className="mb-6 rounded-xl border border-blue-600/50 bg-blue-950/40 px-4 py-4 text-blue-50">
+          <div className="font-semibold text-lg">
+            Update available — {updateInfo.remote?.version || 'newer build'}
+          </div>
+          <p className="text-sm text-blue-100/80 mt-1">
+            Local {updateInfo.local?.version || '?'}
+            {updateInfo.local?.buildId ? ` (${updateInfo.local.buildId})` : ''}
+            {updateInfo.remote?.version ? ` → ${updateInfo.remote.version}` : ''}
+          </p>
+          {updateInfo.remote?.notes && (
+            <p className="text-sm text-blue-100/90 mt-2 whitespace-pre-wrap">{updateInfo.remote.notes}</p>
+          )}
+          <p className="text-xs text-blue-200/70 mt-2">
+            Install replaces program files only. Your tablet database in AppData is left alone. Cabinet PM closes while the installer runs — reopen it when the installer finishes.
+          </p>
+          <button
+            type="button"
+            onClick={applyUpdate}
+            disabled={updateBusy || syncing}
+            className="mt-3 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
+          >
+            {updateBusy ? 'Installing…' : `Install ${updateInfo.remote?.version || 'update'}`}
+          </button>
+        </div>
+      )}
+      {updateInfo?.local && !updateInfo.updateAvailable && (
         <p className="text-xs text-gray-500 -mt-6 mb-6">
           Local {updateInfo.local.version}
           {updateInfo.local.buildId ? ` (${updateInfo.local.buildId})` : ''}
-          {updateInfo.updateAvailable && updateInfo.remote?.version
-            ? ` → ${updateInfo.remote.version}`
-            : ''}
           {updateInfo.message ? ` — ${updateInfo.message}` : ''}
         </p>
       )}

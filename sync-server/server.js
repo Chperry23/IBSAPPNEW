@@ -9,6 +9,7 @@ const mongoose = require('mongoose');
 const config = require('./config');
 const syncRoutes = require('./routes/sync');
 const healthRoutes = require('./routes/health');
+const tabletUpdatesRoutes = require('./routes/tablet-updates');
 
 // Ensure models load (registers mongoose schemas for app collections)
 require(path.join(__dirname, '../backend/models/mongodb-models'));
@@ -16,6 +17,7 @@ require('./models/sync-meta');
 
 const app = express();
 app.use(healthRoutes);
+app.use(tabletUpdatesRoutes);
 app.use(syncRoutes);
 app.use(express.json({ limit: '2mb' }));
 

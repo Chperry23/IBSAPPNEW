@@ -506,10 +506,11 @@ router.get('/:sessionId', requireAuth, async (req, res) => {
     }
     
     const sessionCabinets = await db.prepare(`
-      SELECT c.*, cl.location_name, cl.id as location_id
+      SELECT c.*, cl.location_name
       FROM cabinets c
       LEFT JOIN cabinet_locations cl ON c.location_id = cl.id AND COALESCE(cl.deleted, 0) = 0
-      WHERE c.pm_session_id = ? 
+      WHERE c.pm_session_id = ?
+        AND COALESCE(c.deleted, 0) = 0
       ORDER BY cl.sort_order, cl.location_name, c.created_at
     `).all([sessionId]);
     
@@ -627,7 +628,9 @@ router.post('/:sessionId/export-pdfs', requireAuth, async (req, res) => {
     log('Session loaded', { session_name: session.session_name, customer_name: session.customer_name });
 
     const sessionCabinets = await db.prepare(`
-      SELECT c.* FROM cabinets c WHERE c.pm_session_id = ? ORDER BY c.created_at
+      SELECT c.* FROM cabinets c
+      WHERE c.pm_session_id = ? AND COALESCE(c.deleted, 0) = 0
+      ORDER BY c.created_at
     `).all([sessionId]);
     log('Cabinets loaded', { count: sessionCabinets.length });
 
@@ -1260,7 +1263,7 @@ router.put('/:sessionId/complete', requireAuth, async (req, res) => {
     // Optionally save metrics to customer history for trend over time
     if (saveHistory && session.customer_id) {
       try {
-        const sessionCabinets = await db.prepare('SELECT * FROM cabinets WHERE pm_session_id = ? ORDER BY created_at').all([sessionId]);
+        const sessionCabinets = await db.prepare('SELECT * FROM cabinets WHERE pm_session_id = ? AND COALESCE(deleted, 0) = 0 ORDER BY created_at').all([sessionId]);
         const cabinets = sessionCabinets.map((row) => {
           const inspection = (() => {
             try {
@@ -1489,7 +1492,7 @@ router.post('/:sessionId/duplicate', requireAuth, async (req, res) => {
     console.log('📍 Duplicated', sourceLocations.length, 'locations');
     
     // Get all cabinets from source session
-    const sourceCabinets = await db.prepare('SELECT * FROM cabinets WHERE pm_session_id = ?').all([sourceSessionId]);
+    const sourceCabinets = await db.prepare('SELECT * FROM cabinets WHERE pm_session_id = ? AND COALESCE(deleted, 0) = 0').all([sourceSessionId]);
     console.log('📦 Found', sourceCabinets.length, 'cabinets to duplicate');
     
     // Copy each cabinet and its controller assignments

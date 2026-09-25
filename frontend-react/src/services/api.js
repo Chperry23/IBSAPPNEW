@@ -227,7 +227,19 @@ class ApiService {
   }
 
   async deleteCabinet(id) {
-    return this.request(`/api/cabinets/${id}`, { method: 'DELETE' });
+    const response = await fetch(`${API_BASE}/api/cabinets/${id}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const contentType = response.headers.get('content-type') || '';
+    const data = contentType.includes('application/json')
+      ? await response.json()
+      : { success: false, error: `Delete failed (${response.status})` };
+    if (!response.ok) {
+      return { success: false, error: data.error || data.message || `Delete failed (${response.status})` };
+    }
+    return data;
   }
 
   async bulkImportCabinets(sessionId, cabinetsData) {

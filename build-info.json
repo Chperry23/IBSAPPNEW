@@ -1,11 +1,11 @@
 {
-  "version": "2.0.1",
-  "buildId": "2.0.1-20260908.0926-cf0c51",
-  "buildDate": "2026-09-08T13:26:04.466Z",
-  "buildDateHuman": "Sep 8, 2026, 9:26 AM",
+  "version": "2.0.4",
+  "buildId": "2.0.4-20260925.1606-3e9bfa",
+  "buildDate": "2026-09-25T20:06:11.594Z",
+  "buildDateHuman": "Sep 25, 2026, 4:06 PM",
   "git": {
-    "commit": "e238ae5",
-    "branch": "master",
+    "commit": "5ba2db1",
+    "branch": "feature/tablet-installer-updates",
     "dirty": true
   }
 }

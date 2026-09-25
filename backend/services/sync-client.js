@@ -15,6 +15,10 @@ const {
 const { backfillTableUuids, backfillStringIdTableUuids, backfillMissingSessionUuids } = require('../utils/ensure-row-uuid');
 const { markCustomerRegistryForSync } = require('../utils/registry-version');
 const { repairEmptyRegistryNames } = require('../utils/registry-name');
+const {
+  migrateCabinetNamesIntoLocations,
+  reconstructPhantomCabinetLocations,
+} = require('../utils/migrate-cabinet-locations');
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
@@ -249,6 +253,16 @@ class SyncClient {
     }
 
     const deviceId = await this.getDeviceId();
+    const locMigrate = await migrateCabinetNamesIntoLocations(this.localDb);
+    if (locMigrate.copied > 0 || locMigrate.backfilledUuid > 0) {
+      console.log(
+        `📍 Before upload: migrated ${locMigrate.copied} location(s), uuid backfill ${locMigrate.backfilledUuid}`
+      );
+    }
+    const phantom = await reconstructPhantomCabinetLocations(this.localDb);
+    if (phantom.inserted > 0) {
+      console.log(`📍 Before upload: reconstructed ${phantom.inserted} missing location row(s)`);
+    }
     await backfillTableUuids(this.localDb, 'session_node_maintenance');
     await backfillTableUuids(this.localDb, 'session_diagnostics');
     for (const tableName of ['cabinets', 'cabinet_locations', 'session_ii_documents']) {

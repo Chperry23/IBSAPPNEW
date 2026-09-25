@@ -41,6 +41,35 @@ function updateBase() {
   return String(process.env.CABINET_PM_UPDATE_URL || '').trim().replace(/\/$/, '');
 }
 
+function syncUpdatesHttpBase() {
+  const sync = String(process.env.SYNC_API_URL || '').trim().replace(/\/$/, '');
+  if (!sync) return '';
+  return `${sync}/tablet-updates`;
+}
+
+/** Try configured folder/URL first, then HTTP feed on the sync server (no SMB needed). */
+function updateFeedCandidates() {
+  const seen = new Set();
+  const out = [];
+  const add = (base) => {
+    const b = String(base || '').trim().replace(/\/$/, '');
+    if (!b || seen.has(b)) return;
+    seen.add(b);
+    out.push(b);
+  };
+  add(updateBase());
+  add(syncUpdatesHttpBase());
+  return out;
+}
+
+function localFeedPath(base) {
+  const normalized = String(base).replace(/\//g, '\\').replace(/\\+$/, '');
+  if (normalized.startsWith('\\\\') || /^[A-Za-z]:\\/.test(normalized)) {
+    return `${normalized}\\version.json`;
+  }
+  return path.join(normalized, 'version.json');
+}
+
 function compareSemver(a, b) {
   const pa = String(a || '0')
     .replace(/^v/i, '')
@@ -64,12 +93,21 @@ async function fetchVersionFeed(base) {
 
   // UNC / local folder
   if (base.startsWith('\\\\') || /^[A-Za-z]:\\/.test(base)) {
-    const feedPath = path.join(base, 'version.json');
+    const feedPath = localFeedPath(base);
     if (!fs.existsSync(feedPath)) {
+      try {
+        fs.accessSync(base, fs.constants.R_OK);
+      } catch (_) {
+        return {
+          ok: false,
+          error:
+            `Cannot access update share at ${base}. Use HTTP instead: ${syncUpdatesHttpBase() || 'set SYNC_API_URL'}`,
+        };
+      }
       return { ok: false, error: `version.json not found at ${feedPath}` };
     }
     const feed = JSON.parse(fs.readFileSync(feedPath, 'utf8'));
-    return { ok: true, feed, source: feedPath };
+    return { ok: true, feed, source: feedPath, baseUsed: base };
   }
 
   const url = `${base}/version.json`;
@@ -78,14 +116,32 @@ async function fetchVersionFeed(base) {
     return { ok: false, error: `Feed HTTP ${res.status} from ${url}` };
   }
   const feed = await res.json();
-  return { ok: true, feed, source: url };
+  return { ok: true, feed, source: url, baseUsed: base };
+}
+
+async function fetchVersionFeedAny() {
+  const candidates = updateFeedCandidates();
+  if (!candidates.length) {
+    return { ok: false, error: 'CABINET_PM_UPDATE_URL is not configured' };
+  }
+  let lastError = 'Update feed unreachable';
+  for (const base of candidates) {
+    try {
+      const result = await fetchVersionFeed(base);
+      if (result.ok) return result;
+      lastError = result.error;
+    } catch (e) {
+      lastError = e.message;
+    }
+  }
+  return { ok: false, error: lastError };
 }
 
 /** GET /api/updates/check — compare local build to feed (offline → soft skip). */
 router.get('/api/updates/check', requireAuth, async (req, res) => {
   const local = localVersion();
-  const base = updateBase();
-  if (!base) {
+  const candidates = updateFeedCandidates();
+  if (!candidates.length) {
     return res.json({
       ok: true,
       configured: false,
@@ -96,7 +152,7 @@ router.get('/api/updates/check', requireAuth, async (req, res) => {
   }
 
   try {
-    const result = await fetchVersionFeed(base);
+    const result = await fetchVersionFeedAny();
     if (!result.ok) {
       return res.json({
         ok: true,
@@ -152,15 +208,16 @@ router.get('/api/updates/check', requireAuth, async (req, res) => {
  * Does not modify AppData DB.
  */
 router.post('/api/updates/apply', requireAuth, async (req, res) => {
-  const base = updateBase();
   let installerUrl = String(req.body?.installerUrl || '').trim();
+  let feedBase = updateBase();
 
   try {
     if (!installerUrl) {
-      const feed = await fetchVersionFeed(base);
+      const feed = await fetchVersionFeedAny();
       if (!feed.ok) {
         return res.status(400).json({ ok: false, error: feed.error });
       }
+      feedBase = feed.baseUsed || feedBase;
       installerUrl = String(feed.feed.installerUrl || feed.feed.installer || '').trim();
     }
     if (!installerUrl) {
@@ -181,8 +238,15 @@ router.post('/api/updates/apply', requireAuth, async (req, res) => {
       }
       const buf = Buffer.from(await r.arrayBuffer());
       fs.writeFileSync(dest, buf);
-    } else if (base && (base.startsWith('\\\\') || /^[A-Za-z]:\\/.test(base))) {
-      fs.copyFileSync(path.join(base, installerUrl), dest);
+    } else if (feedBase && (feedBase.startsWith('\\\\') || /^[A-Za-z]:\\/.test(feedBase))) {
+      fs.copyFileSync(path.join(feedBase, installerUrl), dest);
+    } else if (feedBase && /^https?:\/\//i.test(feedBase)) {
+      const url = `${feedBase.replace(/\/$/, '')}/${installerUrl.replace(/^\//, '')}`;
+      const r = await fetch(url, { signal: AbortSignal.timeout(300000) });
+      if (!r.ok) {
+        return res.status(502).json({ ok: false, error: `Download failed HTTP ${r.status} from ${url}` });
+      }
+      fs.writeFileSync(dest, Buffer.from(await r.arrayBuffer()));
     } else {
       return res.status(400).json({ ok: false, error: 'Unsupported installerUrl scheme' });
     }
@@ -197,12 +261,17 @@ router.post('/api/updates/apply', requireAuth, async (req, res) => {
 
     res.json({
       ok: true,
-      message: 'Installer started. Cabinet PM will restart after upgrade. Database in AppData is not replaced.',
+      message:
+        'Installer started. Cabinet PM will close so the upgrade can replace program files. Your database in AppData is not replaced. Reopen Cabinet PM when the installer finishes.',
       installer: dest,
     });
+    // Unlock program files for Inno. The response is already flushed by Express.
+    setTimeout(() => process.exit(0), 1500);
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
 module.exports = router;
+module.exports.compareSemver = compareSemver;
+module.exports.fetchVersionFeed = fetchVersionFeed;

@@ -1,5 +1,9 @@
 module.exports = {
   port: parseInt(process.env.SYNC_SERVER_PORT || '3090', 10),
+  /** Folder with version.json + setup exe (same as UNC publish target on master). */
+  tabletUpdatesDir:
+    process.env.TABLET_UPDATES_DIR ||
+    '\\\\172.16.10.124\\CabinetPm\\Updates',
   mongoUri:
     process.env.MONGODB_URI ||
     'mongodb://127.0.0.1:27017/cabinet_pm_db?directConnection=true',

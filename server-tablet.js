@@ -100,23 +100,19 @@ function fatal(label, err) {
         fs.copyFileSync(crashReportPath, desktop);
     } catch (_) {}
 
-    if (isPackaged) {
-        console.log('\n>>> Open STARTUP-CRASH-REPORT.txt (next to the .exe) for details <<<');
-        console.log('--- Press any key to close ---');
+    if (isPackaged && process.platform === 'win32') {
         try {
-            if (process.stdin.isTTY) {
-                process.stdin.setRawMode(true);
-                process.stdin.resume();
-                process.stdin.once('data', () => process.exit(1));
-            } else {
-                setTimeout(() => process.exit(1), 30000);
-            }
-        } catch (_) {
-            setTimeout(() => process.exit(1), 30000);
-        }
-    } else {
-        process.exit(1);
+            const { spawn } = require('child_process');
+            const text = 'Cabinet PM could not start. Details are in STARTUP-CRASH-REPORT.txt next to the program.';
+            spawn('powershell.exe', [
+                '-NoProfile',
+                '-WindowStyle', 'Hidden',
+                '-Command',
+                `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('${text}','Cabinet PM')`,
+            ], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+        } catch (_) {}
     }
+    process.exit(1);
 }
 
 process.on('uncaughtException',  (err)    => fatal('Uncaught exception',     err));
@@ -126,6 +122,15 @@ process.on('unhandledRejection', (reason) => fatal('Unhandled promise rejection'
 // STEP 1 — Environment diagnostics
 // ─────────────────────────────────────────────────────────────────────────────
 stamp('STEP 1', 'Running environment diagnostics');
+
+const { loadCabinetPmEnv } = require('./backend/utils/cabinet-pm-env');
+const cabinetEnv = loadCabinetPmEnv(appBasePath);
+if (cabinetEnv.loaded.length) {
+  stamp(
+    'STEP 1',
+    `cabinet-pm.env loaded (${cabinetEnv.loaded.length} file(s)); update URL ${process.env.CABINET_PM_UPDATE_URL ? 'set' : 'not set'}`
+  );
+}
 
 // Packaged: DB under %APPDATA%\CabinetPM (survives installer upgrades).
 // Dev: ./data. Legacy <exeDir>/data is migrated once if AppData is empty.
@@ -298,6 +303,9 @@ initializeDatabase()
         // Tablets default to HTTP sync API on master :3090; set SYNC_USE_LEGACY=1 for direct Mongo only
         if (process.env.SYNC_USE_LEGACY !== '1' && !process.env.SYNC_API_URL) {
             process.env.SYNC_API_URL = 'http://172.16.10.124:3090';
+        }
+        if (!process.env.CABINET_PM_UPDATE_URL) {
+            process.env.CABINET_PM_UPDATE_URL = `${String(process.env.SYNC_API_URL || 'http://172.16.10.124:3090').replace(/\/$/, '')}/tablet-updates`;
         }
         const { getDefaultMongoUri } = require('./backend/utils/mongo-uri');
         const mongoUri = getDefaultMongoUri();

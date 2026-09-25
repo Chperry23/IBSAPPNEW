@@ -1,6 +1,6 @@
 {
   "name": "cabinet-pm-tablet",
-  "version": "2.0.1",
+  "version": "2.0.4",
   "description": "Cabinet PM Tablet Application - Preventive Maintenance & Inspection Management System",
   "main": "server-tablet.js",
   "bin": "server-tablet.js",
@@ -27,7 +27,8 @@
     "version:major": "node scripts/release-version.js major",
     "build:exe": "node build-exe.js",
     "build:full": "node create-full-package.js",
-    "build:installer": "node scripts/stage-installer-payload.js && echo Compile installer\\cabinet-pm.iss with Inno Setup (ISCC)",
+    "build:installer": "node scripts/build-installer.js",
+    "publish:update": "node scripts/publish-tablet-update.js",
     "deploy": "npm run build:frontend && npm run build:exe && npm run build:full",
     "merge-import-bundle": "node scripts/merge-cabinet-import-bundle.js",
     "pdf:blank-ii": "node backend/scripts/generate-ii-blank-pdf.js",

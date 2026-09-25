@@ -628,18 +628,18 @@ router.delete('/:cabinetId', requireAuth, async (req, res) => {
   try {
     // First check if this cabinet belongs to a completed session
     const cabinet = await db.prepare(`
-      SELECT c.pm_session_id, s.status 
-      FROM cabinets c 
-      LEFT JOIN sessions s ON c.pm_session_id = s.id 
-      WHERE c.id = ?
+      SELECT c.pm_session_id, c.status AS cabinet_status, s.status AS session_status
+      FROM cabinets c
+      LEFT JOIN sessions s ON c.pm_session_id = s.id
+      WHERE c.id = ? AND COALESCE(c.deleted, 0) = 0
     `).get(cabinetId);
     
     if (!cabinet) {
       return res.status(404).json({ error: 'Cabinet not found' });
     }
     
-    // Prevent deletion from completed sessions
-    if (cabinet.status === 'completed') {
+    // Prevent deletion from completed sessions (not individual completed cabinets)
+    if (cabinet.session_status === 'completed') {
       return res.status(403).json({ 
         error: 'Cannot delete cabinet - PM session is completed',
         message: 'This PM session has been completed and cannot be modified. Create a new session to make changes.'

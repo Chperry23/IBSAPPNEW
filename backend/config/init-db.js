@@ -1612,54 +1612,24 @@ async function backfillMissingSyncUuids() {
   }
 }
 
-/**
- * Legacy UI wrote locations to cabinet_names (not synced).
- * Copy any missing rows into cabinet_locations so push/pull includes them.
- */
 async function migrateCabinetNamesIntoLocations() {
+  const {
+    migrateCabinetNamesIntoLocations: migrate,
+    reconstructPhantomCabinetLocations,
+  } = require('../utils/migrate-cabinet-locations');
   try {
-    const names = await db
-      .prepare(
-        `SELECT id, session_id, location_name, description, is_collapsed, sort_order, created_at, updated_at, deleted
-         FROM cabinet_names`
-      )
-      .all([]);
-    if (!names.length) return;
-
-    let copied = 0;
-    for (const row of names) {
-      const exists = await db
-        .prepare(`SELECT id FROM cabinet_locations WHERE id = ?`)
-        .get([row.id]);
-      if (exists) continue;
-
-      const uuid = String(row.id);
-      await db
-        .prepare(
-          `INSERT INTO cabinet_locations
-             (id, session_id, location_name, description, is_collapsed, sort_order,
-              uuid, synced, deleted, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
-        )
-        .run([
-          row.id,
-          row.session_id,
-          row.location_name,
-          row.description || '',
-          row.is_collapsed || 0,
-          row.sort_order || 0,
-          uuid,
-          row.deleted || 0,
-          row.created_at || null,
-          row.updated_at || null,
-        ]);
-      copied += 1;
-    }
+    const { copied, backfilledUuid } = await migrate(db);
     if (copied > 0) {
       console.log(`📍 Migrated ${copied} location(s) from cabinet_names → cabinet_locations (pending sync)`);
     }
+    if (backfilledUuid > 0) {
+      console.log(`📍 Backfilled uuid on ${backfilledUuid} cabinet_locations row(s) (pending sync)`);
+    }
+    const phantom = await reconstructPhantomCabinetLocations(db);
+    if (phantom.inserted > 0) {
+      console.log(`📍 Reconstructed ${phantom.inserted} missing cabinet location row(s) (pending sync)`);
+    }
   } catch (e) {
-    // cabinet_names may not exist on fresh DBs
     if (!/no such table/i.test(String(e.message || e))) {
       console.warn('migrateCabinetNamesIntoLocations:', e.message || e);
     }

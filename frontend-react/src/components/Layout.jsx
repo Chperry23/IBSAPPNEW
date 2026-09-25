@@ -18,6 +18,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import SoundToggle from './SoundToggle';
 import GlobalSearch from './GlobalSearch';
+import AppUpdateBanner from './AppUpdateBanner';
 
 const NAV_LINKS = [
   { to: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, match: (p) => p === '/dashboard' },
@@ -350,6 +351,7 @@ export default function Layout({ children }) {
           buildInfo={buildInfo}
           onNavPointerDown={onNavPointerDown}
         />
+        <AppUpdateBanner />
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">{children}</main>
       </div>
     );
@@ -442,6 +444,7 @@ export default function Layout({ children }) {
             </span>
           )}
         </header>
+        <AppUpdateBanner />
 
         <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">{children}</main>
       </div>
